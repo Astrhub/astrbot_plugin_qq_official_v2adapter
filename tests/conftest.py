@@ -21,3 +21,43 @@ def store(tmp_path):
     instance = SettingsStore(tmp_path / "settings.sqlite3")
     yield instance
     instance.close()
+
+
+@pytest.fixture(autouse=True)
+def forbid_real_qq(monkeypatch):
+    from urllib.parse import urlsplit
+
+    import aiohttp
+    original = aiohttp.ClientSession._request
+
+    async def guarded(self, method, url, **kwargs):
+        host = urlsplit(str(url)).hostname or ""
+        if host == "qq.com" or host.endswith(".qq.com"):
+            raise AssertionError("Tests must map QQ URLs to explicit local upstream fixtures.")
+        return await original(self, method, url, **kwargs)
+
+    monkeypatch.setattr(aiohttp.ClientSession, "_request", guarded)
+
+
+@pytest.fixture
+async def qq_reject_server():
+    from aiohttp import web
+    from test_transport_http import upstream
+    calls = []
+
+    async def handler(request):
+        calls.append(request.path)
+        assert request.path == "/app/getAppAccessToken"
+        return web.json_response({"code": 100016, "message": "invalid fixture credential"})
+
+    async with upstream(handler) as base:
+        yield base, calls
+
+
+@pytest.fixture
+async def qq_portal_server():
+    from test_onboarding import Portal
+    from test_transport_http import upstream
+    portal = Portal()
+    async with upstream(portal.handle) as base:
+        yield base, portal

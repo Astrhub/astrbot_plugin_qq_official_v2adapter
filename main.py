@@ -13,7 +13,10 @@ from astrbot.core.platform.register import (
 
 from .v2 import PLATFORM_TYPE, PLUGIN_NAME
 from .v2.adapter import DEFAULT_PLATFORM_CONFIG, V2Adapter
+from .v2.connections import Connections
+from .v2.onboarding import Onboarding
 from .v2.settings import SettingsStore
+from .v2.transport.inbox import RawInbox
 from .v2.web_api import ControlAPI
 
 
@@ -31,11 +34,16 @@ class QQOfficialV2(Star):
         self.store = None
         self.control = None
         self.adapter_class = None
+        self.inbox = None
+        self.connections = None
+        self.onboarding = None
+        self._termination = None
 
     async def initialize(self):
         self.stopping = False
         try:
             self.store = SettingsStore(StarTools.get_data_dir(PLUGIN_NAME) / "settings.sqlite3")
+            self.inbox = RawInbox(StarTools.get_data_dir(PLUGIN_NAME) / "transport.sqlite3")
             owner = self
 
             class OwnedAdapter(V2Adapter):
@@ -44,18 +52,21 @@ class QQOfficialV2(Star):
             OwnedAdapter.owner = owner
             self.adapter_class = OwnedAdapter
             register_platform_adapter(
-                PLATFORM_TYPE, "QQ 官方 V2 原型（传输未实现）",
+                PLATFORM_TYPE, "QQ 官方 V2（连接层，消息能力开发中）",
                 default_config_tmpl=copy.deepcopy(DEFAULT_PLATFORM_CONFIG),
                 adapter_display_name="QQ 官方 V2 · 原型",
                 config_metadata={
                     "secret": {"description": "QQ AppSecret", "type": "string", "secret": True,
-                               "hint": "仅保存在本体平台配置；原型不会请求 QQ。"},
+                               "hint": "仅保存在本体平台配置；启用平台将连接 QQ。"},
                     "appid": {"description": "QQ AppID", "type": "string"},
                 },
                 support_streaming_message=False,
             )(OwnedAdapter)
             self.control = ControlAPI(self)
             self.control.register()
+            self.connections = Connections(self)
+            self.connections.prepare_webhooks()
+            self.onboarding = Onboarding(self)
         except BaseException:
             await self.terminate()
             raise
@@ -68,9 +79,22 @@ class QQOfficialV2(Star):
 
     async def terminate(self):
         self.stopping = True
+        if self._termination is None or (self._termination.done() and (self._termination.cancelled() or self._termination.exception() is not None)):
+            self._termination = asyncio.create_task(self._terminate_owned(), name="qq-v2-plugin-close")
+            self._termination.add_done_callback(lambda task: task.exception() if not task.cancelled() else None)
+        await asyncio.shield(self._termination)
+
+    async def _terminate_owned(self):
         if self.control:
             self.control.close()
         errors = []
+        for service in (self.onboarding, self.connections):
+            if service:
+                try:
+                    async with asyncio.timeout(5):
+                        await service.close()
+                except Exception as exc:
+                    errors.append(exc)
         for instance in list(self.instances):
             try:
                 async with asyncio.timeout(5):
@@ -85,5 +109,7 @@ class QQOfficialV2(Star):
             unregister_platform_adapters_by_module(self.adapter_class.__module__)
         if self.store:
             self.store.close()
+        if self.inbox:
+            self.inbox.close()
         if errors:
             raise ExceptionGroup("QQ V2 resource cleanup failed", errors)

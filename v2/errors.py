@@ -4,11 +4,12 @@
 class V2Error(RuntimeError):
     def __init__(self, code: str, message: str, *, retcode: int = 1400,
                  status: int = 400, business_code=None, trace_id=None,
-                 retry_after=None, phase="not_sent"):
+                 retry_after=None, phase="not_sent", http_status=None):
         super().__init__(message)
         self.code = code
         self.retcode = retcode
         self.status = status
+        self.http_status = http_status
         self.business_code = business_code
         self.trace_id = trace_id
         self.retry_after = retry_after
@@ -17,7 +18,7 @@ class V2Error(RuntimeError):
     def as_dict(self):
         return {"status": "failed", "retcode": self.retcode, "data": None,
                 "code": self.code, "message": str(self),
-                "business_code": self.business_code, "trace_id": self.trace_id,
+                "business_code": self.business_code, "trace_id": self.trace_id, "http_status": self.http_status,
                 "retry_after": self.retry_after, "phase": self.phase}
 
 
@@ -26,4 +27,4 @@ def unsupported(message="This capability is not implemented in the prototype."):
 
 
 def not_ready():
-    return V2Error("transport_not_ready", "P0/P1 has no QQ transport.", status=503)
+    return V2Error("transport_not_ready", "This client has no active QQ transport.", status=503)

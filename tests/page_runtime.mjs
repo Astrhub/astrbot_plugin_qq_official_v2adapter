@@ -10,6 +10,7 @@ class Element {
   setAttribute() {}
   focus() {}
   select() {}
+  getContext() { return {fillRect() {}, fillStyle: ''}; }
 }
 const ids = [...fs.readFileSync('/plugin/pages/control/index.html', 'utf8').matchAll(/<([\w-]+)[^>]*\bid="([^"]+)"/g)];
 const nodes = new Map(ids.map(([, tag, id]) => [id, new Element(tag)]));
@@ -22,6 +23,11 @@ const command = {id: 'fixture_handler', name: 'fixture', command: '/fixture', us
 let calls = [], ready = false;
 let state = {platform_id: 'fixture', revision: 0, applied_revision: 0, remote_state: 'not_implemented', fingerprint: 'fixture-fingerprint',
   draft: structuredClone(defaults), versions: [], identity: {appid: 'fixture-app', environment: 'sandbox'}, credentials_configured: true, runtime_state: 'transport_not_ready'};
+const timers = new Map(), events = new Map(); let timerId = 0, failSave = false;
+const connection = {platform_id: 'fixture', fingerprint: 'connection-fingerprint', exists: true,
+  fields: {appid: 'fixture-app', environment: 'production', transport: 'websocket', intents: 33554432, shard: [0, 1], enable: false},
+  credentials_configured: true, runtime: {state: 'configured', online: false}, reload: 'not_requested'};
+const binding = {ticket: 'fixture-ticket', platform_id: 'fixture', state: 'pending', expires_in: 180, lease_seconds: 30, qr_matrix: [[true, false], [false, true]]};
 const bridge = {
   async ready() { ready = true; },
   async apiGet(endpoint) {
@@ -29,6 +35,7 @@ const bridge = {
     if (endpoint === 'bootstrap') return {csrf: 'fixture-csrf', flags_revision: 'fixture-flags', instances: [{id: 'fixture', appid: 'fixture-app'}]};
     if (endpoint === 'config') return structuredClone(state);
     if (endpoint === 'commands') return {nodes: [command], version: 'fixture-catalog'};
+    if (endpoint === 'connection') return structuredClone(connection);
     throw new Error(endpoint);
   },
   async apiPost(endpoint, body) {
@@ -36,10 +43,17 @@ const bridge = {
     assert.equal(body.csrf, 'fixture-csrf');
     if (endpoint === 'preview') return {panel: {slots: 2, issues: []}, card: {pages: 1, items: [command], layout: {style: 'plain', show_description: true}}};
     if (endpoint === 'config/mutate') { state.revision++; state.draft.title = body.patch.title || state.draft.title; return structuredClone(state); }
+    if (endpoint === 'connection/save') { if (failSave) throw new Error('fixture conflict'); Object.assign(connection.fields, body.patch); return structuredClone(connection); }
+    if (endpoint === 'connection/reload') { connection.runtime.state = 'connecting'; return structuredClone(connection); }
+    if (endpoint === 'onboarding/start') return structuredClone(binding);
+    if (endpoint === 'onboarding/status') return {...binding, state: 'ready_to_commit', qr_matrix: null, commit_handle: 'fixture-handle'};
+    if (endpoint === 'onboarding/commit') return {...binding, state: 'configured', qr_matrix: null, result: structuredClone(connection)};
+    if (endpoint === 'onboarding/cancel') return {...binding, state: 'cancelled', qr_matrix: null};
     throw new Error(endpoint);
   }
 };
-const window = {AstrBotPluginPage: bridge, confirm: () => true};
+const window = {AstrBotPluginPage: bridge, confirm: () => true, addEventListener: (name, fn) => events.set(name, fn),
+  setTimeout: (fn, delay) => { assert.equal(delay, 5000); timers.set(++timerId, fn); return timerId; }, clearTimeout: id => timers.delete(id)};
 const AsyncFunction = Object.getPrototypeOf(async function() {}).constructor;
 await new AsyncFunction('window', 'document', source)(window, document);
 assert.equal(nodes.get('editor').hidden, false);
@@ -67,4 +81,26 @@ assert(nodes.get('status').textContent.includes('空白'));
 input.value = 'argument'; build.onclick();
 assert.equal(nodes.get('command-copy').value, '/fixture argument');
 assert(calls.every(c => !c[1].includes('send') && !c[1].includes('publish')));
+assert.equal(nodes.get('connect-secret').value, '');
+nodes.get('connect-intents').value = '1';
+await nodes.get('connect-save').onclick();
+assert.deepEqual(calls.at(-1)[2].patch, {intents: 1});
+assert.equal(calls.at(-1)[2].secret_action, 'keep'); assert(!('secret' in calls.at(-1)[2]));
+assert(!calls.some(c => c[1] === 'connection/reload'), 'save must not reload');
+nodes.get('connect-secret-action').value = 'replace'; nodes.get('connect-secret').value = 'fixture-new-secret';
+nodes.get('connect-confirm-secret').checked = true; failSave = true;
+await nodes.get('connect-save').onclick(); assert.equal(nodes.get('connect-secret').value, '');
+assert(nodes.get('status').textContent.includes('fixture conflict')); failSave = false;
+await nodes.get('connect-read').onclick();
+await nodes.get('bind-start').onclick();
+assert.equal(nodes.get('bind-qr').hidden, false); assert.equal(timers.size, 1);
+await [...timers.values()][0]();
+assert.equal(calls.at(-1)[1], 'onboarding/status'); assert.equal(calls.at(-1)[2].renew, true);
+assert.equal(nodes.get('bind-commit').hidden, false);
+nodes.get('connect-confirm-secret').checked = true; nodes.get('connect-confirm-identity').checked = true;
+await nodes.get('bind-commit').onclick();
+assert.equal(calls.at(-1)[2].commit_handle, 'fixture-handle'); assert.equal(timers.size, 0);
+assert.equal(nodes.get('connect-secret').value, '');
+await nodes.get('bind-start').onclick(); events.get('pagehide')();
+assert.equal(timers.size, 0); assert.equal(calls.at(-1)[1], 'onboarding/cancel');
 console.log('PAGE: bridge-ready, real endpoint wiring, save/preview split, partial patches, safe text and parameter assistant passed');

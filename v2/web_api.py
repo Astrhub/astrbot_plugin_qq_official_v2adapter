@@ -16,6 +16,7 @@ from .errors import V2Error, unsupported
 from .host_auth import require_admin
 from .models import SCENES, InstanceKey
 from .settings import DEFAULTS, merge_patch, validate_settings
+from .transport.webhook import bounded_body
 
 FLAGS = {"webui_enabled": True, "remote_menu_sync": False, "onebot_network_enabled": False}
 
@@ -26,6 +27,7 @@ class ControlAPI:
         self.routes = []
         self.secret = secrets.token_bytes(32)
         self.lock = asyncio.Lock()
+        self.active = 0
 
     def flags(self):
         return {k: self.owner.config.get(k, default) is True for k, default in FLAGS.items()}
@@ -49,7 +51,11 @@ class ControlAPI:
     def register(self):
         for path, method, operation in (("bootstrap", "GET", "bootstrap"), ("config", "GET", "get"),
                                        ("commands", "GET", "commands"), ("config/mutate", "POST", "mutate"),
-                                       ("preview", "POST", "preview"), ("flags", "POST", "flags")):
+                                       ("preview", "POST", "preview"), ("flags", "POST", "flags"),
+                                       ("connection", "GET", "connection"), ("connection/save", "POST", "connection_save"),
+                                       ("connection/reload", "POST", "connection_reload"),
+                                       ("onboarding/start", "POST", "onboarding_start"), ("onboarding/status", "POST", "onboarding_status"),
+                                       ("onboarding/cancel", "POST", "onboarding_cancel"), ("onboarding/commit", "POST", "onboarding_commit")):
             route = f"/{PLUGIN_NAME}/{path}"
             if any(api[0] == route for api in self.owner.context.registered_web_apis):
                 raise V2Error("route_conflict", "Another owner already registered the management route.", status=409)
@@ -82,10 +88,13 @@ class ControlAPI:
                 "identity": {"appid": identity.robot.appid, "environment": identity.robot.environment},
                 "credentials_configured": bool(config.get("secret")), "enabled": bool(config.get("enable")),
                 "connection": {"transport": identity.transport, "intents": identity.intents, "shard": identity.shard},
-                "runtime_state": ("reload_required" if instance.config_fingerprint != fingerprint else "transport_not_ready") if instance else "not_loaded",
+                "runtime_state": instance.runtime_status()["state"] if instance else "not_loaded",
                 "versions": self.owner.store.versions(identity.settings_key)}
 
     async def handle(self, operation):
+        if self.active >= 16:
+            return json_response({"status": "error", "code": "control_capacity"}, status_code=429)
+        self.active += 1
         try:
             if self.owner.stopping:
                 raise V2Error("service_stopped", "Plugin is stopped.", status=503)
@@ -94,23 +103,51 @@ class ControlAPI:
                 raise V2Error("webui_disabled", "Enable WebUI from the host plugin settings.", status=403)
             body = {}
             if request.method == "POST":
-                raw = await request.body()
-                if len(raw) > 256 * 1024:
-                    raise V2Error("request_too_large", "Request exceeds 256 KiB.", status=413)
-                body = await request.json()
+                raw = await bounded_body(request._get_current(), 256 * 1024)
+                body = json.loads(raw)
                 if not isinstance(body, dict):
                     raise V2Error("invalid_request", "Expected a JSON object.")
                 self.check_csrf(username, body.get("csrf"))
-            async with self.lock:
-                # No await between target revalidation and local transaction.
-                if self.owner.stopping:
-                    raise V2Error("service_stopped", "Plugin is stopped.", status=503)
-                result = self.dispatch(operation, username, body)
-            return json_response(result)
+            if operation.startswith(("connection", "onboarding_")):
+                result = await self.dispatch_connection(operation, username, body)
+            else:
+                async with self.lock:
+                    if self.owner.stopping:
+                        raise V2Error("service_stopped", "Plugin is stopped.", status=503)
+                    result = self.dispatch(operation, username, body)
+            return json_response(result, headers={"Cache-Control": "no-store"})
         except V2Error as exc:
             return json_response({**exc.as_dict(), "status": "error"}, status_code=exc.status)
         except sqlite3.Error:
             return json_response({"status": "error", "code": "storage_unavailable", "message": "Local storage is unavailable; no remote action occurred."}, status_code=503)
+        except (ValueError, TypeError, RecursionError):
+            return json_response({"status": "error", "code": "invalid_request", "message": "Invalid request data."}, status_code=400)
+        except TimeoutError:
+            return json_response({"status": "error", "code": "control_timeout", "message": "Management request timed out; read current state before retrying."}, status_code=503)
+        finally:
+            self.active -= 1
+
+    async def dispatch_connection(self, operation, username, body):
+        platform_id = body.get("platform_id") if request.method == "POST" else request.query.get("platform_id")
+        connections, onboarding = self.owner.connections, self.owner.onboarding
+        if operation == "connection":
+            return connections.view(platform_id)
+        if operation == "connection_save":
+            return await connections.save(platform_id, body.get("fingerprint"), body.get("patch", {}),
+                secret_action=body.get("secret_action", "keep"), secret=body.get("secret"), confirm=body.get("confirm"),
+                confirm_identity=body.get("confirm_identity"), confirm_secret=body.get("confirm_secret"))
+        if operation == "connection_reload":
+            return await connections.reload(platform_id, body.get("fingerprint"), confirm=body.get("confirm"))
+        if operation == "onboarding_start":
+            return await onboarding.start(username, platform_id, body.get("fingerprint"), confirm=body.get("confirm"))
+        if operation == "onboarding_status":
+            return await onboarding.status(username, platform_id, body.get("ticket"), renew=body.get("renew") is True)
+        if operation == "onboarding_cancel":
+            return await onboarding.cancel(username, platform_id, body.get("ticket"))
+        if operation == "onboarding_commit":
+            return await onboarding.commit(username, platform_id, body.get("ticket"), body.get("commit_handle"),
+                confirm=body.get("confirm"), confirm_identity=body.get("confirm_identity"), confirm_secret=body.get("confirm_secret"))
+        raise unsupported()
 
     def dispatch(self, operation, username, body):
         if operation == "bootstrap":
@@ -118,7 +155,7 @@ class ControlAPI:
             return {"csrf": self.csrf(username), "flags": self.flags(), "flags_revision": self.fingerprint(self.flags()),
                     "instances": [{"id": c.get("id"), "appid": c.get("appid"), "environment": c.get("environment", "production")}
                                   for c in configs if c.get("type") == PLATFORM_TYPE],
-                    "defaults": DEFAULTS, "phase": "P0/P1", "remote_state": "not_implemented"}
+                    "defaults": DEFAULTS, "phase": "P2", "remote_state": "not_implemented"}
         if operation == "flags":
             if body.get("confirm") is not True:
                 raise V2Error("confirmation_required", "Confirm the basic switch change.")

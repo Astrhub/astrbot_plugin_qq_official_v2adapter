@@ -15,16 +15,23 @@ from v2 import PLATFORM_TYPE, PLUGIN_NAME
 
 
 @pytest.mark.assembly
-async def test_real_astrbot_assembly(config):
+async def test_real_astrbot_assembly(config, monkeypatch, qq_reject_server, qq_portal_server):
     plugin_dir = Path("/work/data/plugins") / PLUGIN_NAME
     plugin_dir.parent.mkdir(parents=True, exist_ok=True)
     plugin_dir.mkdir()
-    for entry in ("main.py", "metadata.yaml", "_conf_schema.json", "v2", "pages"):
+    for entry in ("main.py", "metadata.yaml", "_conf_schema.json", "requirements.txt", "v2", "pages"):
         source = Path("/plugin") / entry
         if source.is_dir():
             shutil.copytree(source, plugin_dir / entry)
         else:
             shutil.copy2(source, plugin_dir / entry)
+    import importlib
+
+    from test_transport_http import MappedSession
+    def map_qq():
+        module = importlib.import_module(f"data.plugins.{PLUGIN_NAME}.v2.transport.http")
+        monkeypatch.setattr(module.HTTPTransport, "_make_session", lambda self: MappedSession(qq_reject_server[0]))
+    map_qq()
     from astrbot.core import LogBroker, astrbot_config, db_helper, html_renderer
     from astrbot.core.core_lifecycle import AstrBotCoreLifecycle
     from astrbot.core.platform.register import platform_cls_map
@@ -46,7 +53,7 @@ async def test_real_astrbot_assembly(config):
         initialized = True
         assert not lifecycle.plugin_manager.failed_plugin_dict, lifecycle.plugin_manager.failed_plugin_dict.keys()
         metadata = lifecycle.star_context.get_registered_star(PLUGIN_NAME)
-        assert metadata is not None and metadata.version == "v0.1.0"
+        assert metadata is not None and metadata.version == "v0.2.0"
         owner = metadata.star_cls
         assert owner and not owner.stopping
         assert PLATFORM_TYPE in platform_cls_map
@@ -56,7 +63,11 @@ async def test_real_astrbot_assembly(config):
         tasks = lifecycle.platform_manager._platform_tasks[instance.client_self_id]
         await asyncio.wait_for(tasks.wrapper, timeout=5)
         assert instance.status.value == "error"
-        assert "P0/P1 has no QQ transport" in instance.last_error.message
+        assert "QQ API rejected" in instance.last_error.message
+        assert instance.failure == "qq_api_error" and instance.http.session.closed
+        assert instance.runtime_status()["failure_details"]["business_code"] == 100016
+        assert instance.runtime_status()["failure_details"]["http_status"] == 200
+        assert qq_reject_server[1] == ["/app/getAppAccessToken"]
         assert not (await instance.get_client().get_status())["online"]
         native_after = {name for name in sys.modules if name.startswith(("astrbot.core.platform.sources.qqofficial.",
                                                                         "astrbot.core.platform.sources.qqofficial_webhook."))}
@@ -153,11 +164,81 @@ async def test_real_astrbot_assembly(config):
             assert new_owner is not owner and not new_owner.stopping
             assert not new_owner.instances  # Hot plugin reload does not silently reconnect.
             assert new_owner.store.get(instance.identity.settings_key)["applied"]["title"] == "fixture title"
+            map_qq()
             await lifecycle.platform_manager.load_platform(dict(config))
             new_instance = next(iter(new_owner.instances))
             await lifecycle.platform_manager._platform_tasks[new_instance.client_self_id].wrapper
             assert new_instance.identity.generation != instance.identity.generation
             assert new_instance.local_settings["title"] == "fixture title"
+            # P2: real host save/reload, QR lease/commit and unified callback dispatch.
+            from test_transport_receive import StepClock, event, signed
+            clock = StepClock()
+            http_module = importlib.import_module(f"data.plugins.{PLUGIN_NAME}.v2.transport.http")
+            monkeypatch.setattr(http_module.HTTPTransport, "_make_session", lambda self: MappedSession(qq_portal_server[0]))
+            new_owner.onboarding.factory = lambda: MappedSession(qq_portal_server[0])
+            new_owner.onboarding.clock = lambda: clock.now
+            new_owner.onboarding.sleep = clock.sleep
+            boot2 = (await client.get(prefix + "/bootstrap", headers=headers)).json()
+            target = "webhook-fixture"
+            connection = (await client.get(prefix + "/connection", params={"platform_id": target}, headers=headers)).json()
+            save_body = {"csrf": boot2["csrf"], "platform_id": target, "fingerprint": connection["fingerprint"], "patch": {"transport": "webhook"}, "confirm": True}
+            key_headers = {"Authorization": "ApiKey " + key["api_key"]}
+            assert (await client.post(prefix + "/connection/save", json=save_body, headers=key_headers)).status_code == 403
+            response = await client.post(prefix + "/connection/save", json=save_body, headers=headers)
+            assert response.status_code == 200, response.text
+            connection = response.json()
+            assert connection["webhook_path"] and not connection["fields"]["enable"]
+            assert len([p for p in astrbot_config["platform"] if p["id"] == target]) == 1
+            assert not any(i.identity.platform_id == target for i in new_owner.instances)
+            start_body = {"csrf": boot2["csrf"], "platform_id": target, "fingerprint": connection["fingerprint"], "confirm": True}
+            assert (await client.post(prefix + "/onboarding/start", json=start_body, headers=key_headers)).status_code == 403
+            response = await client.post(prefix + "/onboarding/start", json=start_body, headers=headers)
+            assert response.status_code == 200, response.text
+            ticket = response.json()["ticket"]
+            await clock.tick()
+            await asyncio.wait_for(clock.waits.get(), 2)
+            status_body = {"csrf": boot2["csrf"], "platform_id": target, "ticket": ticket, "renew": True}
+            ready = (await client.post(prefix + "/onboarding/status", json=status_body, headers=headers)).json()
+            assert ready["state"] == "ready_to_commit" and "new-fixture-secret" not in json.dumps(ready)
+            assert (await client.post(prefix + "/onboarding/status", json={**status_body, "platform_id": config["id"]}, headers=headers)).status_code == 404
+            commit_body = {**status_body, "commit_handle": ready["commit_handle"], "confirm": True, "confirm_secret": True, "confirm_identity": True}
+            committed = await client.post(prefix + "/onboarding/commit", json=commit_body, headers=headers)
+            assert committed.status_code == 200, committed.text
+            assert committed.json() == (await client.post(prefix + "/onboarding/commit", json=commit_body, headers=headers)).json()
+            saved_target = next(p for p in astrbot_config["platform"] if p["id"] == target)
+            assert saved_target["secret"] == "new-fixture-secret" and not saved_target["enable"]
+            assert "not-a-chat-observation" not in json.dumps(astrbot_config.get("admins_id", []))
+            connection = committed.json()["result"]
+            response = await client.post(prefix + "/connection/save", json={**save_body, "fingerprint": connection["fingerprint"], "patch": {"enable": True}}, headers=headers)
+            assert response.status_code == 200, response.text
+            connection = response.json()
+            response = await client.post(prefix + "/connection/reload", json={"csrf": boot2["csrf"], "platform_id": target, "fingerprint": connection["fingerprint"], "confirm": True}, headers=headers)
+            assert response.status_code == 200, response.text
+            hook_instance = next(i for i in new_owner.instances if i.identity.platform_id == target)
+            await asyncio.wait_for(hook_instance.ready.wait(), 2)
+            assert hook_instance.state == "webhook_ready" and not hook_instance.runtime_status()["online"]
+            callback = connection["webhook_path"]
+            challenge = {"op": 13, "d": {"plain_token": "fixture", "event_ts": str(int(time.time()))}}
+            response = await client.post(callback, json=challenge, headers={"X-Bot-Appid": "new-fixture-app"})
+            assert response.status_code == 200 and response.json()["plain_token"] == "fixture"
+            assert not hook_instance.runtime_status()["online"]
+            fixture_request = signed(event("assembly-raw"), appid="new-fixture-app", secret="new-fixture-secret", now=int(time.time()))
+            response = await client.post(callback, content=fixture_request.raw, headers=dict(fixture_request.headers))
+            assert response.status_code == 200 and response.json() == {"op": 12}, response.text
+            assert hook_instance.runtime_status()["online"] and not hook_instance.client._state.cache.items
+            assert new_owner.inbox.count(hook_instance.identity.settings_key) == 1
+            assert (await client.post(callback, content=fixture_request.raw, headers=dict(fixture_request.headers))).status_code == 200
+            assert new_owner.inbox.count(hook_instance.identity.settings_key) == 1
+            assert (await client.post(callback, content=fixture_request.raw, headers={**dict(fixture_request.headers), "X-Bot-Appid": "wrong"})).status_code == 401
+            connection = (await client.get(prefix + "/connection", params={"platform_id": target}, headers=headers)).json()
+            response = await client.post(prefix + "/connection/save", json={**save_body, "fingerprint": connection["fingerprint"], "patch": {"enable": False}}, headers=headers)
+            assert response.status_code == 200, response.text
+            await lifecycle.platform_manager._platform_tasks[hook_instance.client_self_id].wrapper
+            assert hook_instance.http.session.closed and hook_instance.ingress.worker.done()
+            assert (await client.post(callback, content=fixture_request.raw, headers=dict(fixture_request.headers))).status_code == 503
+            response = await client.post(prefix + "/connection/reload", json={"csrf": boot2["csrf"], "platform_id": target, "fingerprint": response.json()["fingerprint"], "confirm": True}, headers=headers)
+            assert response.status_code == 200, response.text
+            assert (await client.post(callback, content=fixture_request.raw, headers=dict(fixture_request.headers))).status_code == 404
             await lifecycle.plugin_manager.turn_off_plugin(PLUGIN_NAME)
         print("ASSEMBLY: real core initialize, plugin load/disable/re-enable, platform wrapper, dashboard auth, Pages, restore and cleanup passed")
     finally:
