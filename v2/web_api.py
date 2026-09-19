@@ -10,11 +10,11 @@ import time
 
 from astrbot.api.web import json_response, request
 
-from . import PLUGIN_NAME, PLATFORM_TYPE
+from . import PLATFORM_TYPE, PLUGIN_NAME
 from .commands import collect_catalog, layout_preview, panel_preview
 from .errors import V2Error, unsupported
 from .host_auth import require_admin
-from .models import InstanceKey, SCENES
+from .models import SCENES, InstanceKey
 from .settings import DEFAULTS, merge_patch, validate_settings
 
 FLAGS = {"webui_enabled": True, "remote_menu_sync": False, "onebot_network_enabled": False}

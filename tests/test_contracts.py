@@ -6,8 +6,15 @@ import pytest
 from v2.client import V2Client
 from v2.errors import V2Error
 from v2.models import InstanceKey, RobotKey, SessionRoute
-from v2.protocol import (AcceptedEvents, ExpiringSet, IdentityCache, RawEnvelope,
-                         RequestSpec, avatar_url, decode_response)
+from v2.protocol import (
+    AcceptedEvents,
+    ExpiringSet,
+    IdentityCache,
+    RawEnvelope,
+    RequestSpec,
+    avatar_url,
+    decode_response,
+)
 
 
 def chat(*, event="GROUP_AT_MESSAGE_CREATE", uid="member", msg="message", target="group"):
@@ -114,7 +121,7 @@ def test_http_contracts_no_global_base_and_structured_errors():
     assert prod.url.endswith("?cursor=a%2Bb&ids=a&ids=b")
     assert prod.url.startswith("https://api.") and sandbox.url.startswith("https://sandbox.")
     assert decode_response(204, b"", {}) is None
-    assert decode_response(200, b'[1,2]', {}) == [1, 2]
+    assert decode_response(200, b"[1,2]", {}) == [1, 2]
     for code in (40093001, 40093002):
         with pytest.raises(V2Error) as exc:
             decode_response(400, json.dumps({"code": code, "message": "sensitive URL"}).encode(), {"X-Tps-Trace-Id": "trace", "Retry-After": "3"})

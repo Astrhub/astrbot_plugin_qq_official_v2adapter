@@ -1,20 +1,32 @@
 import copy
 import json
 from types import SimpleNamespace
-from typing import Optional
 
 import pytest
-
 from astrbot.core.star.filter.command import CommandFilter, GreedyStr
 from astrbot.core.star.filter.command_group import CommandGroupFilter
 from astrbot.core.star.filter.permission import PermissionType, PermissionTypeFilter
-from astrbot.core.star.filter.platform_adapter_type import PlatformAdapterType, PlatformAdapterTypeFilter
+from astrbot.core.star.filter.platform_adapter_type import (
+    PlatformAdapterType,
+    PlatformAdapterTypeFilter,
+)
 from astrbot.core.star.star_handler import EventType, StarHandlerMetadata
 
 from v2 import PLUGIN_NAME
-from v2.commands import collect_catalog, layout_preview, panel_preview, parameter_help, validate_panel_payload
+from v2.commands import (
+    collect_catalog,
+    layout_preview,
+    panel_preview,
+    validate_panel_payload,
+)
 from v2.errors import V2Error
-from v2.settings import DEFAULTS, SettingsStore, effective_layout, merge_patch, validate_settings
+from v2.settings import (
+    DEFAULTS,
+    SettingsStore,
+    effective_layout,
+    merge_patch,
+    validate_settings,
+)
 
 
 def test_draft_apply_conflict_recovery(tmp_path):
@@ -82,7 +94,7 @@ def fixtures():
     parent_md, parent = add("admin", group=True)
     parent_md.event_filters.append(PermissionTypeFilter(PermissionType.ADMIN))
     child_md, child = add("child", parent=parent)
-    child.handler_params = {"required_optional": Optional[int], "default": 3, "token": "do-not-leak", "rest": GreedyStr}
+    child.handler_params = {"required_optional": int | None, "default": 3, "token": "do-not-leak", "rest": GreedyStr}
     add("v2menu", module="data.plugins.v2.main", method="menu")
     add("plugin", module="data.plugins.sample.main")
     return handlers, plugins, add, child_md, child
@@ -157,11 +169,17 @@ def test_official_panel_limits(change):
     payload = {"scope": "group", "panel": {"items": [{"type": "command", "name": "七个汉字正好哦"}]}}
     assert validate_panel_payload(payload)
     existing = 0
-    if change == "count": payload["panel"]["items"] *= 21
-    if change == "name": payload["panel"]["items"][0]["name"] += "多"
-    if change == "desc": payload["panel"]["items"][0]["desc"] = "中" * 16
-    if change == "targets": payload.update(target_type="specific", user_openids=["user"])
-    if change == "scene": payload.update(scope="channel", target_type="specific")
-    if change == "total": existing = 20
+    if change == "count":
+        payload["panel"]["items"] *= 21
+    if change == "name":
+        payload["panel"]["items"][0]["name"] += "多"
+    if change == "desc":
+        payload["panel"]["items"][0]["desc"] = "中" * 16
+    if change == "targets":
+        payload.update(target_type="specific", user_openids=["user"])
+    if change == "scene":
+        payload.update(scope="channel", target_type="specific")
+    if change == "total":
+        existing = 20
     with pytest.raises(V2Error):
         validate_panel_payload(payload, existing_panels=existing)

@@ -5,8 +5,11 @@ import sys
 from types import ModuleType, SimpleNamespace
 
 import pytest
-
-from astrbot.core.platform.register import platform_cls_map, register_platform_adapter, unregister_platform_adapters_by_module
+from astrbot.core.platform.register import (
+    platform_cls_map,
+    register_platform_adapter,
+    unregister_platform_adapters_by_module,
+)
 from astrbot.core.star.context import Context
 
 from v2 import PLATFORM_TYPE, PLUGIN_NAME
@@ -98,10 +101,10 @@ async def test_constructor_failure_has_no_owned_instance(plugin_module, config):
 
 @pytest.mark.parametrize("count", [1, 2, 10, 50, 100])
 async def test_multi_instance_and_event_cleanup(plugin_module, config, count):
+    from astrbot.core.message.message_event_result import MessageChain
     from astrbot.core.platform.astrbot_message import AstrBotMessage, MessageMember
     from astrbot.core.platform.message_session import MessageSession
     from astrbot.core.platform.message_type import MessageType
-    from astrbot.core.message.message_event_result import MessageChain
     ctx = context()
     owner = plugin_module.QQOfficialV2(ctx, {})
     await owner.initialize()

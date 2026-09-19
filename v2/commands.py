@@ -9,9 +9,15 @@ from collections import Counter
 
 from astrbot.core.star.filter.command import CommandFilter, GreedyStr
 from astrbot.core.star.filter.command_group import CommandGroupFilter
-from astrbot.core.star.filter.event_message_type import EventMessageType, EventMessageTypeFilter
+from astrbot.core.star.filter.event_message_type import (
+    EventMessageType,
+    EventMessageTypeFilter,
+)
 from astrbot.core.star.filter.permission import PermissionTypeFilter
-from astrbot.core.star.filter.platform_adapter_type import PlatformAdapterType, PlatformAdapterTypeFilter
+from astrbot.core.star.filter.platform_adapter_type import (
+    PlatformAdapterType,
+    PlatformAdapterTypeFilter,
+)
 from astrbot.core.star.star import star_map
 from astrbot.core.star.star_handler import EventType, star_handlers_registry
 

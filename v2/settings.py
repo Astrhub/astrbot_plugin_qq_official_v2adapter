@@ -97,11 +97,11 @@ def merge_patch(current, patch):
 
 def effective_layout(settings, scene, layer, node=None):
     value = dict(settings["layout"][layer])
-    sources = {key: "robot" for key in value}
+    sources = dict.fromkeys(value, "robot")
     for source, override in (("scene", settings["scene_overrides"].get(scene, {}).get(layer, {})),
                              ("node", settings["node_overrides"].get(node, {}))):
         value.update(override)
-        sources.update({key: source for key in override})
+        sources.update(dict.fromkeys(override, source))
     return value, sources
 
 

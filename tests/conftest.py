@@ -1,7 +1,6 @@
 """Tests must not import AstrBot against an operator's runtime directory."""
 
 import os
-from pathlib import Path
 
 import pytest
 
