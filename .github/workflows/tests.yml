@@ -27,7 +27,11 @@ jobs:
         with:
           version: '0.11.25'
       - name: Prepare sandbox runner
-        run: sudo apt-get update && sudo apt-get install -y bubblewrap
+        run: |
+          sudo apt-get update && sudo apt-get install -y bubblewrap
+          # ubuntu-24.04 restricts unprivileged userns; allow bwrap to set up netns loopback
+          printf 'abi <abi/4.0>,\ninclude <tunables/global>\nprofile bwrap /usr/bin/bwrap flags=(unconfined) {\n  userns,\n  include if exists <local/bwrap>\n}\n' | sudo tee /etc/apparmor.d/bwrap
+          sudo apparmor_parser -r /etc/apparmor.d/bwrap
       - name: Install host test dependencies (no project build hooks)
         working-directory: .host-source
         # Upstream removed uv.lock at this ref, so resolve fresh instead of --frozen
