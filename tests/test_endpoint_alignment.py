@@ -1,19 +1,20 @@
 """Expectations transcribed from current official V2 docs, not driver constants."""
-import copy
 import asyncio
+import copy
 from types import SimpleNamespace
 from urllib.parse import parse_qs, urlsplit
 
 import pytest
 from aiohttp import web
-
-from test_lifecycle import context, plugin_module
-from test_onboarding import owner
+from test_lifecycle import context
+from test_lifecycle import plugin_module as plugin_module
+from test_onboarding import owner as owner
 from test_transport_http import MappedSession, upstream
-from test_transport_receive import FakeGatewayHTTP, FakeWS, HELLO, READY
+from test_transport_receive import HELLO, READY, FakeGatewayHTTP, FakeWS
+
 from v2.errors import V2Error
 from v2.models import InstanceKey, RobotKey
-from v2.onboarding import Onboarding, PORTAL
+from v2.onboarding import PORTAL, Onboarding
 from v2.protocol import RequestSpec, avatar_url
 from v2.transport.http import HTTPTransport
 from v2.transport.inbox import Ingress, RawInbox

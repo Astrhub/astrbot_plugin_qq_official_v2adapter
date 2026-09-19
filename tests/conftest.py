@@ -25,8 +25,9 @@ def store(tmp_path):
 
 @pytest.fixture(autouse=True)
 def forbid_real_qq(monkeypatch):
-    import aiohttp
     from urllib.parse import urlsplit
+
+    import aiohttp
     original = aiohttp.ClientSession._request
 
     async def guarded(self, method, url, **kwargs):

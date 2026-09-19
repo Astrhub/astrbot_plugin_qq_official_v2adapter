@@ -26,6 +26,7 @@ async def test_real_astrbot_assembly(config, monkeypatch, qq_reject_server, qq_p
         else:
             shutil.copy2(source, plugin_dir / entry)
     import importlib
+
     from test_transport_http import MappedSession
     def map_qq():
         module = importlib.import_module(f"data.plugins.{PLUGIN_NAME}.v2.transport.http")

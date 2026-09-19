@@ -13,11 +13,11 @@ from astrbot.core.platform.register import (
 
 from .v2 import PLATFORM_TYPE, PLUGIN_NAME
 from .v2.adapter import DEFAULT_PLATFORM_CONFIG, V2Adapter
-from .v2.settings import SettingsStore
-from .v2.web_api import ControlAPI
 from .v2.connections import Connections
-from .v2.transport.inbox import RawInbox
 from .v2.onboarding import Onboarding
+from .v2.settings import SettingsStore
+from .v2.transport.inbox import RawInbox
+from .v2.web_api import ControlAPI
 
 
 class V2Only(filter.CustomFilter):

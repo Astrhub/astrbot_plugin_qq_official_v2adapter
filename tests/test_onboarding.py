@@ -9,9 +9,9 @@ from types import SimpleNamespace
 import pytest
 from aiohttp import web
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-
 from test_transport_http import MappedSession, upstream
 from test_transport_receive import StepClock
+
 from v2.connections import Connections
 from v2.errors import V2Error
 from v2.onboarding import Onboarding

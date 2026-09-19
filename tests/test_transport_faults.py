@@ -4,9 +4,17 @@ from types import SimpleNamespace
 
 import pytest
 from aiohttp import web
-
 from test_transport_http import MappedSession, spec, upstream
-from test_transport_receive import Callback, FakeGatewayHTTP, FakeWS, HELLO, READY, StepClock, event
+from test_transport_receive import (
+    HELLO,
+    READY,
+    Callback,
+    FakeGatewayHTTP,
+    FakeWS,
+    StepClock,
+    event,
+)
+
 from v2.errors import V2Error
 from v2.models import InstanceKey
 from v2.protocol import RawEnvelope
