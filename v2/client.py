@@ -24,10 +24,14 @@ class ClientState:
         self.identity = identity
         self.closed = False
         self.cache = IdentityCache()
+        self.guard = lambda: None
+        self.status = None
+        self.http = None
 
     def check(self, generation):
         if self.closed or generation != self.identity.generation:
             raise V2Error("stale_generation", "The source instance has stopped or changed.", status=409)
+        self.guard()
 
 
 class NativeView:
@@ -41,9 +45,14 @@ class NativeView:
     user_avatar_url = avatar_url
     group_avatar_url = avatar_url
 
-    async def request(self, *args, **kwargs):
+    async def request(self, spec):
         self._client.check()
-        raise not_ready()
+        http = self._client._state.http
+        if http is None:
+            raise not_ready()
+        if spec.method not in {"GET", "HEAD"}:
+            raise unsupported("Native writes require the P3/P4 sending and quota layer.")
+        return await http.request(spec)
 
 
 class V2Client:
@@ -70,14 +79,14 @@ class V2Client:
     def capabilities(self):
         return {
             "compatibility": "OneBot v11-style OpenID subset; string IDs, not QQ numbers",
-            "transport": "not_implemented", "network_api": "not_implemented",
+            "transport": "implemented" if self._state.http else "not_implemented", "network_api": "not_implemented",
             "actions": {
-                **{name: {"support": "unsupported", "reason": "transport_not_ready", "permission": "unknown"} for name in sorted(REMOTE_ACTIONS)},
+                **{name: {"support": "unsupported", "reason": "message_layer_not_implemented" if self._state.http else "transport_not_ready", "permission": "unknown"} for name in sorted(REMOTE_ACTIONS)},
                 **{name: {"support": "unsupported", "reason": "no_equivalent_or_not_implemented", "permission": "unknown"} for name in sorted(UNSUPPORTED_ACTIONS)},
                 **{name: {"support": "supported" if name in {"get_status", "get_version_info", "_qq_get_capabilities"} else "partial",
                           "permission": "unknown", "reason": "local_only"} for name in sorted(LOCAL_ACTIONS)},
             },
-            "identity_cache": "chat observations only; volatile P0 boundary, no live ingestion",
+            "identity_cache": "chat observations only; P3 ingestion not connected",
         }
 
     async def call_action(self, action, **params):
@@ -85,6 +94,8 @@ class V2Client:
         if not isinstance(action, str) or not action:
             raise V2Error("invalid_action", "Action must be a nonempty string.")
         if action in REMOTE_ACTIONS:
+            if self._state.http:
+                raise unsupported("Message conversion, sending and management actions are not implemented.")
             raise not_ready()
         if action in UNSUPPORTED_ACTIONS or action not in LOCAL_ACTIONS:
             raise unsupported("Unknown or unsupported OneBot action.")
@@ -95,6 +106,8 @@ class V2Client:
         if params.keys() - allowed:
             raise V2Error("invalid_params", "Unsupported action parameters.")
         if action == "get_status":
+            if self._state.status:
+                return self._state.status()
             return {"online": False, "good": False, "state": "transport_not_ready",
                     "platform_id": self.identity.platform_id, "generation": self.identity.generation}
         if action == "get_version_info":
@@ -102,7 +115,7 @@ class V2Client:
         if action == "_qq_get_capabilities":
             return self.capabilities()
         if action in ("can_send_image", "can_send_record"):
-            return {"yes": False, "reason": "transport_not_ready", "permission": "unknown"}
+            return {"yes": False, "reason": "message_layer_not_implemented" if self._state.http else "transport_not_ready", "permission": "unknown"}
         if params.get("no_cache", False) is not False:
             raise unsupported("A live OpenID profile lookup is not available.")
         user_id = text_id(params.get("user_id"))
@@ -132,4 +145,6 @@ class V2Client:
         self.check()
         if route.robot != self.identity.robot:
             raise V2Error("identity_mismatch", "Cannot send into another robot's session.", status=409)
+        if self._state.http:
+            raise unsupported("P3 message conversion and sending are not implemented.")
         raise not_ready()

@@ -5,7 +5,7 @@ import json
 import time
 from collections import OrderedDict
 from dataclasses import dataclass
-from urllib.parse import quote, urlencode
+from urllib.parse import quote, urlencode, urlsplit
 
 from .errors import V2Error
 from .models import RobotKey, text_id
@@ -30,7 +30,7 @@ class RawEnvelope:
                 raise ValueError
             if payload.get("t") is not None and not isinstance(payload["t"], str):
                 raise ValueError
-        except (ValueError, UnicodeError) as exc:
+        except (ValueError, UnicodeError, RecursionError) as exc:
             raise V2Error("invalid_event", "Invalid QQ event envelope.") from exc
         return cls(copy.deepcopy(payload), time.time() if now is None else now)
 
@@ -154,6 +154,29 @@ def avatar_url(robot: RobotKey, openid: str, size=100):
     return f"https://q.qlogo.cn/qqapp/{quote(robot.appid, safe='')}/{quote(openid, safe='')}/{size}"
 
 
+OPENAPI_BASE = "https://api.bot.qq.com"
+
+
+def openapi_base(environment):
+    if environment == "sandbox":
+        raise V2Error("unsupported_environment", "Current official sandbox routing is unconfirmed; no network request is allowed.", status=501)
+    if environment != "production":
+        raise V2Error("invalid_environment", "Unknown QQ environment.")
+    return OPENAPI_BASE
+
+
+def validate_openapi_url(url, environment):
+    base = urlsplit(openapi_base(environment))
+    try:
+        target = urlsplit(url)
+        if (target.scheme != "https" or target.hostname != base.hostname or target.port not in (None, 443)
+                or target.username is not None or target.password is not None or target.fragment
+                or "\\" in url or any(ord(c) <= 32 for c in url)):
+            raise ValueError
+    except (ValueError, TypeError, AttributeError):
+        raise V2Error("invalid_request", "Only the documented QQ HTTPS origin is allowed.") from None
+
+
 @dataclass(frozen=True)
 class RequestSpec:
     environment: str
@@ -165,27 +188,35 @@ class RequestSpec:
 
     @property
     def url(self):
-        base = {"production": "https://api.sgroup.qq.com", "sandbox": "https://sandbox.api.sgroup.qq.com"}
-        if self.environment not in base or not self.path.startswith("/") or self.path.startswith("//") or any(x in self.path for x in "?#"):
+        base = openapi_base(self.environment)
+        if not isinstance(self.path, str) or not self.path.startswith("/") or self.path.startswith("//") or any(x in self.path for x in "?#\\\r\n"):
             raise V2Error("invalid_request", "Only instance-local QQ API paths are allowed.")
         if self.json_body is not None and self.multipart is not None:
             raise V2Error("invalid_request", "JSON and multipart are mutually exclusive.")
         query = urlencode(self.params or {}, doseq=True)
-        return base[self.environment] + self.path + ("?" + query if query else "")
+        url = base + self.path + ("?" + query if query else "")
+        validate_openapi_url(url, self.environment)
+        return url
 
 
 def decode_response(status: int, body: bytes, headers: dict, *, phase="response_received"):
     headers = {k.lower(): v for k, v in headers.items()}
     try:
         data = json.loads(body) if body else None
-    except (ValueError, UnicodeError):
+    except (ValueError, UnicodeError, RecursionError):
         data = None
         if 200 <= status < 300:
-            raise V2Error("invalid_response", "QQ returned non-JSON content.", status=502, phase=phase)
+            raise V2Error("invalid_response", "QQ returned non-JSON content.", status=502, phase=phase,
+                          http_status=status, trace_id=headers.get("x-tps-trace-id"), retry_after=headers.get("retry-after"))
     code = data.get("code") if isinstance(data, dict) else None
+    if code is not None and type(code) is not int:
+        raise V2Error("invalid_response", "QQ business code is not an integer.", status=502, phase=phase,
+                      http_status=status, trace_id=headers.get("x-tps-trace-id"), retry_after=headers.get("retry-after"))
     if not 200 <= status < 300 or code not in (None, 0):
+        if code not in (None, 0):
+            phase = "rejected"
         # Do not echo untrusted bodies, URLs or tokens in error messages.
         raise V2Error("qq_api_error", "QQ API rejected the request.", status=status if status >= 400 else 502,
                       business_code=code, trace_id=headers.get("x-tps-trace-id"),
-                      retry_after=headers.get("retry-after"), phase=phase)
+                      retry_after=headers.get("retry-after"), phase=phase, http_status=status)
     return data

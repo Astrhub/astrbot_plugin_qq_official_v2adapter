@@ -146,7 +146,7 @@ function renderNodes() {
 async function load() {
   const id = $("instance").value;
   $("editor").hidden = true;
-  if (!id) return report("请先在 AstrBot 平台管理中添加 QQ 官方 V2，填写一次 AppID/secret；页面不保存凭据副本。");
+  if (!id) return report("请先在接入区或本体平台管理中添加 QQ 官方 V2，再重新读取目录实例。");
   current = await bridge.apiGet("config", {platform_id: id});
   catalog = await bridge.apiGet("commands", {platform_id: id, scene: scene()});
   loadedScene = scene();
@@ -157,11 +157,11 @@ async function load() {
   $("node-overrides").value = JSON.stringify(draft.node_overrides, null, 2);
   $("versions").replaceChildren(...current.versions.map(v => option(v, `版本 ${v}`)));
   $("versions-state").textContent = `草稿 ${current.revision} / 已应用 ${current.applied_revision} / 远端 ${current.remote_state}`;
-  $("connection").textContent = `${current.platform_id} · AppID ${current.identity.appid} · ${current.identity.environment} · 凭据${current.credentials_configured ? "已配置" : "未配置"} · ${current.runtime_state}。连接字段请在本体平台管理修改并重载。`;
+  $("connection").textContent = `${current.platform_id} · AppID ${current.identity.appid} · ${current.identity.environment} · 凭据${current.credentials_configured ? "已配置" : "未配置"} · ${current.runtime_state}。连接配置保存与重载分开。`;
   $("preview-output").textContent = "尚未预览；不发送真实消息。";
   $("help").replaceChildren(); $("command-copy").value = "";
   renderLayouts(); renderCatalog(); renderSelected(); renderNodes();
-  $("editor").hidden = false; report("已读取真实目录与本地配置。远端功能尚未实现。");
+  $("editor").hidden = false; report("已读取真实目录与本地配置。QQ 消息处理与菜单发布尚未实现。");
 }
 async function preview() {
   const result = await bridge.apiPost("preview", payload({patch: readDraft(), layer: $("layer").value, node: $("preview-node").value || null, page}));
@@ -214,12 +214,111 @@ for (const operation of ["save", "apply", "discard", "defaults", "restore"]) $(o
 $("copy").onclick = () => { $("command-copy").focus(); $("command-copy").select(); report("文本已选中，请复制；未执行指令。"); };
 $("disable-ui").onclick = () => run(async () => {
   if (!window.confirm("关闭后需在 AstrBot 插件设置重新开启，是否继续？")) return;
+  await cancelBinding();
   await bridge.apiPost("flags", {csrf: boot.csrf, revision: boot.flags_revision, patch: {webui_enabled: false}, confirm: true});
   $("editor").hidden = true; report("管理 API 已关闭，请从本体插件设置恢复。");
+  $("connect-form").hidden = true; $("connect-secret").value = "";
 });
+let connectionView, binding, bindingTimer;
+const bindingActive = () => binding && ["creating", "pending", "ready_to_commit"].includes(binding.state);
+function connectionFields() {
+  return {appid: $("connect-appid").value.trim(), environment: $("connect-environment").value,
+    transport: $("connect-transport").value, intents: Number($("connect-intents").value),
+    shard: JSON.parse($("connect-shard").value), enable: $("connect-enable").checked};
+}
+function connectionPayload(extra = {}) {
+  if (!connectionView || $("connect-id").value.trim() !== connectionView.platform_id) throw new Error("请先读取接入目标，再编辑或操作。");
+  return {platform_id: connectionView.platform_id, fingerprint: connectionView.fingerprint, csrf: boot.csrf, ...extra};
+}
+function showConnection(value) {
+  connectionView = value;
+  $("connect-id").value = value.platform_id;
+  for (const key of ["appid", "environment", "transport", "intents"]) $("connect-" + key).value = value.fields[key];
+  $("connect-shard").value = JSON.stringify(value.fields.shard); $("connect-enable").checked = value.fields.enable;
+  $("connect-secret").value = ""; $("connect-secret-action").value = "keep";
+  $("connect-confirm-secret").checked = false; $("connect-confirm-identity").checked = false;
+  $("connect-status").textContent = `${value.platform_id} · 凭据${value.credentials_configured ? "已配置" : "未配置"} · ${value.runtime.state} · online=${value.runtime.online} · ${value.reload}。${value.webhook_path || ""}`;
+  const failure = value.runtime.failure_details || value.runtime.last_transport_failure;
+  if (failure) $("connect-status").textContent += ` 最近故障：${failure.code} / 业务或关闭码 ${failure.business_code ?? "无"} / HTTP ${failure.http_status ?? "无"}`;
+  $("connect-form").hidden = false;
+}
+function connectionDirty() {
+  if (!connectionView) return false;
+  try { return !!Object.keys(changed(connectionView.fields, connectionFields())).length || !!$("connect-secret").value || $("connect-secret-action").value !== "keep"; }
+  catch { return true; }
+}
+function showBinding(value) {
+  binding = value;
+  $("bind-status").textContent = `${value.state} · AppID ${value.appid || "尚未取得"} · 剩余 ${value.expires_in}s / 租约 ${value.lease_seconds}s${value.error ? " · " + value.error : ""}。取到凭据不代表在线。`;
+  $("bind-commit").hidden = value.state !== "ready_to_commit";
+  $("bind-cancel").hidden = !bindingActive();
+  const matrix = value.qr_matrix, canvas = $("bind-qr"); canvas.hidden = !matrix;
+  if (matrix) {
+    if (!Array.isArray(matrix) || matrix.length > 185 || matrix.some(row => !Array.isArray(row) || row.length !== matrix.length)) throw new Error("二维码数据无效。");
+    const size = matrix.length; canvas.width = canvas.height = size * 4;
+    const context = canvas.getContext("2d"); context.fillStyle = "#fff"; context.fillRect(0, 0, canvas.width, canvas.height);
+    context.fillStyle = "#000"; matrix.forEach((row, y) => row.forEach((dark, x) => { if (dark) context.fillRect(x * 4, y * 4, 4, 4); }));
+  }
+}
+function scheduleBinding() {
+  window.clearTimeout(bindingTimer);
+  if (!bindingActive()) return;
+  bindingTimer = window.setTimeout(async () => {
+    if (loading) return scheduleBinding();
+    await run(async () => {
+      try { showBinding(await bridge.apiPost("onboarding/status", {csrf: boot.csrf, platform_id: binding.platform_id, ticket: binding.ticket, renew: true})); }
+      catch (error) { window.clearTimeout(bindingTimer); $("bind-status").textContent = `续期失败：${error.message}；服务端租约将自动到期。`; binding = null; $("bind-qr").hidden = true; throw error; }
+    });
+    scheduleBinding();
+  }, 5000);
+}
+async function cancelBinding() {
+  window.clearTimeout(bindingTimer);
+  if (bindingActive()) showBinding(await bridge.apiPost("onboarding/cancel", {csrf: boot.csrf, platform_id: binding.platform_id, ticket: binding.ticket}));
+}
+$("connect-read").onclick = () => run(async () => {
+  if ((connectionDirty() || bindingActive()) && !window.confirm("丢弃未保存的连接编辑并取消当前扫码？")) return;
+  await cancelBinding();
+  showConnection(await bridge.apiGet("connection", {platform_id: $("connect-id").value.trim()}));
+});
+$("connect-save").onclick = () => run(async () => {
+  if (bindingActive()) throw new Error("请先取消扫码，避免覆盖待提交的连接配置。");
+  if (!window.confirm("保存到本体平台配置，不自动连接；现有运行代次将失效。继续？")) return;
+  const value = connectionPayload({patch: changed(connectionView.fields, connectionFields()), secret_action: $("connect-secret-action").value,
+    confirm: true, confirm_secret: $("connect-confirm-secret").checked, confirm_identity: $("connect-confirm-identity").checked});
+  if (value.secret_action === "replace") value.secret = $("connect-secret").value;
+  else if ($("connect-secret").value) throw new Error("已输入凭据，请选择替换并确认，或清空输入以保留原凭据。");
+  try { showConnection(await bridge.apiPost("connection/save", value)); }
+  finally { $("connect-secret").value = ""; delete value.secret; }
+});
+$("connect-reload").onclick = () => run(async () => {
+  if (connectionDirty() || bindingActive()) throw new Error("请先保存连接编辑或取消扫码，再重载已保存配置。");
+  if (!window.confirm("停止旧代次并重载已保存配置？启用的实例会连接 QQ，但 P3 消息能力尚未实现。")) return;
+  showConnection(await bridge.apiPost("connection/reload", connectionPayload({confirm: true})));
+});
+$("bind-start").onclick = () => run(async () => {
+  if (connectionDirty()) throw new Error("请先保存或撤销连接编辑；扫码绑定当前已读取的目标与配置指纹。");
+  if (!window.confirm("向固定 QQ 官方域名创建短期扫码任务？不会自动保存凭据、连接或授予管理员权限。")) return;
+  showBinding(await bridge.apiPost("onboarding/start", connectionPayload({confirm: true}))); scheduleBinding();
+});
+$("bind-cancel").onclick = () => run(cancelBinding);
+$("bind-commit").onclick = () => run(async () => {
+  if (binding?.state !== "ready_to_commit") throw new Error("尚无可提交的已验证凭据。");
+  if (!window.confirm("将扫码凭据写入此目标，保存后保持禁用；连接需另行启用和重载。继续？")) return;
+  showBinding(await bridge.apiPost("onboarding/commit", connectionPayload({ticket: binding.ticket, commit_handle: binding.commit_handle,
+    confirm: true, confirm_secret: $("connect-confirm-secret").checked, confirm_identity: $("connect-confirm-identity").checked})));
+  scheduleBinding(); if (binding.result) showConnection(binding.result);
+});
+window.addEventListener("pagehide", () => {
+  window.clearTimeout(bindingTimer); $("connect-secret").value = "";
+  if (bindingActive()) bridge.apiPost("onboarding/cancel", {csrf: boot.csrf, platform_id: binding.platform_id, ticket: binding.ticket}).catch(() => {});
+});
+$("bind-commit").hidden = true; $("bind-cancel").hidden = true;
 await run(async () => {
   if (!bridge) throw new Error("请从 AstrBot Plugin Pages 打开此页；无离线假数据。");
   await bridge.ready(); boot = await bridge.apiGet("bootstrap");
   $("instance").replaceChildren(...boot.instances.map(item => option(item.id, `${item.id} · ${item.appid || "未配置"}`)));
+  $("connect-id").value = $("instance").value || "qq_v2";
+  showConnection(await bridge.apiGet("connection", {platform_id: $("connect-id").value}));
   await load();
 });

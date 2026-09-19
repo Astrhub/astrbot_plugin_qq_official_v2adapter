@@ -118,8 +118,10 @@ def test_identity_isolation_expiry_eviction():
 def test_http_contracts_no_global_base_and_structured_errors():
     prod = RequestSpec("production", "GET", "/v2/items", {"cursor": "a+b", "ids": ["a", "b"]})
     sandbox = RequestSpec("sandbox", "GET", "/v2/items")
-    assert prod.url.endswith("?cursor=a%2Bb&ids=a&ids=b")
-    assert prod.url.startswith("https://api.") and sandbox.url.startswith("https://sandbox.")
+    assert prod.url == "https://api.bot.qq.com/v2/items?cursor=a%2Bb&ids=a&ids=b"
+    with pytest.raises(V2Error) as exc:
+        _ = sandbox.url
+    assert exc.value.code == "unsupported_environment" and exc.value.phase == "not_sent"
     assert decode_response(204, b"", {}) is None
     assert decode_response(200, b"[1,2]", {}) == [1, 2]
     for code in (40093001, 40093002):

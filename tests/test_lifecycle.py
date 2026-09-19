@@ -100,7 +100,7 @@ async def test_constructor_failure_has_no_owned_instance(plugin_module, config):
 
 
 @pytest.mark.parametrize("count", [1, 2, 10, 50, 100])
-async def test_multi_instance_and_event_cleanup(plugin_module, config, count):
+async def test_multi_instance_and_event_cleanup(plugin_module, config, count, monkeypatch, qq_reject_server):
     from astrbot.core.message.message_event_result import MessageChain
     from astrbot.core.platform.astrbot_message import AstrBotMessage, MessageMember
     from astrbot.core.platform.message_session import MessageSession
@@ -109,15 +109,22 @@ async def test_multi_instance_and_event_cleanup(plugin_module, config, count):
     owner = plugin_module.QQOfficialV2(ctx, {})
     await owner.initialize()
     try:
+        from test_transport_http import MappedSession
+        http_module = importlib.import_module(plugin_module.__package__ + ".v2.transport.http")
+        monkeypatch.setattr(http_module.HTTPTransport, "_make_session", lambda self: MappedSession(qq_reject_server[0]))
         for index in range(count):
             cfg = {**config, "id": f"instance{index}", "appid": f"app{index}"}
+            ctx.get_config()["platform"].append(cfg)
             owner.adapter_class(cfg, {}, asyncio.Queue())
         assert len(owner.instances) == count
         instance = next(iter(owner.instances))
         with pytest.raises(RuntimeError) as exc:
             owner.adapter_class(dict(instance.config), {}, asyncio.Queue())
         assert exc.value.code == "duplicate_receiver"
-        await asyncio.gather(*(asyncio.create_task(i.run()) for i in owner.instances), return_exceptions=True)
+        failures = await asyncio.gather(*(asyncio.create_task(i.run()) for i in owner.instances), return_exceptions=True)
+        assert all(isinstance(e, RuntimeError) and e.code == "qq_api_error" for e in failures)
+        assert len(qq_reject_server[1]) == count
+        assert all(i.http.session.closed and i.ingress.worker.done() for i in owner.instances)
         module = importlib.import_module(plugin_module.__package__ + ".v2.models")
         route = module.SessionRoute(instance.identity.robot, "group", "group", "user")
         msg = AstrBotMessage()
@@ -137,8 +144,9 @@ async def test_multi_instance_and_event_cleanup(plugin_module, config, count):
         message_chain = MessageChain()
         for operation in (event.send(message_chain), event.send_streaming(None), event.send_typing(),
                           instance.send_by_session(event.session, message_chain)):
-            with pytest.raises(RuntimeError):
+            with pytest.raises(RuntimeError) as exc:
                 await operation
+            assert exc.value.code == "unsupported"
         other_session = MessageSession("another", msg.type, route.encode())
         with pytest.raises(RuntimeError) as exc:
             await instance.send_by_session(other_session, message_chain)
@@ -150,4 +158,64 @@ async def test_multi_instance_and_event_cleanup(plugin_module, config, count):
         assert exc.value.code == "stale_generation"
         await owner.terminate()
     finally:
+        await owner.terminate()
+
+
+async def test_plugin_shutdown_survives_management_cancellation(plugin_module):
+    ctx = context()
+    owner = plugin_module.QQOfficialV2(ctx, {})
+    await owner.initialize()
+    entered, release = asyncio.Event(), asyncio.Event()
+    async def slow_close():
+        entered.set()
+        await release.wait()
+    owner.onboarding = SimpleNamespace(close=slow_close)
+    caller = asyncio.create_task(owner.terminate())
+    try:
+        await entered.wait()
+        caller.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await caller
+        assert owner.stopping and not ctx.registered_web_apis
+        release.set()
+        await owner.terminate()
+        assert owner.store.closed and owner.inbox.closed and not owner.instances
+        assert PLATFORM_TYPE not in platform_cls_map and owner._termination.done()
+    finally:
+        release.set()
+        await owner.terminate()
+
+
+async def test_instance_shutdown_survives_reload_cancellation(plugin_module, config):
+    ctx = context()
+    ctx.get_config()["platform"].append(dict(config))
+    owner = plugin_module.QQOfficialV2(ctx, {})
+    await owner.initialize()
+    instance = owner.adapter_class(config, {}, asyncio.Queue())
+    entered, release = asyncio.Event(), asyncio.Event()
+    class Session:
+        closed = False
+        async def close(self):
+            entered.set()
+            await release.wait()
+            self.closed = True
+    session = Session()
+    instance.http._factory = lambda: session
+    instance.http.start()
+    caller = asyncio.create_task(instance.terminate())
+    try:
+        await entered.wait()
+        caller.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await caller
+        release.set()
+        await instance.terminate()
+        assert session.closed and instance.ingress.stopped and not owner.instances
+        assert instance._resource_closing.done() and instance._termination.done()
+        assert not owner.stopping and platform_cls_map[PLATFORM_TYPE] is owner.adapter_class
+        with pytest.raises(RuntimeError) as exc:
+            await instance.get_client().get_status()
+        assert exc.value.code == "stale_generation"
+    finally:
+        release.set()
         await owner.terminate()

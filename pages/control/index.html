@@ -7,8 +7,8 @@
   <link rel="stylesheet" href="./style.css">
 </head>
 <body>
-  <header><h1>QQ 官方 V2 <small>P0/P1 原型</small></h1>
-    <p>本地草稿与指令预览 · QQ 传输、扫码、发布和 OneBot 网络接口均未实现。</p>
+  <header><h1>QQ 官方 V2 <small>P2 连接层</small></h1>
+    <p>接入与真实连接状态 · 消息转换/发送、菜单发布和 OneBot 网络接口尚未实现。</p>
     <div class="toolbar">
       <label>实例 <select id="instance"></select></label>
       <label>场景 <select id="scene"><option value="group">群聊</option><option value="c2c">单聊</option><option value="channel">文字子频道</option><option value="dm">频道私信</option></select></label>
@@ -17,6 +17,29 @@
     <p id="status" role="status" aria-live="polite">等待 AstrBot Plugin Pages bridge…</p>
     <p id="connection"></p>
   </header>
+  <section aria-labelledby="connect-title">
+    <h2 id="connect-title">连接配置与扫码（独立接入目标）</h2>
+    <p>目标与下方目录预览可分别选择。凭据只写本体平台配置；保存不会启动连接，重载需再次确认。</p>
+    <div class="toolbar"><label>目标 ID <input id="connect-id" maxlength="128" autocomplete="off"></label><button id="connect-read">读取 / 新建目标</button></div>
+    <div id="connect-form" hidden>
+      <div class="toolbar">
+        <label>AppID <input id="connect-appid" maxlength="128" autocomplete="off"></label>
+        <label>环境 <select id="connect-environment"><option value="production">生产</option><option value="sandbox">沙箱（暂不支持联网）</option></select></label>
+        <label>传输 <select id="connect-transport"><option value="websocket">WebSocket</option><option value="webhook">统一 Webhook</option></select></label>
+        <label>intents <input id="connect-intents" type="number" min="0" max="4294967295"></label>
+        <label>分片 [index,count] <input id="connect-shard" maxlength="20"></label>
+        <label><input id="connect-enable" type="checkbox">启用平台（重载后连接）</label>
+      </div>
+      <label>凭据操作 <select id="connect-secret-action"><option value="keep">保留现有凭据</option><option value="replace">替换凭据</option><option value="clear">清空凭据（先禁用）</option></select></label>
+      <label>新 AppSecret <input id="connect-secret" type="password" maxlength="512" autocomplete="new-password" placeholder="未编辑时留空；服务端不返回原凭据"></label>
+      <label><input id="connect-confirm-secret" type="checkbox">明确同意替换 / 清空凭据（扫码提交也需要）</label>
+      <label><input id="connect-confirm-identity" type="checkbox">明确同意改绑 AppID / 环境</label>
+      <div class="toolbar"><button id="connect-save">保存连接配置（不重载）</button><button id="connect-reload">重载已保存连接</button><button id="bind-start">创建官方扫码任务</button><button id="bind-cancel">取消扫码</button><button id="bind-commit">确认提交扫码凭据（保持禁用）</button></div>
+      <p id="connect-status" role="status"></p><p id="bind-status" role="status">未创建扫码任务。</p>
+      <canvas id="bind-qr" aria-label="本地生成的官方绑定二维码" hidden></canvas>
+      <p>扫码任务最长180秒；页面每5秒续期30秒短租约，关闭页面会尝试取消。取到凭据不等于已连接，不会自动授予管理员权限。</p>
+    </div>
+  </section>
   <main id="editor" hidden>
     <section aria-labelledby="catalog-title"><h2 id="catalog-title">真实指令目录</h2>
       <label>搜索 <input id="search" type="search" placeholder="名称、插件、说明"></label>
