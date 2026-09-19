@@ -11,6 +11,7 @@ from ..errors import V2Error
 from ..protocol import RawEnvelope, RequestSpec, openapi_base
 
 FATAL_CLOSES = {4001, 4002, 4010, 4011, 4012, 4013, 4014, 4914, 4915}
+# QQ 4009 expires the connection, not the session; the official contract allows Resume.
 FRESH_CLOSES = {4006, 4007, *range(4900, 4914)}
 GATEWAY_HOSTS = {"api.bot.qq.com"}
 

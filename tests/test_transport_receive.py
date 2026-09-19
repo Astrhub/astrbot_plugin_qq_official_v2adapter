@@ -319,3 +319,28 @@ async def test_gateway_cancel_online_cleans_children(config, inbox):
     await gateway.close()
     await ingress.close()
     assert ws.closed and not gateway.tasks and ingress.worker.done() and not gateway.online
+
+
+@pytest.mark.parametrize("disconnect", [4009, {"op": 7}], ids=["close-4009", "opcode-7"])
+async def test_documented_resume_then_invalid_session_identifies(config, inbox, disconnect):
+    ingress = Ingress(inbox, "app")
+    ingress.start()
+    first = FakeWS([HELLO, READY, event(), disconnect])
+    resumed = FakeWS([HELLO, {"op": 0, "s": 3, "t": "RESUMED", "d": ""}, 4006])
+    fresh = FakeWS([HELLO, READY, 4014])
+    http = FakeGatewayHTTP(InstanceKey.from_config(config), [first, resumed, fresh])
+    gateway = Gateway(http, ingress, attempts=3, jitter=lambda: 0,
+                      sleep=lambda delay: asyncio.sleep(0) if delay < 2 else asyncio.Event().wait())
+    try:
+        with pytest.raises(V2Error) as exc:
+            await asyncio.wait_for(gateway.run(), 2)
+        assert exc.value.business_code == 4014 and http.connects == 3
+        assert [ws.sent[0]["op"] for ws in (first, resumed, fresh)] == [2, 6, 2]
+        assert resumed.sent[0]["d"]["session_id"] == READY["d"]["session_id"]
+        assert resumed.sent[0]["d"]["seq"] == event()["s"]
+        assert "session_id" not in fresh.sent[0]["d"] and "seq" not in fresh.sent[0]["d"]
+        assert not gateway.online and not gateway.tasks
+        assert all(ws.closed for ws in (first, resumed, fresh))
+    finally:
+        await gateway.close()
+        await ingress.close()

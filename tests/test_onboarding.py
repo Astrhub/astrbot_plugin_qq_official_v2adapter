@@ -328,3 +328,78 @@ async def test_same_robot_shards_cannot_mix_counts_or_webhook(owner, config):
                             secret_action="replace", secret=config["secret"], confirm=True, confirm_secret=True)
         assert exc.value.code == "duplicate_receiver"
     assert len(cfg["platform"]) == 2 and not owner.context.platform_manager.calls
+
+
+async def test_webhook_path_tracks_transport_without_rotating_uuid(owner, config):
+    conn, cfg = owner.connections, owner.context.get_config()
+    target = config["id"]
+    webhook = await conn.save(target, conn.view(target)["fingerprint"], {"transport": "webhook"}, confirm=True)
+    identifier = cfg["platform"][0]["webhook_uuid"]
+    assert webhook["webhook_path"] == f"/api/platform/webhook/{identifier}"
+    websocket = await conn.save(target, webhook["fingerprint"], {"transport": "websocket"}, confirm=True)
+    assert websocket["webhook_path"] is None
+    assert cfg["platform"][0]["webhook_uuid"] == identifier
+    assert cfg["platform"][0]["unified_webhook_mode"] is False
+    restored = await conn.save(target, websocket["fingerprint"], {"transport": "webhook"}, confirm=True)
+    assert restored["webhook_path"] == webhook["webhook_path"]
+    assert not owner.context.platform_manager.calls
+
+
+@pytest.mark.parametrize("terminal", ["cancelled", "failed", "expired"])
+async def test_finished_bindings_do_not_exhaust_retry_capacity(owner, config, monkeypatch, terminal):
+    onb = Onboarding(owner, clock=lambda: 0)
+    fingerprint = owner.connections.view(config["id"])["fingerprint"]
+
+    async def reject(binding, action, data):
+        code = "binding_expired" if terminal == "expired" else "binding_api_error"
+        raise V2Error(code, "fixture portal rejection")
+
+    monkeypatch.setattr(onb, "_post", reject)
+    try:
+        for _ in range(32):
+            result = await onb.start("alice", config["id"], fingerprint, confirm=True)
+            item = onb.bindings[result["ticket"]]
+            if terminal == "cancelled":
+                await onb.cancel("alice", config["id"], item.ticket)
+            else:
+                await asyncio.wait_for(item.task, 1)
+            assert item.state == terminal and item.task.done()
+            assert not item.key and not item.credential and item.qr is None
+            assert len(onb.bindings) <= 16
+        assert onb.session is None
+        assert owner.context.get_config().saves == 1
+    finally:
+        await onb.close()
+
+
+async def test_binding_eviction_preserves_receipts_and_unfinished_cleanup(owner, config):
+    from v2.onboarding import Binding
+    onb = Onboarding(owner, clock=lambda: 0)
+    release = asyncio.Event()
+    receipts = set()
+    for n in range(15):
+        ticket = f"receipt-{n}"
+        receipts.add(ticket)
+        onb.bindings[ticket] = Binding(ticket, "alice", f"saved-{n}", "fp", 180, 30,
+                                      state="configured", handle="fixture-handle", committed={"saved": True})
+    unfinished = Binding("closing", "alice", "previous-target", "fp", 180, 30, state="cancelled")
+    unfinished.task = asyncio.create_task(release.wait())
+    onb.bindings[unfinished.ticket] = unfinished
+    fingerprint = owner.connections.view(config["id"])["fingerprint"]
+    try:
+        with pytest.raises(V2Error) as exc:
+            await onb.start("alice", config["id"], fingerprint, confirm=True)
+        assert exc.value.code == "binding_capacity"
+        assert unfinished.ticket in onb.bindings and len(onb.bindings) == 16
+        release.set()
+        await asyncio.wait_for(unfinished.task, 1)
+        result = await onb.start("alice", config["id"], fingerprint, confirm=True)
+        assert unfinished.ticket not in onb.bindings and len(onb.bindings) == 16
+        assert receipts <= onb.bindings.keys()
+        assert result["ticket"] in onb.bindings and onb.session is None
+        for ticket in receipts:
+            receipt = onb.bindings[ticket]
+            assert receipt.handle == "fixture-handle" and receipt.committed == {"saved": True}
+    finally:
+        release.set()
+        await onb.close()

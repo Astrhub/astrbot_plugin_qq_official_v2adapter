@@ -110,7 +110,15 @@ class Onboarding:
                     if item.user == user and item.fingerprint == fingerprint:
                         return self.view(item)
                     raise V2Error("binding_in_progress", "Target already has an active binding lease.", status=409)
-            if len(self.bindings) >= 16 or sum(b.state in ACTIVE for b in self.bindings.values()) >= 4:
+            active = sum(b.state in ACTIVE for b in self.bindings.values())
+            if active < 4 and len(self.bindings) >= 16:
+                # Keep commit receipts and unfinished workers; reclaim completed failures first.
+                for ticket, item in list(self.bindings.items()):
+                    if item.state in {"cancelled", "failed", "expired"} and (not item.task or item.task.done()):
+                        item.erase()
+                        del self.bindings[ticket]
+                        break
+            if len(self.bindings) >= 16 or active >= 4:
                 raise V2Error("binding_capacity", "Binding capacity reached; cancel or wait for lease expiry.", status=429)
             now = self.clock()
             binding = Binding(secrets.token_urlsafe(24), user, platform_id, fingerprint, now + 180, now + 30,

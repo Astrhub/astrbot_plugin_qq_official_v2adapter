@@ -57,7 +57,7 @@ class Connections:
                 "fingerprint": self.fingerprint(platform_id, config),
                 "fields": {k: value[k] for k in EDITABLE if k in value},
                 "credentials_configured": bool(value.get("secret")),
-                "webhook_path": f"/api/platform/webhook/{value['webhook_uuid']}" if value.get("webhook_uuid") else None,
+                "webhook_path": f"/api/platform/webhook/{value['webhook_uuid']}" if value["transport"] == "webhook" and value.get("webhook_uuid") else None,
                 "runtime": runtime, "reload": reload_state,
                 "save_semantics": "host-object revision, no cross-process atomic CAS"}
 
