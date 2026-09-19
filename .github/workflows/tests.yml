@@ -28,9 +28,10 @@ jobs:
           version: '0.11.25'
       - name: Prepare sandbox runner
         run: sudo apt-get update && sudo apt-get install -y bubblewrap
-      - name: Install locked host test dependencies (no project build hooks)
+      - name: Install host test dependencies (no project build hooks)
         working-directory: .host-source
-        run: uv sync --frozen --group dev --no-install-project --python /usr/bin/python3.12
+        # Upstream removed uv.lock at this ref, so resolve fresh instead of --frozen
+        run: uv sync --group dev --no-install-project --python /usr/bin/python3.12
       - name: Network-isolated prototype and host assembly tests
         env:
           ASTRBOT_SOURCE: ${{ github.workspace }}/.host-source
