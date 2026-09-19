@@ -1,24 +1,89 @@
-from astrbot.api.event import filter, AstrMessageEvent, MessageEventResult
-from astrbot.api.star import Context, Star, register
-from astrbot.api import logger
+"""Register the independent QQ V2 prototype only while this plugin is active."""
 
-@register("helloworld", "YourName", "一个简单的 Hello World 插件", "1.0.0")
-class MyPlugin(Star):
-    def __init__(self, context: Context):
+import asyncio
+import copy
+
+from astrbot.api.event import AstrMessageEvent, filter
+from astrbot.api.star import Context, Star, StarTools
+from astrbot.core.platform.register import (
+    platform_cls_map,
+    register_platform_adapter,
+    unregister_platform_adapters_by_module,
+)
+
+from .v2 import PLATFORM_TYPE, PLUGIN_NAME
+from .v2.adapter import DEFAULT_PLATFORM_CONFIG, V2Adapter
+from .v2.settings import SettingsStore
+from .v2.web_api import ControlAPI
+
+
+class V2Only(filter.CustomFilter):
+    def filter(self, event, cfg):
+        return event.get_platform_name() == PLATFORM_TYPE
+
+
+class QQOfficialV2(Star):
+    def __init__(self, context: Context, config):
         super().__init__(context)
+        self.config = config
+        self.stopping = True
+        self.instances = set()
+        self.store = None
+        self.control = None
+        self.adapter_class = None
 
     async def initialize(self):
-        """可选择实现异步的插件初始化方法，当实例化该插件类之后会自动调用该方法。"""
+        self.stopping = False
+        try:
+            self.store = SettingsStore(StarTools.get_data_dir(PLUGIN_NAME) / "settings.sqlite3")
+            owner = self
 
-    # 注册指令的装饰器。指令名为 helloworld。注册成功后，发送 `/helloworld` 就会触发这个指令，并回复 `你好, {user_name}!`
-    @filter.command("helloworld")
-    async def helloworld(self, event: AstrMessageEvent):
-        """这是一个 hello world 指令""" # 这是 handler 的描述，将会被解析方便用户了解插件内容。建议填写。
-        user_name = event.get_sender_name()
-        message_str = event.message_str # 用户发的纯文本消息字符串
-        message_chain = event.get_messages() # 用户所发的消息的消息链 # from astrbot.api.message_components import *
-        logger.info(message_chain)
-        yield event.plain_result(f"Hello, {user_name}, 你发了 {message_str}!") # 发送一条纯文本消息
+            class OwnedAdapter(V2Adapter):
+                pass
+
+            OwnedAdapter.owner = owner
+            self.adapter_class = OwnedAdapter
+            register_platform_adapter(
+                PLATFORM_TYPE, "QQ 官方 V2 原型（传输未实现）",
+                default_config_tmpl=copy.deepcopy(DEFAULT_PLATFORM_CONFIG),
+                adapter_display_name="QQ 官方 V2 · 原型",
+                config_metadata={
+                    "secret": {"description": "QQ AppSecret", "type": "string", "secret": True,
+                               "hint": "仅保存在本体平台配置；原型不会请求 QQ。"},
+                    "appid": {"description": "QQ AppID", "type": "string"},
+                },
+                support_streaming_message=False,
+            )(OwnedAdapter)
+            self.control = ControlAPI(self)
+            self.control.register()
+        except BaseException:
+            await self.terminate()
+            raise
+
+    @filter.custom_filter(V2Only)
+    @filter.command("v2menu")
+    async def menu(self, event: AstrMessageEvent):
+        """QQ V2 菜单入口（原型仅提供管理页预览）。"""
+        yield event.plain_result("QQ V2 原型：请在插件 Pages → control 查看指令目录与本地预览；QQ 收发尚未实现。")
 
     async def terminate(self):
-        """可选择实现异步的插件销毁方法，当插件被卸载/停用时会调用。"""
+        self.stopping = True
+        if self.control:
+            self.control.close()
+        errors = []
+        for instance in list(self.instances):
+            try:
+                async with asyncio.timeout(5):
+                    manager = self.context.platform_manager
+                    if any(i is instance for i in manager.get_insts()):
+                        await manager.terminate_platform(instance.identity.platform_id)
+                    # Also close instances created before manager ownership was established.
+                    await instance.terminate()
+            except Exception as exc:
+                errors.append(exc)
+        if self.adapter_class is not None and platform_cls_map.get(PLATFORM_TYPE) is self.adapter_class:
+            unregister_platform_adapters_by_module(self.adapter_class.__module__)
+        if self.store:
+            self.store.close()
+        if errors:
+            raise ExceptionGroup("QQ V2 resource cleanup failed", errors)

@@ -1,0 +1,191 @@
+"""Pure P0 boundaries to be used by the P2 transport, never a live driver."""
+
+import copy
+import json
+import time
+from collections import OrderedDict
+from dataclasses import dataclass
+from urllib.parse import quote, urlencode
+
+from .errors import V2Error
+from .models import RobotKey, text_id
+
+
+@dataclass(frozen=True)
+class RawEnvelope:
+    payload: dict
+    received_at: float
+
+    @classmethod
+    def parse(cls, raw: bytes, *, now=None):
+        if len(raw) > 1024 * 1024:
+            raise V2Error("event_too_large", "Event exceeds 1 MiB.")
+        try:
+            payload = json.loads(raw)
+            if not isinstance(payload, dict) or type(payload.get("op")) is not int:
+                raise ValueError
+            if payload.get("id") is not None:
+                text_id(payload["id"])
+            if payload.get("s") is not None and type(payload["s"]) is not int:
+                raise ValueError
+            if payload.get("t") is not None and not isinstance(payload["t"], str):
+                raise ValueError
+        except (ValueError, UnicodeError) as exc:
+            raise V2Error("invalid_event", "Invalid QQ event envelope.") from exc
+        return cls(copy.deepcopy(payload), time.time() if now is None else now)
+
+    @property
+    def event_id(self):
+        return self.payload.get("id")
+
+    @property
+    def message_id(self):
+        data = self.payload.get("d")
+        return data.get("id") if isinstance(data, dict) and self.payload.get("t") in CHAT_EVENTS else None
+
+
+CHAT_EVENTS = {
+    "GROUP_AT_MESSAGE_CREATE": ("member_openid", "group", "member_openid"),
+    "GROUP_MESSAGE_CREATE": ("member_openid", "group", "member_openid"),
+    "C2C_MESSAGE_CREATE": ("user_openid", "c2c", "user_openid"),
+    "AT_MESSAGE_CREATE": ("channel_user_id", "channel", "id"),
+    "MESSAGE_CREATE": ("channel_user_id", "channel", "id"),
+    "DIRECT_MESSAGE_CREATE": ("channel_user_id", "dm", "id"),
+}
+
+
+class ExpiringSet:
+    def __init__(self, *, capacity=4096, ttl=300, clock=time.monotonic):
+        if capacity < 1 or ttl <= 0:
+            raise ValueError("capacity and ttl must be positive")
+        self.capacity, self.ttl, self.clock = capacity, ttl, clock
+        self.items = OrderedDict()
+
+    def contains(self, key):
+        expiry = self.items.get(key)
+        if expiry is None:
+            return False
+        if expiry <= self.clock():
+            del self.items[key]
+            return False
+        return True
+
+    def add(self, key):
+        self.items[key] = self.clock() + self.ttl
+        self.items.move_to_end(key)
+        while len(self.items) > self.capacity:
+            self.items.popitem(last=False)
+
+
+class AcceptedEvents:
+    """Advance only after a bounded downstream queue has accepted the envelope."""
+
+    def __init__(self, **kwargs):
+        self.seen = ExpiringSet(**kwargs)
+        self.last_sequence = None
+
+    def accept(self, envelope, put_nowait):
+        identity = envelope.event_id
+        if identity and self.seen.contains(identity):
+            return False
+        put_nowait(envelope)
+        if identity:
+            self.seen.add(identity)
+        seq = envelope.payload.get("s")
+        if type(seq) is int and (self.last_sequence is None or seq > self.last_sequence):
+            self.last_sequence = seq
+        return True
+
+
+class IdentityCache:
+    """Only structured chat authors enter this bounded prototype cache."""
+
+    def __init__(self, *, capacity=4096, ttl=86400, clock=time.time):
+        if capacity < 1 or ttl <= 0:
+            raise ValueError("capacity and ttl must be positive")
+        self.capacity, self.ttl, self.clock = capacity, ttl, clock
+        self.items = OrderedDict()
+
+    def observe_chat(self, robot: RobotKey, envelope: RawEnvelope):
+        event_type = envelope.payload.get("t")
+        if envelope.payload.get("op") != 0 or event_type not in CHAT_EVENTS:
+            raise V2Error("not_chat_source", "Only original chat envelopes may create identities.")
+        data = envelope.payload.get("d")
+        if not isinstance(data, dict) or envelope.payload.get("derived_from_interaction"):
+            raise V2Error("not_chat_source", "Projected events are not chat records.")
+        message_id = text_id(envelope.message_id)
+        kind, scene, author_field = CHAT_EVENTS[event_type]
+        author = data.get("author", {})
+        if not isinstance(author, dict):
+            raise V2Error("not_chat_source", "A structured author is required.")
+        openid = text_id(author.get(author_field))
+        target_field = {"group": "group_openid", "channel": "channel_id", "dm": "guild_id"}.get(scene)
+        target = text_id(data.get(target_field)) if target_field else openid
+        scope = f"{scene}:{target}"
+        key = (robot, kind, scope, openid)
+        now = self.clock()
+        old = self.items.get(key)
+        first = old["first_seen"] if old and old["last_seen"] + self.ttl > now else now
+        record = {"user_id": openid, "id_kind": kind, "scope": scope,
+                  "source_message_id": message_id, "first_seen": first, "last_seen": now}
+        if isinstance(author.get("username"), str) and len(author["username"]) <= 256:
+            record["nickname"] = author["username"]
+        self.items[key] = record
+        self.items.move_to_end(key)
+        while len(self.items) > self.capacity:
+            self.items.popitem(last=False)
+        return copy.deepcopy(record)
+
+    def lookup(self, robot, kind, scope, openid):
+        key = (robot, kind, scope, openid)
+        record = self.items.get(key)
+        if record and record["last_seen"] + self.ttl <= self.clock():
+            del self.items[key]
+            record = None
+        if record is None:
+            raise V2Error("identity_not_observed", "No available chat observation in this robot and scope.", status=404)
+        return copy.deepcopy(record)
+
+
+def avatar_url(robot: RobotKey, openid: str, size=100):
+    text_id(openid)
+    if type(size) is not int or size not in (0, 100, 140, 640):
+        raise V2Error("invalid_size", "Avatar size must be 0, 100, 140 or 640.")
+    return f"https://q.qlogo.cn/qqapp/{quote(robot.appid, safe='')}/{quote(openid, safe='')}/{size}"
+
+
+@dataclass(frozen=True)
+class RequestSpec:
+    environment: str
+    method: str
+    path: str
+    params: dict | None = None
+    json_body: object = None
+    multipart: object = None
+
+    @property
+    def url(self):
+        base = {"production": "https://api.sgroup.qq.com", "sandbox": "https://sandbox.api.sgroup.qq.com"}
+        if self.environment not in base or not self.path.startswith("/") or self.path.startswith("//") or any(x in self.path for x in "?#"):
+            raise V2Error("invalid_request", "Only instance-local QQ API paths are allowed.")
+        if self.json_body is not None and self.multipart is not None:
+            raise V2Error("invalid_request", "JSON and multipart are mutually exclusive.")
+        query = urlencode(self.params or {}, doseq=True)
+        return base[self.environment] + self.path + ("?" + query if query else "")
+
+
+def decode_response(status: int, body: bytes, headers: dict, *, phase="response_received"):
+    headers = {k.lower(): v for k, v in headers.items()}
+    try:
+        data = json.loads(body) if body else None
+    except (ValueError, UnicodeError):
+        data = None
+        if 200 <= status < 300:
+            raise V2Error("invalid_response", "QQ returned non-JSON content.", status=502, phase=phase)
+    code = data.get("code") if isinstance(data, dict) else None
+    if not 200 <= status < 300 or code not in (None, 0):
+        # Do not echo untrusted bodies, URLs or tokens in error messages.
+        raise V2Error("qq_api_error", "QQ API rejected the request.", status=status if status >= 400 else 502,
+                      business_code=code, trace_id=headers.get("x-tps-trace-id"),
+                      retry_after=headers.get("retry-after"), phase=phase)
+    return data

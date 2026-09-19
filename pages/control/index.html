@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>QQ 官方 V2 控制台</title>
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <header><h1>QQ 官方 V2 <small>P0/P1 原型</small></h1>
+    <p>本地草稿与指令预览 · QQ 传输、扫码、发布和 OneBot 网络接口均未实现。</p>
+    <div class="toolbar">
+      <label>实例 <select id="instance"></select></label>
+      <label>场景 <select id="scene"><option value="group">群聊</option><option value="c2c">单聊</option><option value="channel">文字子频道</option><option value="dm">频道私信</option></select></label>
+      <button id="refresh">重新读取</button><button id="disable-ui">关闭管理 API</button>
+    </div>
+    <p id="status" role="status" aria-live="polite">等待 AstrBot Plugin Pages bridge…</p>
+    <p id="connection"></p>
+  </header>
+  <main id="editor" hidden>
+    <section aria-labelledby="catalog-title"><h2 id="catalog-title">真实指令目录</h2>
+      <label>搜索 <input id="search" type="search" placeholder="名称、插件、说明"></label>
+      <p>展示选择不改变权限；默认配置不代表所有会话。未知过滤器由正常管线裁决。</p>
+      <div id="catalog"></div>
+    </section>
+    <section aria-labelledby="settings-title"><h2 id="settings-title">本地配置</h2>
+      <label>菜单标题 <input id="title" maxlength="80"></label>
+      <label>面板选择 <select id="mode"><option value="default">全部适用系统指令 + 菜单</option><option value="custom">自选系统项与插件快捷项</option></select></label>
+      <p>菜单入口保留一槽；别名不重复占槽。过长命令与容量超限会提示，不截断命令。</p>
+      <ol id="selected"></ol>
+      <fieldset><legend>分级布局（机器人默认）</legend><div id="layouts"></div></fieldset>
+      <details><summary>场景 / 节点覆盖（非敏感 JSON）</summary>
+        <p>节点键为目录中的 handler ID；可覆盖 page_size、columns、style、show_description。空对象表示继承。</p>
+        <label>scene_overrides <textarea id="scene-overrides" rows="5"></textarea></label>
+        <label>node_overrides <textarea id="node-overrides" rows="5"></textarea></label>
+      </details>
+      <div class="toolbar"><button id="preview">校验 / 预览</button><button id="save">保存草稿</button><button id="apply">应用已保存草稿（仅本地）</button><button id="discard">撤销草稿</button><button id="defaults">恢复默认草稿</button></div>
+      <label>保留版本 <select id="versions"></select></label><button id="restore">恢复为草稿</button>
+      <p id="versions-state"></p>
+    </section>
+    <section aria-labelledby="preview-title"><h2 id="preview-title">预览与参数帮助</h2>
+      <label>预览层级 <select id="layer"><option value="home">首页</option><option value="plugin">插件页</option><option value="group">指令组页</option><option value="detail">指令详情</option></select></label>
+      <label>预览节点 <select id="preview-node"></select></label>
+      <article id="card-preview" aria-label="本地卡片预览"></article>
+      <details><summary>校验与布局数据</summary><pre id="preview-output">选择校验 / 预览，不会发送消息。</pre></details>
+      <div class="toolbar"><button id="prev">上一页</button><button id="next">下一页</button></div>
+      <h3>用法详情</h3><div id="help"></div>
+      <label>命令文本（仅复制，不执行）<textarea id="command-copy" rows="3" readonly></textarea></label>
+      <button id="copy">选择命令文本</button>
+    </section>
+  </main>
+  <script type="module" src="./app.js"></script>
+</body>
+</html>
