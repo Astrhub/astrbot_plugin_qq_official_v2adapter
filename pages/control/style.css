@@ -1,0 +1,19 @@
+:root { color-scheme: light dark; font-family: system-ui, sans-serif; line-height: 1.5; }
+body { margin: 0; padding: 1.5rem; background: Canvas; color: CanvasText; }
+h1 { font-size: 1.6rem; } h2 { font-size: 1.15rem; } small { font-size: .8rem; }
+header, section { border: 1px solid GrayText; border-radius: .5rem; padding: 1rem; }
+header { margin-bottom: 1rem; } main { display: grid; grid-template-columns: 1fr 1.1fr 1fr; gap: 1rem; }
+[hidden] { display: none !important; } section { min-width: 0; }
+p { font-size: .9rem; } label { display: block; margin: .5rem 0; }
+input, select, textarea, button { font: inherit; max-width: 100%; box-sizing: border-box; }
+input:not([type=checkbox]), select, textarea { padding: .35rem; } textarea { width: 100%; }
+button { padding: .4rem .65rem; cursor: pointer; } button:disabled { cursor: default; }
+:focus-visible { outline: 3px solid Highlight; outline-offset: 2px; }
+.toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; margin: .75rem 0; }
+pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: .85rem; }
+#catalog { max-height: 70vh; overflow: auto; } details { margin: .6rem 0; }
+.command { padding: .35rem; border-bottom: 1px solid GrayText; }
+.command button { text-align: left; border: 0; background: transparent; color: LinkText; }
+fieldset { margin: 1rem 0; } .layer { display: grid; grid-template-columns: 1fr 1fr; gap: .4rem; }
+#status { font-weight: 600; } #help { overflow-wrap: anywhere; }
+@media (max-width: 1000px) { main { grid-template-columns: 1fr; } #catalog { max-height: 45vh; } body { padding: .75rem; } }

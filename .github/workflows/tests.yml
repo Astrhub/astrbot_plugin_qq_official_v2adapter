@@ -1,0 +1,43 @@
+name: Prototype tests
+on:
+  pull_request:
+  push:
+    branches: [feat/qq-official-v2-foundation]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  isolated-tests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: AstrBotDevs/AstrBot
+          ref: 8b82d03d949c82a5eae26c00be849e042a48bfd4
+          path: .host-source
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: '0.11.25'
+      - name: Prepare sandbox runner
+        run: |
+          sudo apt-get update && sudo apt-get install -y bubblewrap
+          # ubuntu-24.04 restricts unprivileged userns; allow bwrap to set up netns loopback
+          printf 'abi <abi/4.0>,\ninclude <tunables/global>\nprofile bwrap /usr/bin/bwrap flags=(unconfined) {\n  userns,\n  include if exists <local/bwrap>\n}\n' | sudo tee /etc/apparmor.d/bwrap
+          sudo apparmor_parser -r /etc/apparmor.d/bwrap
+      - name: Install host test dependencies (no project build hooks)
+        working-directory: .host-source
+        # Upstream removed uv.lock at this ref, so resolve fresh instead of --frozen
+        run: uv sync --group dev --no-install-project --python /usr/bin/python3.12
+      - name: Network-isolated prototype and host assembly tests
+        env:
+          ASTRBOT_SOURCE: ${{ github.workspace }}/.host-source
+          PYTHON_ENV: ${{ github.workspace }}/.host-source/.venv
+        run: bash scripts/test-isolated.sh -q
