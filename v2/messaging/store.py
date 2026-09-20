@@ -78,6 +78,10 @@ class MessageStore:
                     source TEXT, digest TEXT NOT NULL, seq INTEGER, state TEXT NOT NULL, started REAL NOT NULL,
                     updated REAL NOT NULL, result TEXT, error TEXT, PRIMARY KEY(robot,op_id));
                 CREATE INDEX IF NOT EXISTS operation_route ON operations(robot,scene,target,started);
+                CREATE INDEX IF NOT EXISTS operation_history_age ON operations(updated)
+                    WHERE state IN ('sent','rejected','not_sent');
+                CREATE INDEX IF NOT EXISTS operation_expiry ON operations(updated)
+                    WHERE state IN ('sent','rejected','not_sent','history_evicted');
                 CREATE INDEX IF NOT EXISTS operation_pending_source ON operations(robot,scene,target,source)
                     WHERE state IN ('reserved','in_flight','unknown');
                 CREATE TABLE IF NOT EXISTS charges (robot TEXT, op_id TEXT, bucket TEXT, subject TEXT,
@@ -154,6 +158,16 @@ class MessageStore:
         if deleted < excess:
             failure("message_state_full", "History capacity is held by active deliveries or protected reply sources.", 503)
 
+    def _trim_operation_history(self, *, reserve=0):
+        limit = max(0, self.operation_capacity - reserve)
+        excess = self.db.execute("SELECT max(0,count(*)-?) FROM operations WHERE state IN ('sent','rejected','not_sent')", (limit,)).fetchone()[0]
+        if not excess:
+            return
+        rows = self.db.execute("SELECT rowid,state FROM operations WHERE state IN ('sent','rejected','not_sent') ORDER BY updated,rowid LIMIT ?", (excess,)).fetchall()
+        # Success loses result details, not its replay fence or quota charges.
+        self.db.executemany("UPDATE operations SET state='history_evicted',result=NULL,error=NULL WHERE rowid=?", ((r[0],) for r in rows if r[1] == "sent"))
+        self.db.executemany("DELETE FROM operations WHERE rowid=?", ((r[0],) for r in rows if r[1] != "sent"))
+
     def _prune(self, now):
         self.db.execute("DELETE FROM attempts WHERE stamp<=?", (now - 60,))
         self.db.execute("DELETE FROM identities WHERE last<=?", (now - 86400,))
@@ -163,7 +177,8 @@ class MessageStore:
         self.db.execute("DELETE FROM sources WHERE expires<=? AND NOT EXISTS (SELECT 1 FROM operations o WHERE o.robot=sources.robot AND o.scene=sources.scene AND o.target=sources.target AND o.source=sources.message_id AND o.state IN ('reserved','in_flight','unknown'))", (now,))
         guard, args = self._delivery_guard()
         self.db.execute(f"DELETE FROM deliveries AS d WHERE accepted<? AND {guard}", (now - 86400, *args))
-        self.db.execute("DELETE FROM operations WHERE updated<? AND state IN ('sent','rejected','not_sent') AND NOT EXISTS (SELECT 1 FROM charges c WHERE c.robot=operations.robot AND c.op_id=operations.op_id)", (now - 86400,))
+        self.db.execute("DELETE FROM operations WHERE updated<? AND state IN ('sent','rejected','not_sent','history_evicted') AND NOT EXISTS (SELECT 1 FROM charges c WHERE c.robot=operations.robot AND c.op_id=operations.op_id)", (now - 86400,))
+        self._trim_operation_history()
 
     def prune(self):
         with self.transaction():
@@ -274,6 +289,8 @@ class MessageStore:
         row = self.db.execute("SELECT * FROM operations WHERE robot=? AND op_id=?", (robot_key(robot), text_id(op_id))).fetchone()
         if row is None:
             failure("operation_not_found", "No retained operation belongs to this robot.", 404)
+        if row["state"] == "history_evicted":
+            failure("operation_history_evicted", "Confirmed-send result details were evicted; this operation cannot be replayed.", 410)
         result = dict(row)
         result["result"] = json.loads(result["result"]) if result["result"] else None
         result["error"] = json.loads(result["error"]) if result["error"] else None
@@ -314,8 +331,12 @@ class MessageStore:
                     return self.operation(route.robot, op_id)
                 if old["state"] == "unknown":
                     failure("send_result_unknown", "The previous write is unknown and cannot be replayed.")
+                if old["state"] == "history_evicted":
+                    failure("operation_history_evicted", "Confirmed-send result details were evicted; this operation cannot be replayed.")
                 failure("operation_already_attempted", "This operation was already attempted; inspect its recorded result.")
-            self._capacity("operations", self.operation_capacity)
+            pending = self.db.execute("SELECT count(*) FROM operations WHERE state IN ('reserved','in_flight','unknown')").fetchone()[0]
+            if pending >= self.operation_capacity:
+                failure("message_state_full", "Unfinished operation capacity reached; unknown and in-flight writes were retained.", 503)
             seq = None
             if source:
                 row = self._source(route, source, now)
@@ -369,6 +390,8 @@ class MessageStore:
         row = self.db.execute("SELECT * FROM operations WHERE robot=? AND op_id=?", (robot, op_id)).fetchone()
         if row is None or row["state"] not in {"reserved", "in_flight"}:
             return
+        if state in {"sent", "not_sent", "rejected"}:
+            self._trim_operation_history(reserve=1)
         if state in {"not_sent", "rejected"}:
             if row["source"]:
                 self.db.execute("UPDATE sources SET used=max(0,used-1) WHERE robot=? AND scene=? AND target=? AND message_id=?", (robot, row["scene"], row["target"], row["source"]))

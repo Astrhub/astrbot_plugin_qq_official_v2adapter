@@ -74,7 +74,7 @@
         <label>范围 <select id="panel-target-type"><option value="all">该场景全部目标</option><option value="specific">指定已观察目标（群 / C2C）</option></select></label>
         <label>目标 OpenID（逗号分隔，最多20个）<input id="panel-targets" maxlength="10400"></label>
         <label><input id="panel-menu-only" type="checkbox">明确将其他快捷项收进动态帮助，仅发布菜单入口</label>
-        <p>已创建面板不在此迁移范围；停用不删除远端。全局 C2C 菜单、键盘回调未开放。</p>
+        <p>已创建面板不在此迁移范围；停用不删除远端。此处为 /v2/panels 指令面板，支持 C2C 全体/指定目标；独立 /v2/menu 自定义菜单及键盘回调未开放。</p>
         <div class="toolbar"><button id="panel-plan">预览已应用发布范围</button><button id="panel-enable">确认开启此范围托管并发布</button><button id="panel-sync">核对 / 同步已有托管</button><button id="panel-disable">停止此范围托管</button></div>
         <pre id="panel-output">尚未确认远端托管。</pre>
       </fieldset>
