@@ -142,11 +142,15 @@ async def test_multi_instance_and_event_cleanup(plugin_module, config, count, mo
         assert event.get_platform_name() == PLATFORM_TYPE
         assert event.raw_data["id"] == "outer-event"
         message_chain = MessageChain()
-        for operation in (event.send(message_chain), event.send_streaming(None), event.send_typing(),
-                          instance.send_by_session(event.session, message_chain)):
+        assert instance.sender.closed and instance.consumer.task.done()
+        for operation, expected in ((lambda: event.send(message_chain), "service_stopped"),
+                                    (lambda: event.send_streaming(None), "unsupported"),
+                                    (lambda: event.send_typing(), "unsupported"),
+                                    (lambda: instance.send_by_session(event.session, message_chain), "service_stopped")):
             with pytest.raises(RuntimeError) as exc:
-                await operation
-            assert exc.value.code == "unsupported"
+                await operation()
+            assert exc.value.code == expected
+        assert not event._has_send_oper and len(qq_reject_server[1]) == count
         other_session = MessageSession("another", msg.type, route.encode())
         with pytest.raises(RuntimeError) as exc:
             await instance.send_by_session(other_session, message_chain)

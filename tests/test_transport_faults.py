@@ -258,7 +258,8 @@ def test_inbox_migration_and_byte_limit(tmp_path):
     db.close()
     inbox = RawInbox(path, max_bytes=len(payload.encode()) + 1)
     try:
-        assert inbox.db.execute("PRAGMA user_version").fetchone()[0] == 2
+        assert inbox.db.execute("PRAGMA user_version").fetchone()[0] == 3
+        assert inbox.diagnostics("app") == {"pending": 1}
         assert path.stat().st_mode & 0o777 == 0o600
         assert inbox.pending("app")[0]["payload"] == event()
         with pytest.raises(V2Error) as exc:

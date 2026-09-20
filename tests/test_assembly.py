@@ -10,6 +10,7 @@ from pathlib import Path
 import httpx
 import jwt
 import pytest
+from inbox_assembly import exercise_inbox_recovery
 
 from v2 import PLATFORM_TYPE, PLUGIN_NAME
 
@@ -53,7 +54,7 @@ async def test_real_astrbot_assembly(config, monkeypatch, qq_reject_server, qq_p
         initialized = True
         assert not lifecycle.plugin_manager.failed_plugin_dict, lifecycle.plugin_manager.failed_plugin_dict.keys()
         metadata = lifecycle.star_context.get_registered_star(PLUGIN_NAME)
-        assert metadata is not None and metadata.version == "v0.2.0"
+        assert metadata is not None and metadata.version == "v0.3.0"
         owner = metadata.star_cls
         assert owner and not owner.stopping
         assert PLATFORM_TYPE in platform_cls_map
@@ -97,6 +98,7 @@ async def test_real_astrbot_assembly(config, monkeypatch, qq_reject_server, qq_p
             assert boot["instances"][0]["id"] == config["id"]
             view = (await client.get(prefix + "/config", params={"platform_id": config["id"]}, headers=headers)).json()
             assert "secret" not in json.dumps(view)
+            await exercise_inbox_recovery(owner, instance, client, prefix, headers, boot, key["api_key"], auth)
             catalog = (await client.get(prefix + "/commands", params={"platform_id": config["id"], "scene": "group"}, headers=headers)).json()
             assert any(n["system"] for n in catalog["nodes"])
             assert len([n for n in catalog["nodes"] if n["menu_entry"]]) == 1
@@ -112,8 +114,18 @@ async def test_real_astrbot_assembly(config, monkeypatch, qq_reject_server, qq_p
             expired = owner.control.csrf(username, int(time.time()) - 1)
             assert (await client.post(prefix + "/preview", json={**payload, "csrf": expired}, headers=headers)).status_code == 403
             response = await client.post(prefix + "/flags", json={"csrf": boot["csrf"], "revision": boot["flags_revision"],
+                                        "patch": {"onebot_network_enabled": True}, "confirm": True}, headers=headers)
+            assert response.status_code == 501 and not owner.config.get("onebot_network_enabled")
+            response = await client.post(prefix + "/flags", json={"csrf": boot["csrf"], "revision": boot["flags_revision"],
                                         "patch": {"remote_menu_sync": True}, "confirm": True}, headers=headers)
-            assert response.status_code == 501 and not owner.config.get("remote_menu_sync")
+            assert response.status_code == 200 and owner.config["remote_menu_sync"]
+            boot["flags_revision"] = response.json()["revision"]
+            plan_request = {**payload, "menu_only": True}
+            assert (await client.post(prefix + "/panels/plan", json=plan_request, headers={"Authorization": "ApiKey " + key["api_key"]})).status_code == 403
+            assert (await client.post(prefix + "/panels/plan", json={**plan_request, "csrf": "bad"}, headers=headers)).status_code == 403
+            plan_response = await client.post(prefix + "/panels/plan", json=plan_request, headers=headers)
+            assert plan_response.status_code == 200 and not plan_response.json()["issues"]
+            assert len(qq_reject_server[1]) == 1  # Opt-in switch and local preview do not publish.
             saved = await client.post(prefix + "/config/mutate", json={**payload, "operation": "save"}, headers=headers)
             assert saved.status_code == 200, saved.text
             assert saved.json()["revision"] == 1
@@ -230,6 +242,8 @@ async def test_real_astrbot_assembly(config, monkeypatch, qq_reject_server, qq_p
             assert (await client.post(callback, content=fixture_request.raw, headers=dict(fixture_request.headers))).status_code == 200
             assert new_owner.inbox.count(hook_instance.identity.settings_key) == 1
             assert (await client.post(callback, content=fixture_request.raw, headers={**dict(fixture_request.headers), "X-Bot-Appid": "wrong"})).status_code == 401
+            from messaging_assembly import messaging_roundtrip
+            await messaging_roundtrip(lifecycle, client, headers, new_owner, hook_instance, callback, monkeypatch)
             connection = (await client.get(prefix + "/connection", params={"platform_id": target}, headers=headers)).json()
             response = await client.post(prefix + "/connection/save", json={**save_body, "fingerprint": connection["fingerprint"], "patch": {"enable": False}}, headers=headers)
             assert response.status_code == 200, response.text

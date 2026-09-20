@@ -100,7 +100,12 @@ class HTTPTransport:
                             safe = self._safe_headers(dict(response.headers))
                             raise V2Error("response_too_large", "QQ response exceeds 1 MiB.", status=502, phase="result_unknown",
                                           http_status=response.status, trace_id=safe.get("x-tps-trace-id"), retry_after=safe.get("retry-after"))
-                    self.check()
+                    try:
+                        self.check()
+                    except V2Error as exc:
+                        safe = self._safe_headers(dict(response.headers))
+                        raise V2Error(exc.code, str(exc), status=exc.status, phase="result_unknown",
+                                      http_status=response.status, trace_id=safe.get("x-tps-trace-id")) from None
                     return response.status, bytes(body), dict(response.headers)
         except asyncio.CancelledError:
             raise
@@ -163,7 +168,7 @@ class HTTPTransport:
         self.check()
         return token
 
-    async def request(self, spec: RequestSpec):
+    async def request(self, spec: RequestSpec, *, before_send=None):
         self.check()
         if spec.environment != self.identity.robot.environment or spec.method not in {"GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"}:
             raise V2Error("invalid_request", "Request must use this instance's environment and a supported method.")
@@ -193,6 +198,8 @@ class HTTPTransport:
                 while True:
                     self.check()
                     try:
+                        if before_send is not None:
+                            before_send()
                         request_phase = "result_unknown"
                         status, body, headers = await self._exchange(spec.method, url, headers={
                             "Authorization": f"QQBot {token}", "X-Union-Appid": self.identity.robot.appid},
@@ -202,7 +209,12 @@ class HTTPTransport:
                         if status == 401 and not refreshed:
                             request_phase = "rejected"
                             refreshed = True
-                            token = await self.token(rejected=token)
+                            try:
+                                token = await self.token(rejected=token)
+                            except V2Error as exc:
+                                raise V2Error("token_refresh_failed", "QQ rejected the message authentication and token refresh failed.",
+                                    status=exc.status, business_code=exc.business_code, trace_id=exc.trace_id,
+                                    retry_after=exc.retry_after, phase="rejected", http_status=exc.http_status) from None
                             continue
                         phase = "result_unknown" if status >= 500 or status == 408 or 200 <= status < 300 else "rejected"
                         data = decode_response(status, body, safe, phase=phase)

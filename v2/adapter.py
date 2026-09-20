@@ -10,6 +10,9 @@ from astrbot.core.platform.platform_metadata import PlatformMetadata
 from . import PLATFORM_TYPE
 from .client import V2Client
 from .errors import V2Error
+from .messaging.delivery import ChatConsumer
+from .messaging.outbound import SendingCore
+from .messaging.store import IdentityView
 from .models import InstanceKey, SessionRoute
 from .transport.http import HTTPTransport
 from .transport.inbox import Ingress
@@ -67,6 +70,10 @@ class V2Adapter(Platform):
         self.local_settings = self.owner.store.get(identity.settings_key)["applied"]
         self.config_fingerprint = self.owner.control.fingerprint(platform_config)
         self.client = V2Client(identity)
+        self.bot_id = ""
+        self.session_isolated = platform_settings.get("unique_session", False) is True
+        self.client._state.cache = IdentityView(self.owner.messages, identity.robot)
+        self.consumer = ChatConsumer(self)
         self.client._state.guard = self.check_generation
         self.client._state.status = self.runtime_status
         self.http = HTTPTransport(identity, platform_config["secret"], guard=self.check_generation)
@@ -74,6 +81,10 @@ class V2Adapter(Platform):
         self.ingress = Ingress(self.owner.inbox, identity.settings_key, guard=self.check_generation)
         self.gateway = Gateway(self.http, self.ingress, guard=self.check_generation) if identity.transport == "websocket" else None
         self.webhook = Webhook(identity.robot.appid, platform_config["secret"], self.ingress, guard=self.check_generation) if identity.transport == "webhook" else None
+        self.sender = SendingCore(identity, self.http, self.owner.messages, guard=self.check_generation,
+            is_online=lambda: self.runtime_status()["online"] or self.state == "webhook_ready",
+            ws_online=lambda: bool(self.gateway and self.gateway.online))
+        self.client._state.sender = self.sender
         self.owner.instances.add(self)
 
     def check_generation(self):
@@ -93,11 +104,14 @@ class V2Adapter(Platform):
             state = "reload_required"
         if self._terminated:
             state = "stopped"
-        return {"online": online, "good": online, "state": state, "failure": self.failure,
+        return {"online": online, "good": online and self.consumer.state != "backpressured" and not self.consumer.last_error and not self.sender.storage_failed, "state": state, "failure": self.failure,
+                "send_storage_failed": self.sender.storage_failed,
                 "failure_details": self.failure_details,
                 "last_transport_failure": self.gateway.last_failure if self.gateway else None,
                 "platform_id": self.identity.platform_id, "generation": self.identity.generation,
-                "transport": self.identity.transport, "message_delivery": "not_implemented",
+                "transport": self.identity.transport, "message_delivery": self.consumer.state,
+                "delivery_error": self.consumer.last_error,
+                "raw_disposition": self.owner.inbox.diagnostics(self.identity.settings_key) if not self.owner.inbox.closed else {},
                 "pending_raw": self.owner.inbox.count(self.identity.settings_key) if not self.owner.inbox.closed else None,
                 "challenge_answered": bool(self.webhook and self.webhook.challenge_answered),
                 "last_transport_error": self.gateway.last_error if self.gateway else None,
@@ -125,6 +139,8 @@ class V2Adapter(Platform):
             self.check_generation()
             self.state = "connecting"
             self.ingress.start()
+            self.consumer.start()
+            tasks.add(self.consumer.task)
             self.started.set()
             watch = asyncio.create_task(self._watch_config(), name="qq-v2-generation-watch")
             tasks.add(watch)
@@ -171,7 +187,7 @@ class V2Adapter(Platform):
                 except Exception:
                     return type(service).__name__
                 return None
-            failures = await asyncio.gather(*(close_one(s) for s in (self.webhook, self.gateway, self.ingress, self.http) if s))
+            failures = await asyncio.gather(*(close_one(s) for s in (self.consumer, self.sender, self.webhook, self.gateway, self.ingress, self.http) if s))
             if any(failures):
                 self.failure = "cleanup_failed"
                 raise V2Error("cleanup_failed", "Some QQ resources exceeded or failed cleanup: " + ", ".join(f for f in failures if f), status=503)
@@ -193,8 +209,8 @@ class V2Adapter(Platform):
         self.owner.instances.discard(self)
 
     def meta(self):
-        return PlatformMetadata(PLATFORM_TYPE, "QQ 官方 V2（连接层，消息转换未实现）", self.identity.platform_id,
-                                support_streaming_message=False, support_proactive_message=False)
+        return PlatformMetadata(PLATFORM_TYPE, "QQ 官方 V2（基础消息与持久状态）", self.identity.platform_id,
+                                support_streaming_message=False, support_proactive_message=True)
 
     def get_client(self):
         return self.client
@@ -208,6 +224,7 @@ class V2Adapter(Platform):
         if session.platform_id != self.identity.platform_id:
             raise V2Error("identity_mismatch", "Session belongs to another platform.", status=409)
         await self.client.send(SessionRoute.decode(session.session_id), message_chain)
+        await super().send_by_session(session, message_chain)
 
     def unified_webhook(self):
         return self.identity.transport == "webhook" and super().unified_webhook()

@@ -1,6 +1,9 @@
 const $ = (id) => document.getElementById(id);
 const bridge = window.AstrBotPluginPage;
 let boot, current, catalog, draft, loadedScene, page = 0, pageCount = 1, loading = false;
+let panelPlan, panelPlanScope;
+let retainedView;
+const retainedSelection = new Set();
 const clone = (value) => JSON.parse(JSON.stringify(value));
 const scene = () => $("scene").value;
 const selection = () => draft.panels[scene()];
@@ -146,22 +149,27 @@ function renderNodes() {
 async function load() {
   const id = $("instance").value;
   $("editor").hidden = true;
+  retainedView = null; retainedSelection.clear(); $("retained-list").replaceChildren();
+  $("retained-status").textContent = "请读取当前实例的保留事件；不会自动清理。";
   if (!id) return report("请先在接入区或本体平台管理中添加 QQ 官方 V2，再重新读取目录实例。");
   current = await bridge.apiGet("config", {platform_id: id});
   catalog = await bridge.apiGet("commands", {platform_id: id, scene: scene()});
   loadedScene = scene();
   $("card-preview").replaceChildren();
   draft = clone(current.draft);
+  panelPlan = null; panelPlanScope = null; $("confirm-bindings").checked = false;
+  $("remote-gate-state").textContent = boot.flags?.remote_menu_sync ? "总闸开启" : "总闸关闭";
+  $("panel-output").textContent = JSON.stringify(current.remote_state?.[scene()] || {state: "not_managed"}, null, 2);
   $("title").value = draft.title; $("mode").value = selection().mode;
   $("scene-overrides").value = JSON.stringify(draft.scene_overrides, null, 2);
   $("node-overrides").value = JSON.stringify(draft.node_overrides, null, 2);
   $("versions").replaceChildren(...current.versions.map(v => option(v, `版本 ${v}`)));
-  $("versions-state").textContent = `草稿 ${current.revision} / 已应用 ${current.applied_revision} / 远端 ${current.remote_state}`;
+  $("versions-state").textContent = `草稿 ${current.revision} / 已应用 ${current.applied_revision} / 远端 ${current.remote_state?.[scene()]?.state || "not_managed"}`;
   $("connection").textContent = `${current.platform_id} · AppID ${current.identity.appid} · ${current.identity.environment} · 凭据${current.credentials_configured ? "已配置" : "未配置"} · ${current.runtime_state}。连接配置保存与重载分开。`;
   $("preview-output").textContent = "尚未预览；不发送真实消息。";
   $("help").replaceChildren(); $("command-copy").value = "";
   renderLayouts(); renderCatalog(); renderSelected(); renderNodes();
-  $("editor").hidden = false; report("已读取真实目录与本地配置。QQ 消息处理与菜单发布尚未实现。");
+  $("editor").hidden = false; report("已读取真实目录与本地配置。草稿、本地应用、QQ面板托管分别确认；聊天可使用 v2menu 帮助。");
 }
 async function preview() {
   const result = await bridge.apiPost("preview", payload({patch: readDraft(), layer: $("layer").value, node: $("preview-node").value || null, page}));
@@ -182,7 +190,7 @@ async function mutate(operation) {
   const patch = readDraft();
   if (operation === "apply" && Object.keys(patch).length) throw new Error("请先保存未保存的编辑，再应用草稿。");
   if (operation !== "save" && !window.confirm("确认此本地配置操作？不会写入 QQ。")) return;
-  await bridge.apiPost("config/mutate", payload({operation, patch, confirm: operation === "apply", restore_revision: Number($("versions").value)}));
+  await bridge.apiPost("config/mutate", payload({operation, patch, confirm: operation === "apply", confirm_bindings: $("confirm-bindings").checked, restore_revision: Number($("versions").value)}));
   await load();
 }
 function allowReload() {
@@ -219,6 +227,71 @@ $("disable-ui").onclick = () => run(async () => {
   $("editor").hidden = true; report("管理 API 已关闭，请从本体插件设置恢复。");
   $("connect-form").hidden = true; $("connect-secret").value = "";
 });
+function panelOptions() {
+  return {target_type: $("panel-target-type").value || "all", targets: $("panel-targets").value.split(",").map(v => v.trim()).filter(Boolean), menu_only: $("panel-menu-only").checked};
+}
+function panelScope() { return JSON.stringify([current.platform_id, current.fingerprint, current.applied_revision, scene(), panelOptions()]); }
+$("remote-gate").onclick = () => run(async () => {
+  const enabled = !boot.flags?.remote_menu_sync;
+  if (!window.confirm(enabled ? "开启远端总闸？将恢复已确认范围的自动同步；不会自动接管人工面板。" : "关闭远端同步总闸？远端面板保留，在途结果仍需核对。")) return;
+  const value = await bridge.apiPost("flags", {csrf: boot.csrf, revision: boot.flags_revision, patch: {remote_menu_sync: enabled}, confirm: true});
+  boot.flags = value.flags; boot.flags_revision = value.revision;
+  $("remote-gate-state").textContent = enabled ? "总闸开启" : "总闸关闭";
+});
+$("panel-plan").onclick = () => run(async () => {
+  if (Object.keys(readDraft()).length || current.revision !== current.applied_revision) throw new Error("先保存并应用本地配置；发布预览只使用已应用版本。");
+  panelPlan = await bridge.apiPost("panels/plan", payload(panelOptions())); panelPlanScope = panelScope();
+  $("panel-output").textContent = JSON.stringify(panelPlan, null, 2);
+});
+$("panel-enable").onclick = () => run(async () => {
+  if (!boot.flags?.remote_menu_sync) throw new Error("请先明确开启远端同步总闸。");
+  if (!panelPlan || panelPlanScope !== panelScope()) throw new Error("实例、范围或选项变化，请重新预览发布范围。");
+  if (panelPlan.issues.length) throw new Error("发布预览仍有阻碍，请调整配置或明确只发布菜单入口。");
+  if (!window.confirm(`确认托管 AppID ${current.identity.appid} / ${scene()} / ${panelOptions().target_type}，并向 QQ 发布？后续稳定目录变化将自动同步。`)) return;
+  const result = await bridge.apiPost("panels/enable", payload({...panelOptions(), plan_fingerprint: panelPlan.fingerprint, confirm: true}));
+  $("panel-output").textContent = JSON.stringify(result, null, 2); panelPlan = null;
+});
+for (const operation of ["sync", "disable"]) $("panel-" + operation).onclick = () => run(async () => {
+  if (!window.confirm(operation === "sync" ? "核对并同步此已托管范围？未知创建不会盲目重建。" : "停止此范围托管？不会删除远端面板。")) return;
+  const value = await bridge.apiPost("panels/" + operation, payload({confirm: true}));
+  $("panel-output").textContent = JSON.stringify(value, null, 2); panelPlan = null;
+});
+
+async function readRetained() {
+  const platformId = $("instance").value;
+  if (!platformId) throw new Error("请先选择顶部目录实例。");
+  retainedView = null; retainedSelection.clear(); $("retained-list").replaceChildren();
+  const value = await bridge.apiGet("inbox/retained", {platform_id: platformId});
+  retainedView = value;
+  for (const entry of value.entries) {
+    const label = element("label"), check = element("input"); check.type = "checkbox";
+    check.onchange = () => { if (check.checked) retainedSelection.add(entry.receipt); else retainedSelection.delete(entry.receipt); };
+    label.append(check, element("span", ` #${entry.receipt} · ${entry.event_type} · ${entry.state} · ${entry.reason} · ${entry.size}字节 · ${new Date(entry.received_at * 1000).toISOString()}`));
+    $("retained-list").append(label);
+  }
+  $("retained-status").textContent = `${value.platform_id} · ${JSON.stringify(value.counts)} · 确认60秒内有效，默认不选择任何记录。`;
+}
+$("retained-read").onclick = () => run(readRetained);
+$("retained-select-all").onclick = () => run(async () => {
+  if (!retainedView || retainedView.platform_id !== $("instance").value) throw new Error("请先读取当前实例的保留事件。");
+  retainedView.entries.forEach(entry => retainedSelection.add(entry.receipt));
+  for (const row of $("retained-list").children) row.children[0].checked = true;
+  report(`已勾选本次读取的 ${retainedSelection.size} 条保留项，尚未丢弃。`);
+});
+$("retained-discard").onclick = () => run(async () => {
+  if (!retainedView || retainedView.platform_id !== $("instance").value) throw new Error("请重新读取当前实例的保留事件。");
+  const entries = retainedView.entries.filter(entry => retainedSelection.has(entry.receipt)).map(({receipt, version, confirmation}) => ({receipt, version, confirmation}));
+  if (!entries.length) throw new Error("请明确勾选要丢弃的保留事件。");
+  if (!window.confirm(`永久丢弃实例 ${retainedView.platform_id} 的 ${entries.length} 条保留事件？这些事件不会再处理，操作不可恢复；待交付聊天和发送账本不会删除。`)) return;
+  let result;
+  try {
+    result = await bridge.apiPost("inbox/discard", {platform_id: retainedView.platform_id, fingerprint: retainedView.fingerprint, expires: retainedView.expires, csrf: boot.csrf, entries, confirm: true});
+  } finally {
+    retainedView = null; retainedSelection.clear(); $("retained-list").replaceChildren();
+  }
+  await readRetained(); report(`已明确丢弃 ${result.discarded} 条保留事件，其他记录未删除。`);
+});
+
 let connectionView, binding, bindingTimer;
 const bindingActive = () => binding && ["creating", "pending", "ready_to_commit"].includes(binding.state);
 function connectionFields() {
@@ -240,6 +313,8 @@ function showConnection(value) {
   $("connect-status").textContent = `${value.platform_id} · 凭据${value.credentials_configured ? "已配置" : "未配置"} · ${value.runtime.state} · online=${value.runtime.online} · ${value.reload}。${value.webhook_path || ""}`;
   const failure = value.runtime.failure_details || value.runtime.last_transport_failure;
   if (failure) $("connect-status").textContent += ` 最近故障：${failure.code} / 业务或关闭码 ${failure.business_code ?? "无"} / HTTP ${failure.http_status ?? "无"}`;
+  if (value.runtime.message_delivery) $("connect-status").textContent += ` 消息交付：${value.runtime.message_delivery} / ${value.runtime.delivery_error || "无故障"} / 待处理 ${value.runtime.pending_raw ?? "未知"}；保留 ${JSON.stringify(value.runtime.raw_disposition || {})}`;
+  if (value.runtime.send_storage_failed) $("connect-status").textContent += " 发送账本写入失败；停止插件并修复存储后重载插件，勿直接重试。";
   $("connect-form").hidden = false;
 }
 function connectionDirty() {
@@ -293,7 +368,7 @@ $("connect-save").onclick = () => run(async () => {
 });
 $("connect-reload").onclick = () => run(async () => {
   if (connectionDirty() || bindingActive()) throw new Error("请先保存连接编辑或取消扫码，再重载已保存配置。");
-  if (!window.confirm("停止旧代次并重载已保存配置？启用的实例会连接 QQ，但 P3 消息能力尚未实现。")) return;
+  if (!window.confirm("停止旧代次并重载已保存配置？启用的实例会连接 QQ 并处理消息，是否继续？")) return;
   showConnection(await bridge.apiPost("connection/reload", connectionPayload({confirm: true})));
 });
 $("bind-start").onclick = () => run(async () => {

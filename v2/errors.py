@@ -4,7 +4,7 @@
 class V2Error(RuntimeError):
     def __init__(self, code: str, message: str, *, retcode: int = 1400,
                  status: int = 400, business_code=None, trace_id=None,
-                 retry_after=None, phase="not_sent", http_status=None):
+                 retry_after=None, phase="not_sent", http_status=None, operation_id=None):
         super().__init__(message)
         self.code = code
         self.retcode = retcode
@@ -14,12 +14,13 @@ class V2Error(RuntimeError):
         self.trace_id = trace_id
         self.retry_after = retry_after
         self.phase = phase
+        self.operation_id = operation_id
 
     def as_dict(self):
         return {"status": "failed", "retcode": self.retcode, "data": None,
                 "code": self.code, "message": str(self),
                 "business_code": self.business_code, "trace_id": self.trace_id, "http_status": self.http_status,
-                "retry_after": self.retry_after, "phase": self.phase}
+                "retry_after": self.retry_after, "phase": self.phase, "operation_id": self.operation_id}
 
 
 def unsupported(message="This capability is not implemented in the prototype."):

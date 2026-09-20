@@ -7,8 +7,8 @@
   <link rel="stylesheet" href="./style.css">
 </head>
 <body>
-  <header><h1>QQ 官方 V2 <small>P2 连接层</small></h1>
-    <p>接入与真实连接状态 · 消息转换/发送、菜单发布和 OneBot 网络接口尚未实现。</p>
+  <header><h1>QQ 官方 V2 <small>P3 基础收发</small></h1>
+    <p>真实消息、指令帮助与显式托管面板 · 媒体、互动回调及 OneBot 网络接口未开放。</p>
     <div class="toolbar">
       <label>实例 <select id="instance"></select></label>
       <label>场景 <select id="scene"><option value="group">群聊</option><option value="c2c">单聊</option><option value="channel">文字子频道</option><option value="dm">频道私信</option></select></label>
@@ -40,6 +40,13 @@
       <p>扫码任务最长180秒；页面每5秒续期30秒短租约，关闭页面会尝试取消。取到凭据不等于已连接，不会自动授予管理员权限。</p>
     </div>
   </section>
+  <section aria-labelledby="retained-title">
+    <h2 id="retained-title">保留事件恢复（目录实例）</h2>
+    <p>读取顶部所选实例的保留元数据，不显示正文或凭据。仅可明确丢弃选中的无效 / 未支持事件；不可恢复，不会处理待交付聊天或清空发送账本。改绑实例前先检查保留项。</p>
+    <div class="toolbar"><button id="retained-read">读取保留事件</button><button id="retained-select-all">勾选本次读取的全部保留项</button><button id="retained-discard">明确丢弃所选保留事件</button></div>
+    <p id="retained-status" role="status">尚未读取；不会自动清理。</p>
+    <div id="retained-list"></div>
+  </section>
   <main id="editor" hidden>
     <section aria-labelledby="catalog-title"><h2 id="catalog-title">真实指令目录</h2>
       <label>搜索 <input id="search" type="search" placeholder="名称、插件、说明"></label>
@@ -57,9 +64,20 @@
         <label>scene_overrides <textarea id="scene-overrides" rows="5"></textarea></label>
         <label>node_overrides <textarea id="node-overrides" rows="5"></textarea></label>
       </details>
+      <label><input id="confirm-bindings" type="checkbox">确认当前所选 handler 来源及参数（首次固定或来源变化时需要）</label>
       <div class="toolbar"><button id="preview">校验 / 预览</button><button id="save">保存草稿</button><button id="apply">应用已保存草稿（仅本地）</button><button id="discard">撤销草稿</button><button id="defaults">恢复默认草稿</button></div>
       <label>保留版本 <select id="versions"></select></label><button id="restore">恢复为草稿</button>
       <p id="versions-state"></p>
+      <fieldset><legend>QQ 指令面板托管（独立远端操作）</legend>
+        <p>仅使用已应用配置；预览零网络写入。开启后按稳定目录差异同步，只管理自有 panel_id；未知结果先核对，不重建。</p>
+        <button id="remote-gate">切换远端同步总闸</button><span id="remote-gate-state"></span>
+        <label>范围 <select id="panel-target-type"><option value="all">该场景全部目标</option><option value="specific">指定已观察目标（群 / C2C）</option></select></label>
+        <label>目标 OpenID（逗号分隔，最多20个）<input id="panel-targets" maxlength="10400"></label>
+        <label><input id="panel-menu-only" type="checkbox">明确将其他快捷项收进动态帮助，仅发布菜单入口</label>
+        <p>已创建面板不在此迁移范围；停用不删除远端。此处为 /v2/panels 指令面板，支持 C2C 全体/指定目标；独立 /v2/menu 自定义菜单及键盘回调未开放。</p>
+        <div class="toolbar"><button id="panel-plan">预览已应用发布范围</button><button id="panel-enable">确认开启此范围托管并发布</button><button id="panel-sync">核对 / 同步已有托管</button><button id="panel-disable">停止此范围托管</button></div>
+        <pre id="panel-output">尚未确认远端托管。</pre>
+      </fieldset>
     </section>
     <section aria-labelledby="preview-title"><h2 id="preview-title">预览与参数帮助</h2>
       <label>预览层级 <select id="layer"><option value="home">首页</option><option value="plugin">插件页</option><option value="group">指令组页</option><option value="detail">指令详情</option></select></label>

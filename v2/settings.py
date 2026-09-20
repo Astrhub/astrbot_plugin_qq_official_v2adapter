@@ -111,7 +111,7 @@ class SettingsStore:
         self.db = sqlite3.connect(path, timeout=2)
         try:
             version = self.db.execute("PRAGMA user_version").fetchone()[0]
-            if version not in (0, 1):
+            if version not in (0, 1, 2):
                 raise V2Error("settings_corrupt", "Unsupported database version; data was not reset.", status=503)
             page_size = self.db.execute("PRAGMA page_size").fetchone()[0]
             self.db.execute(f"PRAGMA max_page_count={128 * 1024 * 1024 // page_size}")
@@ -123,7 +123,8 @@ class SettingsStore:
                 CREATE TABLE IF NOT EXISTS versions (
                     key TEXT NOT NULL, revision INTEGER NOT NULL, body TEXT NOT NULL,
                     PRIMARY KEY(key, revision));
-                PRAGMA user_version=1;
+                CREATE TABLE IF NOT EXISTS command_bindings (settings_key TEXT, handler TEXT, binding TEXT, PRIMARY KEY(settings_key,handler));
+                PRAGMA user_version=2;
             """)
         except BaseException:
             self.db.close()
@@ -148,7 +149,7 @@ class SettingsStore:
         except (ValueError, TypeError, V2Error) as exc:
             raise V2Error("settings_corrupt", "Invalid stored settings; not reset automatically.", status=503) from exc
 
-    def mutate(self, key, revision, editor, *, operation, patch=None, restore_revision=None):
+    def mutate(self, key, revision, editor, *, operation, patch=None, restore_revision=None, bindings=None):
         if type(revision) is not int or revision < 0:
             invalid("revision must be a nonnegative integer.")
         self.db.execute("BEGIN IMMEDIATE")
@@ -186,6 +187,11 @@ class SettingsStore:
                             (key, new_rev, json.dumps(body), applied_rev, json.dumps(applied), editor))
             self.db.execute("INSERT OR REPLACE INTO versions VALUES (?, ?, ?)", (key, new_rev, json.dumps(body)))
             self.db.execute("DELETE FROM versions WHERE key=? AND revision NOT IN (SELECT revision FROM versions WHERE key=? ORDER BY revision DESC LIMIT 20)", (key, key))
+            if operation == "apply" and bindings is not None:
+                self.db.execute("DELETE FROM command_bindings WHERE settings_key=?", (key,))
+                if self.db.execute("SELECT count(*) FROM command_bindings").fetchone()[0] + len(bindings) > 32768:
+                    raise V2Error("settings_capacity", "Selected handler bindings exceed capacity.", status=409)
+                self.db.executemany("INSERT INTO command_bindings VALUES(?,?,?)", [(key, handler, fingerprint) for handler, fingerprint in bindings.items()])
             self.db.commit()
         except BaseException:
             self.db.rollback()
