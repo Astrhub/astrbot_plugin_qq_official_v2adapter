@@ -112,14 +112,16 @@ class PanelService:
 
     def _catalog(self, instance, scene, target_type, targets):
         context = self.owner.context
-        manager = getattr(context, "astrbot_config_mgr", None)
-        configs = list(getattr(manager, "confs", {}).values()) or [context.get_config()]
-        if target_type == "specific" and scene == "c2c":
+        if target_type == "specific" and scene in {"group", "c2c"}:
             configs = []
+            message_type = MessageType.GROUP_MESSAGE if scene == "group" else MessageType.FRIEND_MESSAGE
             for target in targets:
                 route = SessionRoute(instance.identity.robot, scene, target)
-                umo = str(MessageSession(instance.identity.platform_id, MessageType.FRIEND_MESSAGE, route.encode()))
+                umo = str(MessageSession(instance.identity.platform_id, message_type, route.encode()))
                 configs.append(context.get_config(umo))
+        else:
+            manager = getattr(context, "astrbot_config_mgr", None)
+            configs = list(getattr(manager, "confs", {}).values()) or [context.get_config()]
         catalogs = [collect_catalog(config, scene) for config in configs]
         first = copy.deepcopy(catalogs[0])
         first["scope_variants"] = catalogs

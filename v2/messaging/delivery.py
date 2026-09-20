@@ -115,6 +115,7 @@ class ChatConsumer:
             try:
                 await asyncio.wait_for(self.inbox.changed.wait(), timeout=0.25)
             except TimeoutError:
+                # Retry released host slots even without a new inbox notification.
                 pass
 
     async def close(self):

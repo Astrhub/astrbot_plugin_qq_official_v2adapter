@@ -74,6 +74,7 @@ def safe_avatar(value):
         if parsed.scheme in {"http", "https"} and parsed.hostname and parsed.username is None and parsed.password is None and not any(ord(c) <= 32 for c in value):
             return value
     except ValueError:
+        # Omit malformed optional avatars without discarding the real chat identity.
         pass
     return None
 
