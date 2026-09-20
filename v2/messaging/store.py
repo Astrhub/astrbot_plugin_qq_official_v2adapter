@@ -66,6 +66,7 @@ class MessageStore:
                     started REAL NOT NULL, received REAL NOT NULL, expires REAL NOT NULL, ref_idx TEXT,
                     seq INTEGER NOT NULL DEFAULT 0, used INTEGER NOT NULL DEFAULT 0, blocked TEXT,
                     PRIMARY KEY(robot,scene,target,message_id));
+                CREATE INDEX IF NOT EXISTS source_expiry ON sources(expires);
                 CREATE TABLE IF NOT EXISTS deliveries (robot TEXT, scene TEXT, target TEXT, message_id TEXT,
                     ref_idx TEXT, accepted REAL NOT NULL, PRIMARY KEY(robot,scene,target,message_id,ref_idx));
                 CREATE TABLE IF NOT EXISTS refs (robot TEXT, scene TEXT, target TEXT, message_id TEXT,
@@ -74,6 +75,8 @@ class MessageStore:
                     source TEXT, digest TEXT NOT NULL, seq INTEGER, state TEXT NOT NULL, started REAL NOT NULL,
                     updated REAL NOT NULL, result TEXT, error TEXT, PRIMARY KEY(robot,op_id));
                 CREATE INDEX IF NOT EXISTS operation_route ON operations(robot,scene,target,started);
+                CREATE INDEX IF NOT EXISTS operation_pending_source ON operations(robot,scene,target,source)
+                    WHERE state IN ('reserved','in_flight','unknown');
                 CREATE TABLE IF NOT EXISTS charges (robot TEXT, op_id TEXT, bucket TEXT, subject TEXT,
                     until REAL NOT NULL, PRIMARY KEY(robot,op_id,bucket,subject));
                 CREATE INDEX IF NOT EXISTS charge_budget ON charges(robot,bucket,subject,until);
@@ -126,7 +129,7 @@ class MessageStore:
         self.db.execute("DELETE FROM targets WHERE last<=?", (now - 86400,))
         self.db.execute("DELETE FROM charges WHERE until<=?", (now,))
         self.db.execute("DELETE FROM refs WHERE expires<=?", (now,))
-        self.db.execute("DELETE FROM sources WHERE expires<? AND NOT EXISTS (SELECT 1 FROM operations o WHERE o.robot=sources.robot AND o.scene=sources.scene AND o.target=sources.target AND o.source=sources.message_id AND o.state IN ('reserved','in_flight','unknown'))", (now - 86400,))
+        self.db.execute("DELETE FROM sources WHERE expires<=? AND NOT EXISTS (SELECT 1 FROM operations o WHERE o.robot=sources.robot AND o.scene=sources.scene AND o.target=sources.target AND o.source=sources.message_id AND o.state IN ('reserved','in_flight','unknown'))", (now,))
         self.db.execute("DELETE FROM deliveries WHERE accepted<?", (now - 86400,))
         self.db.execute("DELETE FROM operations WHERE updated<? AND state IN ('sent','rejected','not_sent') AND NOT EXISTS (SELECT 1 FROM charges c WHERE c.robot=operations.robot AND c.op_id=operations.op_id)", (now - 86400,))
 
