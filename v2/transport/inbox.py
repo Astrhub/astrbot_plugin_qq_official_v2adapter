@@ -11,7 +11,10 @@ from ..errors import V2Error
 
 
 class RawInbox:
-    def __init__(self, path, *, max_rows=1024, max_bytes=64 * 1024 * 1024, clock=time.time):
+    def __init__(self, path, *, max_rows=1024, max_bytes=64 * 1024 * 1024, max_tombstones=32768, clock=time.time):
+        if type(max_tombstones) is not int or max_tombstones < 1:
+            raise ValueError("max_tombstones must be a positive integer")
+        self.max_tombstones = max_tombstones
         self.clock, self.max_rows, self.max_bytes = clock, max_rows, max_bytes
         self.queued_bytes = 0
         self.callback_active = 0
@@ -46,10 +49,18 @@ class RawInbox:
                 self.db.execute("ALTER TABLE inbox ADD COLUMN disposition TEXT NOT NULL DEFAULT 'pending'")
                 self.db.execute("ALTER TABLE inbox ADD COLUMN reason TEXT")
             self.db.execute("PRAGMA user_version=3")
+            self.db.execute("CREATE INDEX IF NOT EXISTS inbox_live_owner ON inbox(owner) WHERE body IS NOT NULL")
+            self.db.execute("CREATE INDEX IF NOT EXISTS inbox_delivered_age ON inbox(delivered,row_id) WHERE body IS NULL")
+            self._prune_delivered()
             self.db.commit()
         except BaseException:
             self.db.close()
             raise
+
+    def _prune_delivered(self):
+        self.db.execute("DELETE FROM inbox WHERE body IS NULL AND delivered<=?", (self.clock() - 300,))
+        # Delivered dedup keys have their own bound; unprocessed payloads are never evicted.
+        self.db.execute("DELETE FROM inbox WHERE row_id IN (SELECT row_id FROM inbox WHERE body IS NULL ORDER BY delivered DESC,row_id DESC LIMIT -1 OFFSET ?)", (self.max_tombstones,))
 
     def accept(self, owner, envelope):
         if self.closed:
@@ -59,10 +70,10 @@ class RawInbox:
             raise V2Error("event_too_large", "Raw event exceeds 1 MiB.", status=413)
         try:
             with self.db:
-                self.db.execute("DELETE FROM inbox WHERE delivered IS NOT NULL AND delivered<?", (self.clock() - 300,))
+                self.db.execute("DELETE FROM inbox WHERE body IS NULL AND delivered<=?", (self.clock() - 300,))
                 if envelope.event_id and self.db.execute("SELECT 1 FROM inbox WHERE owner=? AND event_id=?", (owner, envelope.event_id)).fetchone():
                     return False
-                count, size = self.db.execute("SELECT count(*), coalesce(sum(size), 0) FROM inbox").fetchone()
+                count, size = self.db.execute("SELECT count(*), coalesce(sum(size), 0) FROM inbox WHERE body IS NOT NULL").fetchone()
                 own_count = self.db.execute("SELECT count(*) FROM inbox WHERE owner=? AND body IS NOT NULL", (owner,)).fetchone()[0]
                 if count >= self.max_rows or own_count >= 256 or size + len(encoded.encode()) > self.max_bytes:
                     raise V2Error("inbox_full", "Raw inbox is full; P3 must deliver pending events before intake resumes.", status=503)
@@ -83,6 +94,7 @@ class RawInbox:
     def acknowledge(self, owner, receipt):
         with self.db:
             self.db.execute("UPDATE inbox SET body=NULL,size=0,delivered=? WHERE owner=? AND row_id=? AND body IS NOT NULL", (self.clock(), owner, receipt))
+            self._prune_delivered()
 
     def retain(self, owner, receipt, reason, *, invalid=False):
         with self.db:

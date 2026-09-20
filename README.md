@@ -57,6 +57,8 @@ C2C 官方概述60分钟与字段5分钟仍有冲突，服务端拒绝优先。�
 
 数据保存在 `data/plugin_data/astrbot_plugin_qq_official_v2adapter/`：`settings.sqlite3` 存草稿与快捷项来源，`transport.sqlite3` 存有界原始收件，`messaging.sqlite3` 存机器人共享身份、配额、发送结果和面板所有权，旁边 `.lock` 用于单写入者互斥。满额或损坏时拒绝新操作，不删除未交付或未知记录；备份/恢复应先停止插件并保留整套文件。
 
+原始收件正文限全局1024条/64MiB、每实例256条；已确认去重键独立上限32768条、去重有效期最长5分钟，满额只淘汰最旧已确认键，不挤占待处理容量。
+
 v0.3.0 会升级数据库结构，不能只回退到 P2 代码；回退前须停用插件、保留新旧完整快照并核对未完成/未知操作，不能丢弃新账本来恢复发送。
 
 宿主入队不等于插件/LLM业务完成；崩溃窗口可能重投或未完成，不承诺 exactly-once。不要删库重试未知发送或面板创建；先核对实际结果，未能确认时继续保留未知状态。
@@ -92,7 +94,7 @@ print(result["message_id"])
 
 `event.send`、`send_by_session`、`client.qq.send(scene, target, ...)` 共用策略；无来源的实例调用仅走主动策略，不能借最近消息。CQ 字符串/数组全量校验，`auto_escape=True` 仅对字符串保留字面量；不能等价的组合拒绝，不偷偷拆消息。原生调用可给 `operation_id` 并用 `client.qq.send_status(id)` 查询；未知结果不重试，任意原生 POST/DELETE 不开放。
 
-ID 均为字符串，不伪造 QQ 号、资料或成功。`get_stranger_info` 仅查未过期聊天缓存，实例级查询须给 `id_kind` 和 `scope`；`no_cache=True` 不支持。头像优先真实事件 URL，群/C2C可构造 AppID+OpenID URL，不自动下载。宿主4.28.1只对白名单适配器设置 `_session_isolated`；本插件保持可逆隔离会话，不补丁全局表。
+ID 均为字符串，不伪造 QQ 号、资料或成功。群/C2C必须提供场景专用OpenID，不用通用 `id` 补缺；频道/DM仍使用其 `id`。`get_stranger_info` 仅查未过期聊天缓存，实例级查询须给 `id_kind` 和 `scope`；`no_cache=True` 不支持。头像优先真实事件 URL，群/C2C可构造 AppID+OpenID URL，不自动下载。宿主4.28.1只对白名单适配器设置 `_session_isolated`；本插件保持可逆隔离会话，不补丁全局表。
 
 ## 本地测试
 

@@ -91,7 +91,7 @@ def convert_chat(identity, envelope, *, isolated=False, bot_id=""):
     author = data.get("author")
     if not isinstance(author, dict):
         invalid()
-    sender = text_id(author.get(field) or author.get("id"))
+    sender = text_id(author.get(field))
     message_id = text_id(data.get("id"))
     target = text_id(data.get({"group": "group_openid", "channel": "channel_id", "dm": "guild_id"}[scene])) if scene != "c2c" else sender
     route = SessionRoute(identity.robot, scene, target, sender if isolated and scene in {"group", "channel"} else None)
@@ -111,7 +111,7 @@ def convert_chat(identity, envelope, *, isolated=False, bot_id=""):
     def observe(user):
         if not isinstance(user, dict):
             invalid()
-        user_id = user.get(field) or user.get("id")
+        user_id = user.get(field)
         if user_id is None:
             return None
         user_id = text_id(user_id)
