@@ -1,5 +1,5 @@
 {
   "webui_enabled": {"description": "启用 V2 管理页面 API", "type": "bool", "default": true},
-  "remote_menu_sync": {"description": "远端菜单自动同步总闸（原型未实现，打开也不会发布）", "type": "bool", "default": false},
+  "remote_menu_sync": {"description": "托管面板总闸（还须在Pages确认应用与范围）", "type": "bool", "default": false},
   "onebot_network_enabled": {"description": "OneBot 网络总闸（原型未实现，打开也不会监听）", "type": "bool", "default": false}
 }

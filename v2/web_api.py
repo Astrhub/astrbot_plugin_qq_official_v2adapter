@@ -7,6 +7,7 @@ import json
 import secrets
 import sqlite3
 import time
+from types import SimpleNamespace
 
 from astrbot.api.web import json_response, request
 
@@ -54,6 +55,9 @@ class ControlAPI:
                                        ("preview", "POST", "preview"), ("flags", "POST", "flags"),
                                        ("connection", "GET", "connection"), ("connection/save", "POST", "connection_save"),
                                        ("connection/reload", "POST", "connection_reload"),
+                                       ("panels/plan", "POST", "panel_plan"), ("panels/enable", "POST", "panel_enable"),
+                                       ("panels/sync", "POST", "panel_sync"), ("panels/disable", "POST", "panel_disable"),
+                                       ("panels/status", "GET", "panel_status"),
                                        ("onboarding/start", "POST", "onboarding_start"), ("onboarding/status", "POST", "onboarding_status"),
                                        ("onboarding/cancel", "POST", "onboarding_cancel"), ("onboarding/commit", "POST", "onboarding_commit")):
             route = f"/{PLUGIN_NAME}/{path}"
@@ -84,11 +88,13 @@ class ControlAPI:
         config, identity, fingerprint = self.platform(platform_id)
         state = self.owner.store.get(identity.settings_key)
         instance = next((i for i in self.owner.instances if i.identity.platform_id == platform_id), None)
+        remote = {scene: self.owner.panels.state(SimpleNamespace(identity=identity), scene) for scene in SCENES} if self.owner.panels else {}
         return {**state, "platform_id": platform_id, "fingerprint": fingerprint,
                 "identity": {"appid": identity.robot.appid, "environment": identity.robot.environment},
                 "credentials_configured": bool(config.get("secret")), "enabled": bool(config.get("enable")),
                 "connection": {"transport": identity.transport, "intents": identity.intents, "shard": identity.shard},
                 "runtime_state": instance.runtime_status()["state"] if instance else "not_loaded",
+                "remote_state": remote, "panel_worker_error": self.owner.panels.last_error if self.owner.panels else None,
                 "versions": self.owner.store.versions(identity.settings_key)}
 
     async def handle(self, operation):
@@ -110,6 +116,8 @@ class ControlAPI:
                 self.check_csrf(username, body.get("csrf"))
             if operation.startswith(("connection", "onboarding_")):
                 result = await self.dispatch_connection(operation, username, body)
+            elif operation.startswith("panel_"):
+                result = await self.dispatch_panels(operation, body)
             else:
                 async with self.lock:
                     if self.owner.stopping:
@@ -119,13 +127,40 @@ class ControlAPI:
         except V2Error as exc:
             return json_response({**exc.as_dict(), "status": "error"}, status_code=exc.status)
         except sqlite3.Error:
-            return json_response({"status": "error", "code": "storage_unavailable", "message": "Local storage is unavailable; no remote action occurred."}, status_code=503)
+            return json_response({"status": "error", "code": "storage_unavailable", "message": "Local storage is unavailable; inspect retained operation state before retrying any write."}, status_code=503)
         except (ValueError, TypeError, RecursionError):
             return json_response({"status": "error", "code": "invalid_request", "message": "Invalid request data."}, status_code=400)
         except TimeoutError:
             return json_response({"status": "error", "code": "control_timeout", "message": "Management request timed out; read current state before retrying."}, status_code=503)
         finally:
             self.active -= 1
+
+    async def dispatch_panels(self, operation, body):
+        platform_id = body.get("platform_id") if request.method == "POST" else request.query.get("platform_id")
+        config, identity, fingerprint = self.platform(platform_id)
+        scene = body.get("scene", "group") if request.method == "POST" else request.query.get("scene", "group")
+        if scene not in SCENES:
+            raise V2Error("invalid_scene", "Unknown panel scene.")
+        instance = next((i for i in self.owner.instances if i.identity.platform_id == platform_id and i.identity.robot == identity.robot), None)
+        target = instance or SimpleNamespace(identity=identity)
+        if operation == "panel_status":
+            return self.owner.panels.state(target, scene)
+        if body.get("fingerprint") != fingerprint:
+            raise V2Error("config_conflict", "Platform identity changed; reload first.", status=409)
+        options = {"target_type": body.get("target_type", "all"), "targets": body.get("targets", []), "menu_only": body.get("menu_only", False)}
+        if operation == "panel_plan":
+            return self.owner.panels.plan(target, scene, **options)
+        if instance is None:
+            raise V2Error("instance_not_loaded", "Load this configured instance before managing its remote panels.", status=409)
+        if operation == "panel_enable":
+            return await self.owner.panels.enable(instance, scene, body.get("plan_fingerprint"), confirm=body.get("confirm"), **options)
+        if operation == "panel_disable":
+            return self.owner.panels.disable(instance, scene, confirm=body.get("confirm"))
+        if operation == "panel_sync":
+            if body.get("confirm") is not True:
+                raise V2Error("confirmation_required", "Confirm reconciliation of this managed scope.")
+            return await self.owner.panels.sync(instance, scene)
+        raise unsupported()
 
     async def dispatch_connection(self, operation, username, body):
         platform_id = body.get("platform_id") if request.method == "POST" else request.query.get("platform_id")
@@ -155,7 +190,7 @@ class ControlAPI:
             return {"csrf": self.csrf(username), "flags": self.flags(), "flags_revision": self.fingerprint(self.flags()),
                     "instances": [{"id": c.get("id"), "appid": c.get("appid"), "environment": c.get("environment", "production")}
                                   for c in configs if c.get("type") == PLATFORM_TYPE],
-                    "defaults": DEFAULTS, "phase": "P2", "remote_state": "not_implemented"}
+                    "defaults": DEFAULTS, "phase": "P3", "remote_state": "opt_in_managed_panels"}
         if operation == "flags":
             if body.get("confirm") is not True:
                 raise V2Error("confirmation_required", "Confirm the basic switch change.")
@@ -164,8 +199,8 @@ class ControlAPI:
             patch = body.get("patch")
             if not isinstance(patch, dict) or patch.keys() - FLAGS.keys() or any(type(v) is not bool for v in patch.values()):
                 raise V2Error("invalid_settings", "Only basic boolean switches are allowed.")
-            if patch.get("remote_menu_sync") or patch.get("onebot_network_enabled"):
-                raise unsupported("Remote synchronization and network listeners are not implemented.")
+            if patch.get("onebot_network_enabled"):
+                raise unsupported("OneBot network listeners are not implemented.")
             old = dict(self.owner.config)
             try:
                 self.owner.config.update(patch)
@@ -197,8 +232,9 @@ class ControlAPI:
         action = body.get("operation")
         if action == "apply" and body.get("confirm") is not True:
             raise V2Error("confirmation_required", "Confirm local application; this does not publish to QQ.")
+        bindings = self.owner.panels.capture_bindings(SimpleNamespace(identity=identity), current["draft"], confirm=body.get("confirm_bindings")) if action == "apply" else None
         state = self.owner.store.mutate(identity.settings_key, body.get("revision"), username,
-                                        operation=action, patch=body.get("patch"), restore_revision=body.get("restore_revision"))
+                                        operation=action, patch=body.get("patch"), restore_revision=body.get("restore_revision"), bindings=bindings)
         if action == "apply":
             for instance in self.owner.instances:
                 if instance.identity.settings_key == identity.settings_key:

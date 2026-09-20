@@ -16,6 +16,7 @@ class RawInbox:
         self.queued_bytes = 0
         self.callback_active = 0
         self.closed = False
+        self.changed = asyncio.Event()
         path = Path(path)
         try:
             descriptor = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
@@ -28,7 +29,7 @@ class RawInbox:
         self.db = sqlite3.connect(path, timeout=0.1)
         try:
             version = self.db.execute("PRAGMA user_version").fetchone()[0]
-            if version not in (0, 1, 2):
+            if version not in (0, 1, 2, 3):
                 raise V2Error("inbox_corrupt", "Unsupported raw inbox schema.", status=503)
             self.db.execute("PRAGMA synchronous=FULL")
             page_size = self.db.execute("PRAGMA page_size").fetchone()[0]
@@ -41,7 +42,10 @@ class RawInbox:
             if version == 1:
                 self.db.execute("ALTER TABLE inbox ADD COLUMN size INTEGER NOT NULL DEFAULT 0")
                 self.db.execute("UPDATE inbox SET size=coalesce(length(cast(body AS BLOB)),0)")
-            self.db.execute("PRAGMA user_version=2")
+            if version < 3:
+                self.db.execute("ALTER TABLE inbox ADD COLUMN disposition TEXT NOT NULL DEFAULT 'pending'")
+                self.db.execute("ALTER TABLE inbox ADD COLUMN reason TEXT")
+            self.db.execute("PRAGMA user_version=3")
             self.db.commit()
         except BaseException:
             self.db.close()
@@ -64,6 +68,7 @@ class RawInbox:
                     raise V2Error("inbox_full", "Raw inbox is full; P3 must deliver pending events before intake resumes.", status=503)
                 self.db.execute("INSERT INTO inbox(owner,event_id,body,received,size) VALUES (?,?,?,?,?)",
                                 (owner, envelope.event_id, encoded, envelope.received_at, len(encoded.encode())))
+            self.changed.set()
             return True
         except sqlite3.Error:
             raise V2Error("inbox_unavailable", "Raw inbox commit failed; event was not acknowledged.", status=503) from None
@@ -73,11 +78,27 @@ class RawInbox:
             raise V2Error("invalid_limit", "Read at most 256 pending events.")
         return [{"receipt": row, "payload": json.loads(body), "received_at": received}
                 for row, body, received in self.db.execute(
-                    "SELECT row_id,body,received FROM inbox WHERE owner=? AND body IS NOT NULL ORDER BY row_id LIMIT ?", (owner, limit))]
+                    "SELECT row_id,body,received FROM inbox WHERE owner=? AND body IS NOT NULL AND disposition='pending' ORDER BY row_id LIMIT ?", (owner, limit))]
 
     def acknowledge(self, owner, receipt):
         with self.db:
             self.db.execute("UPDATE inbox SET body=NULL,size=0,delivered=? WHERE owner=? AND row_id=? AND body IS NOT NULL", (self.clock(), owner, receipt))
+
+    def retain(self, owner, receipt, reason, *, invalid=False):
+        with self.db:
+            self.db.execute("UPDATE inbox SET disposition=?,reason=? WHERE owner=? AND row_id=? AND body IS NOT NULL",
+                            ("invalid" if invalid else "extension", reason[:80], owner, receipt))
+
+    def retained(self, owner, limit=32):
+        if type(limit) is not int or not 1 <= limit <= 256:
+            raise V2Error("invalid_limit", "Read at most 256 retained events.")
+        return [{"receipt": row, "payload": json.loads(body), "received_at": received, "reason": reason, "state": state}
+                for row, body, received, reason, state in self.db.execute(
+                    "SELECT row_id,body,received,reason,disposition FROM inbox WHERE owner=? AND body IS NOT NULL AND disposition!='pending' ORDER BY row_id LIMIT ?", (owner, limit))]
+
+    def diagnostics(self, owner):
+        return {state: count for state, count in self.db.execute(
+            "SELECT disposition,count(*) FROM inbox WHERE owner=? AND body IS NOT NULL GROUP BY disposition", (owner,))}
 
     def count(self, owner):
         return self.db.execute("SELECT count(*) FROM inbox WHERE owner=? AND body IS NOT NULL", (owner,)).fetchone()[0]

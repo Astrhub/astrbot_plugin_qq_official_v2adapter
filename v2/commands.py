@@ -3,6 +3,7 @@
 import hashlib
 import inspect
 import json
+import marshal
 import types
 import typing
 from collections import Counter
@@ -25,6 +26,15 @@ from . import PLUGIN_NAME
 from .errors import V2Error
 from .models import SCENES
 from .settings import effective_layout
+
+def binding_fingerprint(plugin, handler, ancestry, params):
+    function = handler.handler.__func__ if inspect.ismethod(handler.handler) else handler.handler
+    if not inspect.isfunction(function):
+        return None
+    source = hashlib.sha256(marshal.dumps(function.__code__)).hexdigest()
+    value = [plugin.name, handler.handler_module_path, handler.handler_full_name, source,
+             [parent.handler_full_name for parent, _ in ancestry], params]
+    return hashlib.sha256(json.dumps(value, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
 
 
 def parameter_help(command):
@@ -109,6 +119,7 @@ def collect_catalog(config, scene, *, handlers=None, plugins=None):
         for param in params:
             usage += " " + (f"<{param['name']}>" if param["required"] else f"[{param['name']}]")
         nodes.append({"id": handler.handler_full_name, "parent": ancestry[-1][0].handler_full_name if ancestry else None,
+                      "binding": binding_fingerprint(plugin, handler, ancestry, params),
                       "plugin": plugin.name, "system": bool(plugin.reserved and handler.handler_module_path.startswith("astrbot.builtin_stars.")),
                       "menu_entry": plugin.name == PLUGIN_NAME and handler.handler_name == "menu",
                       "name": full_name, "command": prefix + full_name, "usage": usage,

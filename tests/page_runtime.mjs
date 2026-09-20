@@ -23,6 +23,7 @@ const command = {id: 'fixture_handler', name: 'fixture', command: '/fixture', us
 let calls = [], ready = false;
 let state = {platform_id: 'fixture', revision: 0, applied_revision: 0, remote_state: 'not_implemented', fingerprint: 'fixture-fingerprint',
   draft: structuredClone(defaults), versions: [], identity: {appid: 'fixture-app', environment: 'sandbox'}, credentials_configured: true, runtime_state: 'transport_not_ready'};
+let flags = {remote_menu_sync: false, webui_enabled: true};
 const timers = new Map(), events = new Map(); let timerId = 0, failSave = false;
 const connection = {platform_id: 'fixture', fingerprint: 'connection-fingerprint', exists: true,
   fields: {appid: 'fixture-app', environment: 'production', transport: 'websocket', intents: 33554432, shard: [0, 1], enable: false},
@@ -32,7 +33,7 @@ const bridge = {
   async ready() { ready = true; },
   async apiGet(endpoint) {
     assert(ready); calls.push(['GET', endpoint]);
-    if (endpoint === 'bootstrap') return {csrf: 'fixture-csrf', flags_revision: 'fixture-flags', instances: [{id: 'fixture', appid: 'fixture-app'}]};
+    if (endpoint === 'bootstrap') return {csrf: 'fixture-csrf', flags: structuredClone(flags), flags_revision: 'fixture-flags', instances: [{id: 'fixture', appid: 'fixture-app'}]};
     if (endpoint === 'config') return structuredClone(state);
     if (endpoint === 'commands') return {nodes: [command], version: 'fixture-catalog'};
     if (endpoint === 'connection') return structuredClone(connection);
@@ -42,7 +43,10 @@ const bridge = {
     calls.push(['POST', endpoint, structuredClone(body)]);
     assert.equal(body.csrf, 'fixture-csrf');
     if (endpoint === 'preview') return {panel: {slots: 2, issues: []}, card: {pages: 1, items: [command], layout: {style: 'plain', show_description: true}}};
-    if (endpoint === 'config/mutate') { state.revision++; state.draft.title = body.patch.title || state.draft.title; return structuredClone(state); }
+    if (endpoint === 'config/mutate') { if (body.operation === 'apply') state.applied_revision = state.revision; else state.revision++; state.draft.title = body.patch.title || state.draft.title; return structuredClone(state); }
+    if (endpoint === 'flags') { Object.assign(flags, body.patch); return {flags: structuredClone(flags), revision: 'fixture-flags'}; }
+    if (endpoint === 'panels/plan') return {fingerprint: 'panel-snapshot', issues: [], payload: {scope: body.scene}};
+    if (['panels/enable', 'panels/sync', 'panels/disable'].includes(endpoint)) return {state: endpoint.endsWith('disable') ? 'stopped' : 'synced'};
     if (endpoint === 'connection/save') { if (failSave) throw new Error('fixture conflict'); Object.assign(connection.fields, body.patch); return structuredClone(connection); }
     if (endpoint === 'connection/reload') { connection.runtime.state = 'connecting'; return structuredClone(connection); }
     if (endpoint === 'onboarding/start') return structuredClone(binding);
@@ -103,4 +107,21 @@ assert.equal(calls.at(-1)[2].commit_handle, 'fixture-handle'); assert.equal(time
 assert.equal(nodes.get('connect-secret').value, '');
 await nodes.get('bind-start').onclick(); events.get('pagehide')();
 assert.equal(timers.size, 0); assert.equal(calls.at(-1)[1], 'onboarding/cancel');
+const beforePanels = calls.length;
+await nodes.get('panel-enable').onclick();
+assert.equal(calls.length, beforePanels, 'publishing needs the independent switch');
+await nodes.get('apply').onclick();
+await nodes.get('panel-plan').onclick();
+assert.equal(calls.at(-1)[1], 'panels/plan');
+await nodes.get('remote-gate').onclick();
+nodes.get('panel-menu-only').checked = true;
+const afterGate = calls.length; await nodes.get('panel-enable').onclick();
+assert.equal(calls.length, afterGate, 'scope change invalidates confirmation');
+await nodes.get('panel-plan').onclick();
+await nodes.get('panel-enable').onclick();
+assert.equal(calls.at(-1)[1], 'panels/enable');
+assert.equal(calls.at(-1)[2].plan_fingerprint, 'panel-snapshot');
+assert.equal(calls.at(-1)[2].menu_only, true); assert.equal(calls.at(-1)[2].confirm, true);
+await nodes.get('panel-disable').onclick();
+assert.equal(calls.at(-1)[1], 'panels/disable');
 console.log('PAGE: bridge-ready, real endpoint wiring, save/preview split, partial patches, safe text and parameter assistant passed');

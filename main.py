@@ -5,6 +5,7 @@ import copy
 
 from astrbot.api.event import AstrMessageEvent, filter
 from astrbot.api.star import Context, Star, StarTools
+from astrbot.core.star.filter.command import GreedyStr
 from astrbot.core.platform.register import (
     platform_cls_map,
     register_platform_adapter,
@@ -14,6 +15,10 @@ from astrbot.core.platform.register import (
 from .v2 import PLATFORM_TYPE, PLUGIN_NAME
 from .v2.adapter import DEFAULT_PLATFORM_CONFIG, V2Adapter
 from .v2.connections import Connections
+from .v2.help import send_help
+from .v2.panels import PanelService
+from .v2.messaging.delivery import DeliverySlots
+from .v2.messaging.store import MessageStore
 from .v2.onboarding import Onboarding
 from .v2.settings import SettingsStore
 from .v2.transport.inbox import RawInbox
@@ -25,6 +30,10 @@ class V2Only(filter.CustomFilter):
         return event.get_platform_name() == PLATFORM_TYPE
 
 
+class V2Addressed(filter.CustomFilter):
+    def filter(self, event, cfg):
+        return event.get_platform_name() == PLATFORM_TYPE and event.raw_data.get("t") in {"GROUP_AT_MESSAGE_CREATE", "AT_MESSAGE_CREATE"}
+
 class QQOfficialV2(Star):
     def __init__(self, context: Context, config):
         super().__init__(context)
@@ -35,6 +44,10 @@ class QQOfficialV2(Star):
         self.control = None
         self.adapter_class = None
         self.inbox = None
+        self.messages = None
+        self.panels = None
+        self.catalog_ready = False
+        self.delivery_slots = DeliverySlots()
         self.connections = None
         self.onboarding = None
         self._termination = None
@@ -44,6 +57,7 @@ class QQOfficialV2(Star):
         try:
             self.store = SettingsStore(StarTools.get_data_dir(PLUGIN_NAME) / "settings.sqlite3")
             self.inbox = RawInbox(StarTools.get_data_dir(PLUGIN_NAME) / "transport.sqlite3")
+            self.messages = MessageStore(StarTools.get_data_dir(PLUGIN_NAME) / "messaging.sqlite3")
             owner = self
 
             class OwnedAdapter(V2Adapter):
@@ -52,7 +66,7 @@ class QQOfficialV2(Star):
             OwnedAdapter.owner = owner
             self.adapter_class = OwnedAdapter
             register_platform_adapter(
-                PLATFORM_TYPE, "QQ 官方 V2（连接层，消息能力开发中）",
+                PLATFORM_TYPE, "QQ 官方 V2（基础收发与指令帮助）",
                 default_config_tmpl=copy.deepcopy(DEFAULT_PLATFORM_CONFIG),
                 adapter_display_name="QQ 官方 V2 · 原型",
                 config_metadata={
@@ -67,15 +81,36 @@ class QQOfficialV2(Star):
             self.connections = Connections(self)
             self.connections.prepare_webhooks()
             self.onboarding = Onboarding(self)
+            self.panels = PanelService(self)
+            self.panels.start()
         except BaseException:
             await self.terminate()
             raise
 
     @filter.custom_filter(V2Only)
     @filter.command("v2menu")
-    async def menu(self, event: AstrMessageEvent):
-        """QQ V2 菜单入口（原型仅提供管理页预览）。"""
-        yield event.plain_result("QQ V2 原型：请在插件 Pages → control 查看指令目录与本地预览；QQ 收发尚未实现。")
+    async def menu(self, event: AstrMessageEvent, query: GreedyStr):
+        """浏览 QQ V2 指令分类、搜索和参数帮助。"""
+        await send_help(self, event, query)
+
+    @filter.custom_filter(V2Addressed, priority=100)
+    async def addressed(self, event: AstrMessageEvent):
+        """由真实@事件唤醒，不生成缺失的Bot ID或At结构。"""
+        pass
+
+    @filter.on_astrbot_loaded()
+    async def host_ready(self):
+        self.catalog_ready = True
+
+    @filter.on_plugin_loaded()
+    async def catalog_loaded(self, plugin):
+        if self.panels:
+            self.panels.stable.clear()
+
+    @filter.on_plugin_unloaded()
+    async def catalog_unloaded(self, plugin):
+        if self.panels:
+            self.panels.stable.clear()
 
     async def terminate(self):
         self.stopping = True
@@ -88,7 +123,8 @@ class QQOfficialV2(Star):
         if self.control:
             self.control.close()
         errors = []
-        for service in (self.onboarding, self.connections):
+        self.delivery_slots.close()
+        for service in (self.panels, self.onboarding, self.connections):
             if service:
                 try:
                     async with asyncio.timeout(5):
@@ -111,5 +147,7 @@ class QQOfficialV2(Star):
             self.store.close()
         if self.inbox:
             self.inbox.close()
+        if self.messages:
+            self.messages.close()
         if errors:
             raise ExceptionGroup("QQ V2 resource cleanup failed", errors)
