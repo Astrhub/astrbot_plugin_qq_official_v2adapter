@@ -40,6 +40,13 @@
       <p>扫码任务最长180秒；页面每5秒续期30秒短租约，关闭页面会尝试取消。取到凭据不等于已连接，不会自动授予管理员权限。</p>
     </div>
   </section>
+  <section aria-labelledby="retained-title">
+    <h2 id="retained-title">保留事件恢复（目录实例）</h2>
+    <p>读取顶部所选实例的保留元数据，不显示正文或凭据。仅可明确丢弃选中的无效 / 未支持事件；不可恢复，不会处理待交付聊天或清空发送账本。改绑实例前先检查保留项。</p>
+    <div class="toolbar"><button id="retained-read">读取保留事件</button><button id="retained-select-all">勾选本次读取的全部保留项</button><button id="retained-discard">明确丢弃所选保留事件</button></div>
+    <p id="retained-status" role="status">尚未读取；不会自动清理。</p>
+    <div id="retained-list"></div>
+  </section>
   <main id="editor" hidden>
     <section aria-labelledby="catalog-title"><h2 id="catalog-title">真实指令目录</h2>
       <label>搜索 <input id="search" type="search" placeholder="名称、插件、说明"></label>

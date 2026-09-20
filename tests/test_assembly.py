@@ -10,6 +10,7 @@ from pathlib import Path
 import httpx
 import jwt
 import pytest
+from inbox_assembly import exercise_inbox_recovery
 
 from v2 import PLATFORM_TYPE, PLUGIN_NAME
 
@@ -97,6 +98,7 @@ async def test_real_astrbot_assembly(config, monkeypatch, qq_reject_server, qq_p
             assert boot["instances"][0]["id"] == config["id"]
             view = (await client.get(prefix + "/config", params={"platform_id": config["id"]}, headers=headers)).json()
             assert "secret" not in json.dumps(view)
+            await exercise_inbox_recovery(owner, instance, client, prefix, headers, boot, key["api_key"], auth)
             catalog = (await client.get(prefix + "/commands", params={"platform_id": config["id"], "scene": "group"}, headers=headers)).json()
             assert any(n["system"] for n in catalog["nodes"])
             assert len([n for n in catalog["nodes"] if n["menu_entry"]]) == 1

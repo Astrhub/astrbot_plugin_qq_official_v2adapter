@@ -2,6 +2,8 @@ const $ = (id) => document.getElementById(id);
 const bridge = window.AstrBotPluginPage;
 let boot, current, catalog, draft, loadedScene, page = 0, pageCount = 1, loading = false;
 let panelPlan, panelPlanScope;
+let retainedView;
+const retainedSelection = new Set();
 const clone = (value) => JSON.parse(JSON.stringify(value));
 const scene = () => $("scene").value;
 const selection = () => draft.panels[scene()];
@@ -147,6 +149,8 @@ function renderNodes() {
 async function load() {
   const id = $("instance").value;
   $("editor").hidden = true;
+  retainedView = null; retainedSelection.clear(); $("retained-list").replaceChildren();
+  $("retained-status").textContent = "请读取当前实例的保留事件；不会自动清理。";
   if (!id) return report("请先在接入区或本体平台管理中添加 QQ 官方 V2，再重新读取目录实例。");
   current = await bridge.apiGet("config", {platform_id: id});
   catalog = await bridge.apiGet("commands", {platform_id: id, scene: scene()});
@@ -253,6 +257,41 @@ for (const operation of ["sync", "disable"]) $("panel-" + operation).onclick = (
   $("panel-output").textContent = JSON.stringify(value, null, 2); panelPlan = null;
 });
 
+async function readRetained() {
+  const platformId = $("instance").value;
+  if (!platformId) throw new Error("请先选择顶部目录实例。");
+  retainedView = null; retainedSelection.clear(); $("retained-list").replaceChildren();
+  const value = await bridge.apiGet("inbox/retained", {platform_id: platformId});
+  retainedView = value;
+  for (const entry of value.entries) {
+    const label = element("label"), check = element("input"); check.type = "checkbox";
+    check.onchange = () => { if (check.checked) retainedSelection.add(entry.receipt); else retainedSelection.delete(entry.receipt); };
+    label.append(check, element("span", ` #${entry.receipt} · ${entry.event_type} · ${entry.state} · ${entry.reason} · ${entry.size}字节 · ${new Date(entry.received_at * 1000).toISOString()}`));
+    $("retained-list").append(label);
+  }
+  $("retained-status").textContent = `${value.platform_id} · ${JSON.stringify(value.counts)} · 确认60秒内有效，默认不选择任何记录。`;
+}
+$("retained-read").onclick = () => run(readRetained);
+$("retained-select-all").onclick = () => run(async () => {
+  if (!retainedView || retainedView.platform_id !== $("instance").value) throw new Error("请先读取当前实例的保留事件。");
+  retainedView.entries.forEach(entry => retainedSelection.add(entry.receipt));
+  for (const row of $("retained-list").children) row.children[0].checked = true;
+  report(`已勾选本次读取的 ${retainedSelection.size} 条保留项，尚未丢弃。`);
+});
+$("retained-discard").onclick = () => run(async () => {
+  if (!retainedView || retainedView.platform_id !== $("instance").value) throw new Error("请重新读取当前实例的保留事件。");
+  const entries = retainedView.entries.filter(entry => retainedSelection.has(entry.receipt)).map(({receipt, version, confirmation}) => ({receipt, version, confirmation}));
+  if (!entries.length) throw new Error("请明确勾选要丢弃的保留事件。");
+  if (!window.confirm(`永久丢弃实例 ${retainedView.platform_id} 的 ${entries.length} 条保留事件？这些事件不会再处理，操作不可恢复；待交付聊天和发送账本不会删除。`)) return;
+  let result;
+  try {
+    result = await bridge.apiPost("inbox/discard", {platform_id: retainedView.platform_id, fingerprint: retainedView.fingerprint, expires: retainedView.expires, csrf: boot.csrf, entries, confirm: true});
+  } finally {
+    retainedView = null; retainedSelection.clear(); $("retained-list").replaceChildren();
+  }
+  await readRetained(); report(`已明确丢弃 ${result.discarded} 条保留事件，其他记录未删除。`);
+});
+
 let connectionView, binding, bindingTimer;
 const bindingActive = () => binding && ["creating", "pending", "ready_to_commit"].includes(binding.state);
 function connectionFields() {
@@ -329,7 +368,7 @@ $("connect-save").onclick = () => run(async () => {
 });
 $("connect-reload").onclick = () => run(async () => {
   if (connectionDirty() || bindingActive()) throw new Error("请先保存连接编辑或取消扫码，再重载已保存配置。");
-  if (!window.confirm("停止旧代次并重载已保存配置？启用的实例会连接 QQ，但 P3 消息能力尚未实现。")) return;
+  if (!window.confirm("停止旧代次并重载已保存配置？启用的实例会连接 QQ 并处理消息，是否继续？")) return;
   showConnection(await bridge.apiPost("connection/reload", connectionPayload({confirm: true})));
 });
 $("bind-start").onclick = () => run(async () => {

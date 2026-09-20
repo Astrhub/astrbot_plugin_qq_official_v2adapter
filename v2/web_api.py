@@ -58,6 +58,7 @@ class ControlAPI:
                                        ("panels/plan", "POST", "panel_plan"), ("panels/enable", "POST", "panel_enable"),
                                        ("panels/sync", "POST", "panel_sync"), ("panels/disable", "POST", "panel_disable"),
                                        ("panels/status", "GET", "panel_status"),
+                                       ("inbox/retained", "GET", "inbox_retained"), ("inbox/discard", "POST", "inbox_discard"),
                                        ("onboarding/start", "POST", "onboarding_start"), ("onboarding/status", "POST", "onboarding_status"),
                                        ("onboarding/cancel", "POST", "onboarding_cancel"), ("onboarding/commit", "POST", "onboarding_commit")):
             route = f"/{PLUGIN_NAME}/{path}"
@@ -184,6 +185,34 @@ class ControlAPI:
                 confirm=body.get("confirm"), confirm_identity=body.get("confirm_identity"), confirm_secret=body.get("confirm_secret"))
         raise unsupported()
 
+    def dispatch_inbox(self, operation, username, body, identity, fingerprint):
+        inbox, owner_key = self.owner.inbox, identity.settings_key
+        if operation == "inbox_retained":
+            expires = int(time.time()) + 60
+            entries = inbox.retained_summary(owner_key)
+            for entry in entries:
+                entry["confirmation"] = self.fingerprint(["discard_retained", username, owner_key, fingerprint, expires, entry["receipt"], entry["version"]])
+            return {"platform_id": identity.platform_id, "fingerprint": fingerprint, "expires": expires,
+                    "entries": entries, "counts": inbox.diagnostics(owner_key)}
+        if body.get("fingerprint") != fingerprint:
+            raise V2Error("config_conflict", "Platform identity changed; inspect retained records again.", status=409)
+        if body.get("confirm") is not True:
+            raise V2Error("confirmation_required", "Explicitly confirm permanent discard of the selected retained events.")
+        expires = body.get("expires")
+        if type(expires) is not int or not time.time() < expires <= time.time() + 61:
+            raise V2Error("inbox_snapshot_expired", "Inspect retained records again; confirmation has expired.", status=409)
+        selected = body.get("entries")
+        if not isinstance(selected, list) or not 1 <= len(selected) <= 256:
+            raise V2Error("invalid_selection", "Select 1 to 256 retained records.")
+        for entry in selected:
+            if not isinstance(entry, dict) or type(entry.get("receipt")) is not int or not isinstance(entry.get("version"), str) or not isinstance(entry.get("confirmation"), str):
+                raise V2Error("invalid_selection", "Invalid retained record confirmation.")
+            expected = self.fingerprint(["discard_retained", username, owner_key, fingerprint, expires, entry["receipt"], entry["version"]])
+            if not hmac.compare_digest(expected, entry["confirmation"]):
+                raise V2Error("inbox_snapshot_changed", "Use the confirmation for this user, instance and record snapshot.", status=409)
+        discarded = inbox.discard_retained(owner_key, selected)
+        return {"discarded": discarded, "counts": inbox.diagnostics(owner_key)}
+
     def dispatch(self, operation, username, body):
         if operation == "bootstrap":
             configs = self.owner.context.get_config().get("platform", [])
@@ -212,6 +241,8 @@ class ControlAPI:
             return {"flags": self.flags(), "revision": self.fingerprint(self.flags())}
         platform_id = body.get("platform_id") if request.method == "POST" else request.query.get("platform_id")
         config, identity, fingerprint = self.platform(platform_id)
+        if operation in {"inbox_retained", "inbox_discard"}:
+            return self.dispatch_inbox(operation, username, body, identity, fingerprint)
         if operation == "get":
             return self.view(platform_id)
         scene = body.get("scene", "group") if request.method == "POST" else request.query.get("scene", "group")

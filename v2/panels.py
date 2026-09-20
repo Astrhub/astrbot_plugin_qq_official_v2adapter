@@ -3,8 +3,10 @@ import asyncio
 import copy
 import hashlib
 import json
+import math
 import sqlite3
 import time
+from email.utils import parsedate_to_datetime
 from urllib.parse import quote
 from uuid import uuid4
 
@@ -20,6 +22,23 @@ from .protocol import RequestSpec
 
 def digest(value):
     return hashlib.sha256(json.dumps(value, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+
+
+def retry_time(error, now):
+    transient = error.business_code is None and (
+        error.code in {"connect_failed", "network_failure", "request_deadline", "request_capacity", "panel_rate_limited"}
+        or error.code == "qq_api_error" and error.http_status in {408, 429, 500, 502, 503, 504}
+        or error.code == "token_refresh_failed" and (error.http_status or error.status) in {408, 429, 500, 502, 503, 504})
+    if not transient:
+        return None
+    try:
+        delay = float(error.retry_after)
+    except (TypeError, ValueError):
+        try:
+            delay = parsedate_to_datetime(error.retry_after).timestamp() - now
+        except (TypeError, ValueError, AttributeError, OverflowError):
+            delay = 5
+    return now + max(5, delay) if math.isfinite(delay) and math.isfinite(now + delay) else now + 60
 
 
 def canonical(value):
@@ -84,6 +103,8 @@ class PanelService:
         if value["state"] == "synced":
             value.pop("failed_fingerprint", None)
             value.pop("failed_generation", None)
+        if value["state"] in {"writing", "synced"}:
+            value.pop("retry_at", None)
         if len(json.dumps(value).encode()) > 256 * 1024:
             raise V2Error("panel_state_full", "Panel state exceeds its bounded record size.", status=503)
         with self.store.transaction():
@@ -159,8 +180,14 @@ class PanelService:
         targets = sorted(text_id(t) for t in targets)
         if target_type == "all" and targets or target_type == "specific" and (not targets or scene not in {"group", "c2c"}):
             raise V2Error("invalid_panel", "Targets are not supported by this scope.")
-        for target in targets:
-            self.store.target(SessionRoute(instance.identity.robot, scene, target))
+        state = self.state(instance, scene)
+        intent = state.get("intent", {})
+        confirmed_scope = (state.get("platform_id") == instance.identity.platform_id
+            and intent.get("target_type") == target_type and intent.get("targets") == targets)
+        # Persisted operator consent survives chat TTL, but never authorizes another scope.
+        if not confirmed_scope:
+            for target in targets:
+                self.store.target(SessionRoute(instance.identity.robot, scene, target))
         settings = self.owner.store.get(instance.identity.settings_key)
         catalog = self.catalog_provider(instance, scene, target_type, targets)
         variants = catalog.get("scope_variants", [catalog])
@@ -197,7 +224,7 @@ class PanelService:
                 self.stable.pop(next(iter(self.stable)))
             self.stable[key] = (fingerprint, self.clock())
         return {"payload": payload, "issues": sorted(set(issues)), "intent": intent, "applied_revision": settings["applied_revision"],
-                "fingerprint": fingerprint, "catalog_version": catalog["version"], "state": self.state(instance, scene), "permission": "unknown"}
+                "fingerprint": fingerprint, "catalog_version": catalog["version"], "state": state, "permission": "unknown"}
 
     def _stable_plan(self, instance, scene, intent):
         value = self.plan(instance, scene, **intent)
@@ -331,6 +358,7 @@ class PanelService:
                     raise V2Error("panel_not_managed", "Confirm management of this instance and scope first.", status=403)
                 response_received = False
                 attempt_plan = None
+                write_attempt = False
                 try:
                     if value["pending"]:
                         return await self._reconcile(instance, scene, value)
@@ -355,6 +383,7 @@ class PanelService:
                         payload["panel"]["remark"] = "astrbot-v2:" + uuid4().hex
                         pending = {"kind": "create", "payload": payload, "baseline": list(records)}
                         method, path, body = "POST", "/v2/panels", payload
+                    write_attempt = True
                     value.update(state="writing", pending=pending, error=None)
                     self._save(robot, scene, value)
                     def recheck():
@@ -395,8 +424,15 @@ class PanelService:
                     else:
                         value["state"] = "paused" if exc.code == "panel_drift" else "failed"
                     if attempt_plan and not value.get("pending"):
-                        value["failed_fingerprint"] = attempt_plan
-                        value["failed_generation"] = instance.identity.generation
+                        retry_at = retry_time(exc, self.clock()) if not write_attempt or exc.phase == "not_sent" else None
+                        if retry_at is not None:
+                            value.pop("failed_fingerprint", None)
+                            value.pop("failed_generation", None)
+                            value["retry_at"] = retry_at
+                        else:
+                            value.pop("retry_at", None)
+                            value["failed_fingerprint"] = attempt_plan
+                            value["failed_generation"] = instance.identity.generation
                     value["checked"] = self.clock()
                     value["error"] = exc.as_dict()
                     self._save(robot, scene, value)
@@ -428,6 +464,8 @@ class PanelService:
                 if instance is None:
                     continue
                 try:
+                    if self.clock() < value.get("retry_at", 0):
+                        continue
                     if value.get("pending"):
                         if self.clock() - value.get("checked", 0) < 60:
                             continue

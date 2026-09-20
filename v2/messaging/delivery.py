@@ -3,6 +3,7 @@ import asyncio
 import sqlite3
 
 from ..errors import V2Error
+from ..models import text_id
 from ..protocol import CHAT_EVENTS, RawEnvelope
 from .convert import convert_chat
 
@@ -51,11 +52,24 @@ class ChatConsumer:
                 self.inbox.retain(self.owner_key, receipt, "invalid_envelope", invalid=True)
                 return True
             if payload.get("t") not in CHAT_EVENTS or payload.get("op") != 0:
-                if payload.get("t") == "READY":
-                    data = payload.get("d")
-                    user = data.get("user", {}) if isinstance(data, dict) else {}
-                    if isinstance(user, dict) and isinstance(user.get("id"), str) and user["id"]:
-                        self.adapter.bot_id = user["id"]
+                data = payload.get("d")
+                if payload.get("op") == 0 and payload.get("t") == "READY" and isinstance(data, dict):
+                    user = data.get("user", {})
+                    try:
+                        text_id(data.get("session_id"))
+                        bot_id = text_id(user.get("id") if isinstance(user, dict) else None)
+                    except V2Error:
+                        self.inbox.retain(self.owner_key, receipt, "invalid_ready", invalid=True)
+                        self.state = "connection_notice_invalid"
+                        return True
+                    self.adapter.bot_id = bot_id
+                    self.inbox.acknowledge(self.owner_key, receipt)
+                    self.state = "connection_notice_handled"
+                    return True
+                if payload.get("op") == 0 and payload.get("t") == "RESUMED":
+                    self.inbox.acknowledge(self.owner_key, receipt)
+                    self.state = "connection_notice_handled"
+                    return True
                 self.inbox.retain(self.owner_key, receipt, "non_chat_event")
                 self.state = "extension_retained"
                 return True

@@ -29,14 +29,16 @@ const connection = {platform_id: 'fixture', fingerprint: 'connection-fingerprint
   fields: {appid: 'fixture-app', environment: 'production', transport: 'websocket', intents: 33554432, shard: [0, 1], enable: false},
   credentials_configured: true, runtime: {state: 'configured', online: false}, reload: 'not_requested'};
 const binding = {ticket: 'fixture-ticket', platform_id: 'fixture', state: 'pending', expires_in: 180, lease_seconds: 30, qr_matrix: [[true, false], [false, true]]};
+let retainedRows = [{receipt: 7, version: 'a'.repeat(64), confirmation: 'fixture-confirmation', event_type: '<script>plain text</script>', state: 'extension', reason: 'unsupported', received_at: 1800000000, size: 100}];
 const bridge = {
   async ready() { ready = true; },
-  async apiGet(endpoint) {
-    assert(ready); calls.push(['GET', endpoint]);
+  async apiGet(endpoint, params = {}) {
+    assert(ready); calls.push(['GET', endpoint, structuredClone(params)]);
     if (endpoint === 'bootstrap') return {csrf: 'fixture-csrf', flags: structuredClone(flags), flags_revision: 'fixture-flags', instances: [{id: 'fixture', appid: 'fixture-app'}]};
     if (endpoint === 'config') return structuredClone(state);
     if (endpoint === 'commands') return {nodes: [command], version: 'fixture-catalog'};
     if (endpoint === 'connection') return structuredClone(connection);
+    if (endpoint === 'inbox/retained') return {platform_id: params.platform_id, fingerprint: state.fingerprint, expires: Math.floor(Date.now() / 1000) + 60, entries: structuredClone(retainedRows), counts: {extension: retainedRows.length, pending: 1}};
     throw new Error(endpoint);
   },
   async apiPost(endpoint, body) {
@@ -47,6 +49,7 @@ const bridge = {
     if (endpoint === 'flags') { Object.assign(flags, body.patch); return {flags: structuredClone(flags), revision: 'fixture-flags'}; }
     if (endpoint === 'panels/plan') return {fingerprint: 'panel-snapshot', issues: [], payload: {scope: body.scene}};
     if (['panels/enable', 'panels/sync', 'panels/disable'].includes(endpoint)) return {state: endpoint.endsWith('disable') ? 'stopped' : 'synced'};
+    if (endpoint === 'inbox/discard') { assert.equal(body.confirm, true); assert.equal(body.entries.length, 1); assert.equal(body.entries[0].confirmation, 'fixture-confirmation'); retainedRows = []; return {discarded: 1, counts: {pending: 1}}; }
     if (endpoint === 'connection/save') { if (failSave) throw new Error('fixture conflict'); Object.assign(connection.fields, body.patch); return structuredClone(connection); }
     if (endpoint === 'connection/reload') { connection.runtime.state = 'connecting'; return structuredClone(connection); }
     if (endpoint === 'onboarding/start') return structuredClone(binding);
@@ -124,4 +127,20 @@ assert.equal(calls.at(-1)[2].plan_fingerprint, 'panel-snapshot');
 assert.equal(calls.at(-1)[2].menu_only, true); assert.equal(calls.at(-1)[2].confirm, true);
 await nodes.get('panel-disable').onclick();
 assert.equal(calls.at(-1)[1], 'panels/disable');
+const beforeRetained = calls.length;
+await nodes.get('retained-discard').onclick(); assert.equal(calls.length, beforeRetained, 'discard needs a preview');
+await nodes.get('retained-read').onclick();
+assert.equal(calls.at(-1)[1], 'inbox/retained'); assert.equal(calls.at(-1)[2].platform_id, 'fixture');
+const retainedCheck = nodes.get('retained-list').children[0].children[0];
+assert.equal(retainedCheck.checked, false);
+const beforeSelect = calls.length; await nodes.get('retained-discard').onclick(); assert.equal(calls.length, beforeSelect);
+retainedCheck.checked = true; retainedCheck.onchange();
+nodes.get('instance').value = 'another'; await nodes.get('retained-discard').onclick(); assert.equal(calls.length, beforeSelect, 'discard is bound to the displayed instance');
+nodes.get('instance').value = 'fixture'; window.confirm = () => false;
+await nodes.get('retained-discard').onclick(); assert.equal(calls.length, beforeSelect, 'discard needs explicit confirmation');
+retainedCheck.checked = false; retainedCheck.onchange(); await nodes.get('retained-select-all').onclick();
+assert.equal(retainedCheck.checked, true); assert.equal(calls.length, beforeSelect, 'selection does not discard');
+window.confirm = () => true; await nodes.get('retained-discard').onclick();
+const discard = calls.find(c => c[1] === 'inbox/discard'); assert.equal(discard[2].platform_id, 'fixture'); assert.equal(discard[2].fingerprint, 'fixture-fingerprint');
+assert.equal(nodes.get('retained-list').children.length, 0); assert(nodes.get('status').textContent.includes('已明确丢弃 1'));
 console.log('PAGE: bridge-ready, real endpoint wiring, save/preview split, partial patches, safe text and parameter assistant passed');
