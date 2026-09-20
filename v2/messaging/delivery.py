@@ -94,6 +94,12 @@ class ChatConsumer:
                 return True
             event = self.adapter.create_event(chat.message)
             self.slots.admit(event)
+            unpin = self.store.pin_delivery(chat)
+            release_slot = event.delivery_finished
+            def finished():
+                unpin()
+                release_slot()
+            event.delivery_finished = finished
             try:
                 self.adapter.commit_event(event)
             except BaseException:

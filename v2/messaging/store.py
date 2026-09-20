@@ -34,6 +34,7 @@ class MessageStore:
     def __init__(self, path, *, clock=time.time, identity_capacity=4096, operation_capacity=32768, source_capacity=16384):
         self.clock = clock
         self.identity_capacity, self.operation_capacity, self.source_capacity = identity_capacity, operation_capacity, source_capacity
+        self._delivery_pins = {}
         self.closed = False
         path = Path(path)
         private_file(path)
@@ -69,8 +70,10 @@ class MessageStore:
                 CREATE INDEX IF NOT EXISTS source_expiry ON sources(expires);
                 CREATE TABLE IF NOT EXISTS deliveries (robot TEXT, scene TEXT, target TEXT, message_id TEXT,
                     ref_idx TEXT, accepted REAL NOT NULL, PRIMARY KEY(robot,scene,target,message_id,ref_idx));
+                CREATE INDEX IF NOT EXISTS delivery_age ON deliveries(accepted);
                 CREATE TABLE IF NOT EXISTS refs (robot TEXT, scene TEXT, target TEXT, message_id TEXT,
                     ref_idx TEXT, expires REAL NOT NULL, PRIMARY KEY(robot,scene,target,message_id));
+                CREATE INDEX IF NOT EXISTS reference_age ON refs(expires);
                 CREATE TABLE IF NOT EXISTS operations (robot TEXT, op_id TEXT, scene TEXT, target TEXT,
                     source TEXT, digest TEXT NOT NULL, seq INTEGER, state TEXT NOT NULL, started REAL NOT NULL,
                     updated REAL NOT NULL, result TEXT, error TEXT, PRIMARY KEY(robot,op_id));
@@ -102,6 +105,7 @@ class MessageStore:
             self.closed = True
             self.db.close()
             self._lease.close()
+            self._delivery_pins.clear()
 
     def now(self):
         if self.closed:
@@ -123,6 +127,33 @@ class MessageStore:
             self.db.rollback()
             raise
 
+    def pin_delivery(self, chat):
+        if self.closed:
+            failure("service_stopped", "Message state is closed.", 503)
+        token = object()
+        self._delivery_pins[token] = (*route_key(chat.route), chat.source.message_id, chat.source.ref_idx or "")
+        return lambda: self._delivery_pins.pop(token, None)
+
+    def _delivery_guard(self):
+        guard = "NOT EXISTS (SELECT 1 FROM sources s WHERE s.robot=d.robot AND s.scene=d.scene AND s.target=d.target AND s.message_id=d.message_id)"
+        keys = set(self._delivery_pins.values())
+        if keys:
+            guard += " AND (d.robot,d.scene,d.target,d.message_id,d.ref_idx) NOT IN (" + ",".join("(?,?,?,?,?)" for _ in keys) + ")"
+        return guard, tuple(value for key in keys for value in key)
+
+    def _cache_room(self, table):
+        order = {"deliveries": "accepted", "refs": "expires"}[table]
+        limit = self.source_capacity * 2
+        if limit < 1:
+            failure("message_state_full", "History cache capacity is disabled.", 503)
+        excess = self.db.execute(f"SELECT max(0,count(*)-?+1) FROM {table}", (limit,)).fetchone()[0]
+        if not excess:
+            return
+        guard, args = self._delivery_guard() if table == "deliveries" else ("1", ())
+        deleted = self.db.execute(f"DELETE FROM {table} WHERE rowid IN (SELECT d.rowid FROM {table} d WHERE {guard} ORDER BY {order},d.rowid LIMIT ?)", (*args, excess)).rowcount
+        if deleted < excess:
+            failure("message_state_full", "History capacity is held by active deliveries or protected reply sources.", 503)
+
     def _prune(self, now):
         self.db.execute("DELETE FROM attempts WHERE stamp<=?", (now - 60,))
         self.db.execute("DELETE FROM identities WHERE last<=?", (now - 86400,))
@@ -130,7 +161,8 @@ class MessageStore:
         self.db.execute("DELETE FROM charges WHERE until<=?", (now,))
         self.db.execute("DELETE FROM refs WHERE expires<=?", (now,))
         self.db.execute("DELETE FROM sources WHERE expires<=? AND NOT EXISTS (SELECT 1 FROM operations o WHERE o.robot=sources.robot AND o.scene=sources.scene AND o.target=sources.target AND o.source=sources.message_id AND o.state IN ('reserved','in_flight','unknown'))", (now,))
-        self.db.execute("DELETE FROM deliveries WHERE accepted<?", (now - 86400,))
+        guard, args = self._delivery_guard()
+        self.db.execute(f"DELETE FROM deliveries AS d WHERE accepted<? AND {guard}", (now - 86400, *args))
         self.db.execute("DELETE FROM operations WHERE updated<? AND state IN ('sent','rejected','not_sent') AND NOT EXISTS (SELECT 1 FROM charges c WHERE c.robot=operations.robot AND c.op_id=operations.op_id)", (now - 86400,))
 
     def prune(self):
@@ -148,8 +180,6 @@ class MessageStore:
             self._prune(now)
             old = self.db.execute("SELECT * FROM sources WHERE robot=? AND scene=? AND target=? AND message_id=?", (*key, source.message_id)).fetchone()
             seen_at = min(source.received_at, now)
-            if not self.delivered(chat):
-                self._capacity("deliveries", self.source_capacity * 2)
             if old:
                 seen_at = min(seen_at, old["received"])
                 self.db.execute("UPDATE sources SET expires=min(expires,?),received=min(received,?) WHERE robot=? AND scene=? AND target=? AND message_id=?",
@@ -183,7 +213,7 @@ class MessageStore:
             self.db.execute("UPDATE refs SET ref_idx=NULL WHERE robot=? AND scene=? AND target=? AND message_id=?", (*key, message_id))
             return
         if not old:
-            self._capacity("refs", self.source_capacity * 2)
+            self._cache_room("refs")
         self.db.execute("INSERT OR IGNORE INTO refs VALUES(?,?,?,?,?,?)", (*key, message_id, ref_idx, expires))
 
     def lookup(self, robot, kind, scope, subject):
@@ -216,7 +246,8 @@ class MessageStore:
     def mark_delivered(self, chat):
         with self.transaction():
             self._prune(self.now())
-            self._capacity("deliveries", self.source_capacity * 2)
+            if not self.delivered(chat):
+                self._cache_room("deliveries")
             self.db.execute("INSERT OR IGNORE INTO deliveries VALUES(?,?,?,?,?,?)",
                             (*route_key(chat.route), chat.source.message_id, chat.source.ref_idx or "", self.now()))
 
