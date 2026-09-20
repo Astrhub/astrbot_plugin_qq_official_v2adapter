@@ -10,10 +10,10 @@ from astrbot.core.platform.platform_metadata import PlatformMetadata
 from . import PLATFORM_TYPE
 from .client import V2Client
 from .errors import V2Error
-from .models import InstanceKey, SessionRoute
 from .messaging.delivery import ChatConsumer
 from .messaging.outbound import SendingCore
 from .messaging.store import IdentityView
+from .models import InstanceKey, SessionRoute
 from .transport.http import HTTPTransport
 from .transport.inbox import Ingress
 from .transport.webhook import Webhook

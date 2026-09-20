@@ -97,8 +97,8 @@ class RawInbox:
                     "SELECT row_id,body,received,reason,disposition FROM inbox WHERE owner=? AND body IS NOT NULL AND disposition!='pending' ORDER BY row_id LIMIT ?", (owner, limit))]
 
     def diagnostics(self, owner):
-        return {state: count for state, count in self.db.execute(
-            "SELECT disposition,count(*) FROM inbox WHERE owner=? AND body IS NOT NULL GROUP BY disposition", (owner,))}
+        return dict(self.db.execute(
+            "SELECT disposition,count(*) FROM inbox WHERE owner=? AND body IS NOT NULL GROUP BY disposition", (owner,)))
 
     def count(self, owner):
         return self.db.execute("SELECT count(*) FROM inbox WHERE owner=? AND body IS NOT NULL", (owner,)).fetchone()[0]

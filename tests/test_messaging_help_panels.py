@@ -1,13 +1,12 @@
 import copy
-import json
 from types import SimpleNamespace
 
 import pytest
 from aiohttp import web
-
 from test_messaging_state import NOW
 from test_settings_commands import fixtures
 from test_transport_http import MappedSession, upstream
+
 from v2.commands import collect_catalog
 from v2.errors import V2Error
 from v2.help import node_token, render_help, text_link
@@ -49,7 +48,7 @@ def test_help_110_commands_pagination_permissions_and_no_execution():
 
 def test_text_chain_encoding_injection_and_limits():
     link = text_link('/x "<& 中文', '显示"<&', scene="group")
-    assert "%22%3C%26" in link and '<&' not in link and 'cmd-input' in link
+    assert "%22%3C%26" in link and "<&" not in link and "cmd-input" in link
     assert text_link("中" * 12, "x", scene="c2c") is None
     with pytest.raises(V2Error):
         text_link("/x", "x", scene="group", enter=True)
@@ -59,7 +58,7 @@ def test_text_chain_encoding_injection_and_limits():
     settings["title"] = '<qqbot-cmd-enter text="evil" />'
     catalog = collect_catalog({"wake_prefix": ["/"]}, "group", handlers=handlers, plugins=plugins)
     result = render_help(catalog, settings, "system", markdown=True)
-    assert '<qqbot-cmd-enter' not in result["text"] and '&lt;qqbot' in result["text"]
+    assert "<qqbot-cmd-enter" not in result["text"] and "&lt;qqbot" in result["text"]
 
 
 @pytest.fixture

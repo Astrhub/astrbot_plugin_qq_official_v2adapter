@@ -5,21 +5,21 @@ import copy
 
 from astrbot.api.event import AstrMessageEvent, filter
 from astrbot.api.star import Context, Star, StarTools
-from astrbot.core.star.filter.command import GreedyStr
 from astrbot.core.platform.register import (
     platform_cls_map,
     register_platform_adapter,
     unregister_platform_adapters_by_module,
 )
+from astrbot.core.star.filter.command import GreedyStr
 
 from .v2 import PLATFORM_TYPE, PLUGIN_NAME
 from .v2.adapter import DEFAULT_PLATFORM_CONFIG, V2Adapter
 from .v2.connections import Connections
 from .v2.help import send_help
-from .v2.panels import PanelService
 from .v2.messaging.delivery import DeliverySlots
 from .v2.messaging.store import MessageStore
 from .v2.onboarding import Onboarding
+from .v2.panels import PanelService
 from .v2.settings import SettingsStore
 from .v2.transport.inbox import RawInbox
 from .v2.web_api import ControlAPI

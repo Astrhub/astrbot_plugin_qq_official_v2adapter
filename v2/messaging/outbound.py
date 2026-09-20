@@ -16,7 +16,6 @@ from ..errors import V2Error, unsupported
 from ..models import text_id
 from ..protocol import RequestSpec, openapi_base
 
-
 AMBIGUOUS_CODES = {304023, 304024, 40054005, 50055001, 50055002, 50055006}
 EXPIRED_CODES = {304103, 40034005, 40034024, 40034128}
 MARKDOWN_DENIED = {304036, 40034127}
@@ -174,7 +173,7 @@ def build_body(route, atoms, markdown, store):
             reference = store.reference(route, value)
         elif kind == "at":
             check_at(route, value, store)
-            parts.append('<qqbot-at-everyone />' if value == "all" else f'<qqbot-at-user id="{html.escape(value, quote=True)}" />')
+            parts.append("<qqbot-at-everyone />" if value == "all" else f'<qqbot-at-user id="{html.escape(value, quote=True)}" />')
         else:
             parts.append(value if markdown else html.escape(value, quote=False))
     content = "".join(parts)

@@ -3,11 +3,12 @@ import copy
 import sqlite3
 
 import pytest
-
-from test_messaging_help_panels import enable, panel_env as panel_env
+from test_messaging_help_panels import enable
+from test_messaging_help_panels import panel_env as panel_env
 from test_messaging_send import sending as sending
 from test_messaging_state import NOW, chat_payload
 from test_settings_commands import collect_catalog
+
 from v2.errors import V2Error
 from v2.messaging.convert import convert_chat
 from v2.models import InstanceKey
@@ -200,6 +201,7 @@ def test_malformed_nested_author_is_a_diagnosable_bad_chat(config, author):
 
 def test_p2_raw_inbox_migration_preserves_pending_and_acknowledged_records(tmp_path):
     import json
+
     from v2.transport.inbox import RawInbox
     path = tmp_path / "transport.sqlite3"
     db = sqlite3.connect(path)

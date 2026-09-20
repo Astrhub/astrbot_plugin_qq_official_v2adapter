@@ -1,20 +1,19 @@
 import asyncio
-import copy
 from types import SimpleNamespace
 
 import pytest
 from aiohttp import web
 from astrbot.core.message.components import At, Plain, Reply
 from astrbot.core.message.message_event_result import MessageChain
-
 from test_messaging_state import NOW, chat_payload
 from test_transport_http import MappedSession, upstream
+
 from v2.client import V2Client
 from v2.errors import V2Error
 from v2.messaging.convert import convert_chat
 from v2.messaging.outbound import SendingCore, parse_message
 from v2.messaging.store import IdentityView, MessageStore
-from v2.models import InstanceKey, SessionRoute
+from v2.models import InstanceKey
 from v2.protocol import RawEnvelope, RequestSpec
 from v2.transport.http import HTTPTransport
 
@@ -179,8 +178,9 @@ async def test_unknown_write_never_refunds_or_replays(sending, mode):
 async def test_cancel_after_sent_is_unknown_and_bound_event_not_successful(sending):
     s = sending
     chat, client = s.observe()
-    from v2.event import V2MessageEvent
     from astrbot.core.platform.platform_metadata import PlatformMetadata
+
+    from v2.event import V2MessageEvent
     event = V2MessageEvent(chat.message, PlatformMetadata("qq_official_v2", "fixture", "test-v2"), s.client, chat.route)
     s.modes.append("wait")
     task = asyncio.create_task(event.send(MessageChain([Plain("once")])))
@@ -208,6 +208,7 @@ async def test_c2c_60minute_conflict_respects_server_rejection(sending):
 
 async def test_success_marks_host_send_only_after_true_id_and_keeps_permission_unknown(sending):
     from astrbot.core.platform.platform_metadata import PlatformMetadata
+
     from v2.event import V2MessageEvent
     s = sending
     chat, _ = s.observe()

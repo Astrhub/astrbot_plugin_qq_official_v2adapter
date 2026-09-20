@@ -3,9 +3,10 @@ import copy
 import sqlite3
 
 import pytest
-
-from test_lifecycle import context, plugin_module as plugin_module
+from test_lifecycle import context
+from test_lifecycle import plugin_module as plugin_module
 from test_messaging_state import NOW, chat_payload
+
 from v2.protocol import RawEnvelope
 
 

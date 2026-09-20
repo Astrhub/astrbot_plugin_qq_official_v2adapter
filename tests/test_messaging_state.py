@@ -1,7 +1,5 @@
 """Real chat observations, durable quotas and crash recovery, without network."""
-import copy
-import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
@@ -11,7 +9,6 @@ from v2.messaging.store import MessageStore
 from v2.models import InstanceKey, RobotKey, SessionRoute
 from v2.protocol import RawEnvelope
 
-
 NOW = 1800000000.0
 
 
@@ -19,7 +16,7 @@ def chat_payload(event="GROUP_AT_MESSAGE_CREATE", *, message_id="msg-one", targe
     scene = {"C2C_MESSAGE_CREATE": "c2c", "DIRECT_MESSAGE_CREATE": "dm", "MESSAGE_CREATE": "channel", "AT_MESSAGE_CREATE": "channel"}.get(event, "group")
     field = {"group": "member_openid", "c2c": "user_openid", "channel": "id", "dm": "id"}[scene]
     data = {"id": message_id, "author": {field: sender, "username": "same-name"}, "content": text,
-            "timestamp": datetime.fromtimestamp(timestamp, timezone.utc).isoformat(), "message_type": 0}
+            "timestamp": datetime.fromtimestamp(timestamp, UTC).isoformat(), "message_type": 0}
     if scene == "group":
         data["group_openid"] = target
     elif scene in ("channel", "dm"):

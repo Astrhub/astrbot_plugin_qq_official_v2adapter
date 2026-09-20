@@ -27,6 +27,7 @@ from .errors import V2Error
 from .models import SCENES
 from .settings import effective_layout
 
+
 def binding_fingerprint(plugin, handler, ancestry, params):
     function = handler.handler.__func__ if inspect.ismethod(handler.handler) else handler.handler
     if not inspect.isfunction(function):
