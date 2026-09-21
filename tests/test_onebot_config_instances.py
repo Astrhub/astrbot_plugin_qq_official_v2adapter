@@ -10,8 +10,8 @@ import aiohttp
 import pytest
 from test_lifecycle import context
 from test_lifecycle import plugin_module as plugin_module
-from test_onebot_network import TOKEN, free_port
 from test_onboarding import owner as owner
+from test_onebot_network import TOKEN, free_port
 
 from v2.errors import V2Error
 from v2.network_config import DEFAULT_NETWORK, network_config

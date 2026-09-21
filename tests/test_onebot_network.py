@@ -68,7 +68,7 @@ async def test_http_status_and_authentication_contract(sending, method, path, kw
         assert TOKEN not in caplog.text and not sending.calls
 
 
-@pytest.mark.parametrize("raw", ['{"a":1,"a":2}', '{"x":{"a":1,"a":2}}', '{"x":NaN}', '{"x":Infinity}', '{"x":1e999}', '{"x":"\\ud800"}', 'null', 'true', '1', '[1]', '{', '[' * 30 + '0' + ']' * 30])
+@pytest.mark.parametrize("raw", ['{"a":1,"a":2}', '{"x":{"a":1,"a":2}}', '{"x":NaN}', '{"x":Infinity}', '{"x":1e999}', '{"x":"\\ud800"}', "null", "true", "1", "[1]", "{", "[" * 30 + "0" + "]" * 30])
 async def test_strict_json_rejected_without_execution(sending, raw):
     async with listener(sending) as n:
         async with n.http.post(n.base + "/send_group_msg", data=raw, headers={**n.headers, "Content-Type": "application/json"}) as r:
@@ -151,7 +151,7 @@ async def test_ws_auth_upgrade_malformed_and_secret_never_echoed(sending, caplog
                 await n.http.ws_connect(n.base + "/api", headers=headers)
             assert exc.value.status == status
         async with n.http.ws_connect(n.base + "/api?access_token=" + TOKEN) as ws:
-            for raw in ['{"action":"get_status","echo":NaN}', '[]', '{', json.dumps({"action": "get_status", "echo": TOKEN})]:
+            for raw in ['{"action":"get_status","echo":NaN}', "[]", "{", json.dumps({"action": "get_status", "echo": TOKEN})]:
                 await ws.send_str(raw)
                 result = await ws.receive_json(timeout=2)
                 assert result["status"] == "failed" and "echo" not in result and TOKEN not in json.dumps(result)
@@ -282,7 +282,7 @@ async def test_oversized_success_fails_explicitly_with_echo_and_capabilities_are
         assert sending.client.capabilities()["actions"]["get_version_info"]["returns"]
 
 
-@pytest.mark.parametrize("raw,content_type", [(b'\xff', "application/json"), ('{"x":1}'.encode("utf-16"), "application/json"), (b'x=%FF', "application/x-www-form-urlencoded"), (b'x=%Z1', "application/x-www-form-urlencoded")])
+@pytest.mark.parametrize("raw,content_type", [(b"\xff", "application/json"), ('{"x":1}'.encode("utf-16"), "application/json"), (b"x=%FF", "application/x-www-form-urlencoded"), (b"x=%Z1", "application/x-www-form-urlencoded")])
 async def test_invalid_character_encoding_does_not_change_inputs(sending, raw, content_type):
     async with listener(sending) as n:
         async with n.http.post(n.base + "/get_status", data=raw, headers={**n.headers, "Content-Type": content_type}) as r:

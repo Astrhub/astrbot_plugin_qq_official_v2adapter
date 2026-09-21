@@ -241,6 +241,7 @@ class OneBotServer:
                 operation = self.adapter.client._state.sender.store.operation(self.adapter.identity.robot, operation_id)
                 phase = "result_unknown" if operation["state"] == "unknown" else operation["state"]
             except V2Error:
+                # Unavailable ledger details cannot prove the operation was never attempted.
                 pass
         return V2Error(code, "Execution interrupted; inspect the retained operation before any retry.",
                        phase=phase, operation_id=operation_id).as_dict()
