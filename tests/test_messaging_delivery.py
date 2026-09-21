@@ -79,8 +79,14 @@ async def test_quarantine_does_not_poison_other_chat_and_extensions_stay_outside
         assert instance.consumer.step()
     assert instance._event_queue.qsize() == 1
     retained = owner.inbox.retained(key)
-    assert [r["state"] for r in retained] == ["invalid", "extension"]
+    assert [r["state"] for r in retained] == ["invalid", "invalid"]
+    assert retained[1]["reason"] == "unsupported_extension_event"
     assert retained[1]["payload"] == interaction
+    unknown = {"op": 0, "s": 20, "id": "unknown-event", "t": "FUTURE_EVENT", "d": {"content": "/admin"}}
+    owner.inbox.accept(key, RawEnvelope(unknown, NOW))
+    assert instance.consumer.step()
+    assert owner.inbox.retained(key)[2]["state"] == "extension"
+    assert owner.inbox.retained(key)[2]["payload"] == unknown
     assert not instance.consumer.step()
     assert instance._event_queue.get_nowait().raw_data["t"] == "GROUP_AT_MESSAGE_CREATE"
 

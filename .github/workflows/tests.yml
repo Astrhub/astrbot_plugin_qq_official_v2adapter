@@ -2,7 +2,7 @@ name: Prototype tests
 on:
   pull_request:
   push:
-    branches: [master, feat/qq-official-v2-transport, feat/qq-official-v2-messaging]
+    branches: [master, feat/qq-official-v2-transport, feat/qq-official-v2-messaging, feat/qq-official-v2-extensions, feat/qq-official-v2-p4]
   workflow_dispatch:
 permissions:
   contents: read

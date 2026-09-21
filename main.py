@@ -15,7 +15,9 @@ from astrbot.core.star.filter.command import GreedyStr
 from .v2 import PLATFORM_TYPE, PLUGIN_NAME
 from .v2.adapter import DEFAULT_PLATFORM_CONFIG, V2Adapter
 from .v2.connections import Connections
+from .v2.extensions.state import ExtensionStore
 from .v2.help import send_help
+from .v2.media.io import BlobPool
 from .v2.messaging.delivery import DeliverySlots
 from .v2.messaging.store import MessageStore
 from .v2.onboarding import Onboarding
@@ -45,6 +47,8 @@ class QQOfficialV2(Star):
         self.adapter_class = None
         self.inbox = None
         self.messages = None
+        self.extension_state = None
+        self.media_pool = None
         self.panels = None
         self.catalog_ready = False
         self.delivery_slots = DeliverySlots()
@@ -58,6 +62,8 @@ class QQOfficialV2(Star):
             self.store = SettingsStore(StarTools.get_data_dir(PLUGIN_NAME) / "settings.sqlite3")
             self.inbox = RawInbox(StarTools.get_data_dir(PLUGIN_NAME) / "transport.sqlite3")
             self.messages = MessageStore(StarTools.get_data_dir(PLUGIN_NAME) / "messaging.sqlite3")
+            self.extension_state = ExtensionStore(self.messages)
+            self.media_pool = BlobPool(StarTools.get_data_dir(PLUGIN_NAME) / "media-spool")
             owner = self
 
             class OwnedAdapter(V2Adapter):
@@ -66,7 +72,7 @@ class QQOfficialV2(Star):
             OwnedAdapter.owner = owner
             self.adapter_class = OwnedAdapter
             register_platform_adapter(
-                PLATFORM_TYPE, "QQ 官方 V2（基础收发与指令帮助）",
+                PLATFORM_TYPE, "QQ 官方 V2（收发与受控扩展）",
                 default_config_tmpl=copy.deepcopy(DEFAULT_PLATFORM_CONFIG),
                 adapter_display_name="QQ 官方 V2 · 原型",
                 config_metadata={
@@ -74,7 +80,7 @@ class QQOfficialV2(Star):
                                "hint": "仅保存在本体平台配置；启用平台将连接 QQ。"},
                     "appid": {"description": "QQ AppID", "type": "string"},
                 },
-                support_streaming_message=False,
+                support_streaming_message=True,
             )(OwnedAdapter)
             self.control = ControlAPI(self)
             self.control.register()
@@ -147,6 +153,10 @@ class QQOfficialV2(Star):
             self.store.close()
         if self.inbox:
             self.inbox.close()
+        if self.extension_state:
+            await self.extension_state.close()
+        if self.media_pool:
+            self.media_pool.close()
         if self.messages:
             self.messages.close()
         if errors:

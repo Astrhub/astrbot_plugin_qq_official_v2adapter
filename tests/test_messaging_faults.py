@@ -154,7 +154,7 @@ async def test_rejected_panel_update_retains_previous_and_worker_does_not_repeat
 
 async def test_selected_handler_bindings_are_atomic_and_never_reassigned_by_name(panel_env, monkeypatch):
     e = panel_env
-    def catalog(config, scene):
+    def catalog(config, scene, **kwargs):
         return collect_catalog(config, scene, handlers=e.handlers, plugins=e.plugins)
     monkeypatch.setattr("v2.panels.collect_catalog", catalog)
     node = next(n for n in catalog({"wake_prefix": ["/"]}, "group")["nodes"] if n["name"] == "plugin")

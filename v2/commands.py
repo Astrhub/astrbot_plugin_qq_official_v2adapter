@@ -1,5 +1,7 @@
 """Read effective host command metadata without executing filters or handlers."""
 
+import copy
+import functools
 import hashlib
 import inspect
 import json
@@ -19,7 +21,6 @@ from astrbot.core.star.filter.platform_adapter_type import (
     PlatformAdapterType,
     PlatformAdapterTypeFilter,
 )
-from astrbot.core.star.star import star_map
 from astrbot.core.star.star_handler import EventType, star_handlers_registry
 
 from . import PLUGIN_NAME
@@ -29,7 +30,13 @@ from .settings import effective_layout
 
 
 def binding_fingerprint(plugin, handler, ancestry, params):
-    function = handler.handler.__func__ if inspect.ismethod(handler.handler) else handler.handler
+    function = handler.handler
+    if type(function) is functools.partial:
+        # AstrBot 4.28.1 binds exactly the live Star instance after plugin loading.
+        if len(function.args) != 1 or function.args[0] is not getattr(plugin, "star_cls", None) or function.keywords:
+            return None
+        function = function.func
+    function = function.__func__ if inspect.ismethod(function) else function
     if not inspect.isfunction(function):
         return None
     source = hashlib.sha256(marshal.dumps(function.__code__)).hexdigest()
@@ -57,11 +64,31 @@ def parameter_help(command):
     return result
 
 
-def collect_catalog(config, scene, *, handlers=None, plugins=None):
+def command_names(command):
+    # Host name accessors populate caches; keep those writes on shallow snapshots.
+    snapshots = {}
+    def snapshot(item):
+        if id(item) not in snapshots:
+            clone = snapshots[id(item)] = copy.copy(item)
+            if isinstance(item, CommandGroupFilter) and item.parent_group is not None:
+                clone.parent_group = snapshot(item.parent_group)
+        return snapshots[id(item)]
+    return sorted(snapshot(command).get_complete_command_names())
+
+
+def collect_catalog(config, scene, *, context=None, handlers=None, plugins=None):
     if scene not in SCENES:
         raise V2Error("invalid_scene", "Unknown scene.")
-    handlers = list(star_handlers_registry.star_handlers_map.values()) if handlers is None else list(handlers)
-    plugins = star_map if plugins is None else plugins
+    if plugins is None:
+        plugins = {plugin.module_path: plugin for plugin in context.get_all_stars()}
+    else:
+        plugins = dict(plugins)
+    if handlers is None:
+        # Iteration includes disabled entries; full-name lookup excludes stale reload entries.
+        handlers = [handler for handler in star_handlers_registry
+                    if star_handlers_registry.get_handler_by_full_name(handler.handler_full_name) is handler]
+    else:
+        handlers = list(handlers)
     command_filters = {}
     for handler in handlers:
         for item in handler.event_filters:
@@ -124,7 +151,7 @@ def collect_catalog(config, scene, *, handlers=None, plugins=None):
                       "plugin": plugin.name, "system": bool(plugin.reserved and handler.handler_module_path.startswith("astrbot.builtin_stars.")),
                       "menu_entry": plugin.name == PLUGIN_NAME and handler.handler_name == "menu",
                       "name": full_name, "command": prefix + full_name, "usage": usage,
-                      "aliases": sorted(command.get_complete_command_names()),
+                      "aliases": command_names(command),
                       "description": handler.desc or "未提供说明", "parameters": params,
                       "permission": sorted(set(permissions)) or ["member"],
                       "conditions": sorted(set(conditions)), "reasons": sorted(set(reasons)),

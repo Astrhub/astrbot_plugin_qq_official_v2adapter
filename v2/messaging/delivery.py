@@ -46,7 +46,7 @@ class ChatConsumer:
 
     def step(self):
         self.adapter.check_generation()
-        for item in self.inbox.pending(self.owner_key, 1):
+        for item in self.inbox.pending(self.owner_key, 1, priority=getattr(self.adapter, "extensions", None) is not None):
             receipt, payload = item["receipt"], item["payload"]
             if not isinstance(payload, dict):
                 self.inbox.retain(self.owner_key, receipt, "invalid_envelope", invalid=True)
@@ -70,6 +70,20 @@ class ChatConsumer:
                     self.inbox.acknowledge(self.owner_key, receipt)
                     self.state = "connection_notice_handled"
                     return True
+                extensions = getattr(self.adapter, "extensions", None)
+                if extensions and payload.get("op") == 0:
+                    try:
+                        handled = extensions.accept(payload, item["received_at"])
+                    except V2Error as exc:
+                        if exc.code in {"extension_capacity", "extension_state_full", "service_stopped", "stale_generation"}:
+                            raise
+                        self.inbox.retain(self.owner_key, receipt, exc.code, invalid=True)
+                        self.last_error, self.state = exc.code, "extension_quarantined"
+                        return True
+                    if handled:
+                        self.inbox.acknowledge(self.owner_key, receipt)
+                        self.state = "extension_dispatched"
+                        return True
                 self.inbox.retain(self.owner_key, receipt, "non_chat_event")
                 self.state = "extension_retained"
                 return True

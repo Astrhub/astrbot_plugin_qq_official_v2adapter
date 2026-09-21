@@ -64,7 +64,7 @@ def test_draft_apply_conflict_recovery(tmp_path):
         second.close()
 
 
-@pytest.mark.parametrize("patch", [{"secret": "not-storable"}, {"schema_version": 2}, {"layout": {"home": {"page_size": 0}}},
+@pytest.mark.parametrize("patch", [{"secret": "not-storable"}, {"schema_version": 3}, {"layout": {"home": {"page_size": 0}}},
                                      {"layout": {"home": {"columns": 6}}}, {"layout": {"home": {"style": "<script>"}}},
                                      {"scene_overrides": {"evil": {}}}, {"title": ""}, {"layout": {"home": {"show_description": 1}}}])
 def test_settings_reject_unknown_and_invalid(patch):

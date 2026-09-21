@@ -30,10 +30,24 @@ async function run(action) {
   try { await action(); } catch (error) { report(error.message); }
   finally { controls.forEach((node, i) => { node.disabled = before[i]; }); loading = false; }
 }
+function renderExtensions() {
+  const value = draft.extensions;
+  $("ext-media-roots").value = value.media_roots.join("\n");
+  for (const [id, key] of [["ext-media-max", "media_max_bytes"], ["ext-stream-chars", "stream_max_chars"], ["ext-stream-timeout", "stream_timeout"], ["ext-ticket-ttl", "ticket_ttl"], ["ext-stream-fallback", "stream_fallback"]]) $(id).value = String(value[key]);
+  for (const [id, key] of [["ext-typing", "typing_enabled"], ["ext-keyboard", "keyboard_enabled"], ["ext-execute", "keyboard_execute"], ["ext-management", "management_writes"]]) $(id).checked = value[key];
+  $("ext-status").textContent = JSON.stringify(current.extension_state || {state: "not_loaded"}, null, 2);
+}
+function readExtensions() {
+  return Object.assign(clone(draft.extensions), {media_roots: $("ext-media-roots").value.split("\n").map(v => v.trim()).filter(Boolean), media_max_bytes: Number($("ext-media-max").value),
+    stream_fallback: $("ext-stream-fallback").value, stream_max_chars: Number($("ext-stream-chars").value), stream_timeout: Number($("ext-stream-timeout").value),
+    ticket_ttl: Number($("ext-ticket-ttl").value), typing_enabled: $("ext-typing").checked, keyboard_enabled: $("ext-keyboard").checked,
+    keyboard_execute: $("ext-execute").checked, management_writes: $("ext-management").checked});
+}
 function readDraft() {
   draft.title = $("title").value;
   draft.scene_overrides = JSON.parse($("scene-overrides").value);
   draft.node_overrides = JSON.parse($("node-overrides").value);
+  draft.extensions = readExtensions();
   return changed(current.draft, draft);
 }
 function payload(extra = {}) {
@@ -169,6 +183,7 @@ async function load() {
   $("preview-output").textContent = "尚未预览；不发送真实消息。";
   $("help").replaceChildren(); $("command-copy").value = "";
   renderLayouts(); renderCatalog(); renderSelected(); renderNodes();
+  renderExtensions();
   $("editor").hidden = false; report("已读取真实目录与本地配置。草稿、本地应用、QQ面板托管分别确认；聊天可使用 v2menu 帮助。");
 }
 async function preview() {
@@ -209,6 +224,7 @@ $("refresh").onclick = () => run(async () => {
   if (boot.instances.some(item => item.id === selected)) $("instance").value = selected;
   await load();
 });
+$("ext-refresh").onclick = () => run(async () => { if (allowReload()) await load(); });
 $("instance").onchange = () => run(async () => { if (allowReload()) await load(); });
 $("scene").onchange = () => run(async () => { if (allowReload()) await load(); });
 $("search").oninput = () => { if (catalog) renderCatalog(); };

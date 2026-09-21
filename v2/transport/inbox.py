@@ -85,12 +85,14 @@ class RawInbox:
         except sqlite3.Error:
             raise V2Error("inbox_unavailable", "Raw inbox commit failed; event was not acknowledged.", status=503) from None
 
-    def pending(self, owner, limit=32):
+    def pending(self, owner, limit=32, *, priority=False):
         if type(limit) is not int or not 1 <= limit <= 256:
             raise V2Error("invalid_limit", "Read at most 256 pending events.")
         return [{"receipt": row, "payload": json.loads(body), "received_at": received}
                 for row, body, received in self.db.execute(
-                    "SELECT row_id,body,received FROM inbox WHERE owner=? AND body IS NOT NULL AND disposition='pending' ORDER BY row_id LIMIT ?", (owner, limit))]
+                    "SELECT row_id,body,received FROM inbox WHERE owner=? AND body IS NOT NULL AND disposition='pending' ORDER BY "
+                    + ("CASE WHEN json_extract(body,'$.t')='INTERACTION_CREATE' THEN 0 ELSE 1 END," if priority else "")
+                    + "row_id LIMIT ?", (owner, limit))]
 
     def acknowledge(self, owner, receipt):
         with self.db:

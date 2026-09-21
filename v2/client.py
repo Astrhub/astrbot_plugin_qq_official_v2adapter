@@ -2,8 +2,9 @@
 
 from . import PLATFORM_TYPE, VERSION
 from .errors import V2Error, not_ready, unsupported
+from .extensions.management import MANAGEMENT_ACTIONS, NATIVE_ACTIONS
 from .models import SessionRoute, text_id
-from .protocol import IdentityCache, avatar_url
+from .protocol import avatar_url
 
 REMOTE_ACTIONS = {
     "send_group_msg", "send_private_msg", "send_msg", "delete_msg", "get_msg",
@@ -23,11 +24,16 @@ class ClientState:
     def __init__(self, identity):
         self.identity = identity
         self.closed = False
-        self.cache = IdentityCache()
+        self.cache = None
         self.guard = lambda: None
         self.status = None
         self.http = None
         self.sender = None
+        self.streaming = None
+        self.typing = None
+        self.management = None
+        self.extensions = None
+        self.extension_state = None
 
     def check(self, generation):
         if self.closed or generation != self.identity.generation:
@@ -50,12 +56,63 @@ class NativeView:
         route = self._client.route_for(scene, target)
         return await self._client.send(route, message, markdown=markdown, operation_id=operation_id)
 
+    def streaming_mode(self, scene, target, *, use_fallback=False):
+        self._client.check()
+        if self._client._state.streaming is None:
+            raise not_ready()
+        return self._client._state.streaming.mode(self._client.route_for(scene, target), use_fallback)
+
+    async def send_streaming(self, scene, target, generator, *, input_mode="append", use_fallback=False, operation_id=None):
+        return await self._client.stream(self._client.route_for(scene, target), generator, input_mode=input_mode, use_fallback=use_fallback, operation_id=operation_id)
+
+    async def send_file(self, scene, target, file, *, name="upload", kind="file", allow_file_fallback=False, operation_id=None):
+        from .media.types import MediaInput
+        return await self.send(scene, target, [MediaInput(kind, file, name, allow_file_fallback=allow_file_fallback)], operation_id=operation_id)
+
+    async def typing(self, scene, target, *, seconds=10):
+        client = self._client
+        client.check()
+        route = client.route_for(scene, target)
+        if client._state.typing is None:
+            raise unsupported("Typing service is not attached.")
+        source = client._source if client._source and route == client._source.route else None
+        return await client._state.typing.start(route, source, seconds=seconds)
+
     def send_status(self, operation_id):
         self._client.check()
         if self._client._state.sender is None:
             raise not_ready()
         result = self._client._state.sender.store.operation(self._client.identity.robot, operation_id)
         return {k: result[k] for k in ("op_id", "scene", "target", "source", "state", "seq", "result", "error")}
+
+    def __getattr__(self, name):
+        if name not in NATIVE_ACTIONS:
+            raise AttributeError(name)
+        async def call(*args, **kwargs):
+            import inspect
+            self._client.check()
+            service = self._client._state.management
+            if service is None:
+                raise not_ready()
+            method = getattr(service, name)
+            try:
+                inspect.signature(method).bind(*args, **kwargs)
+            except TypeError:
+                raise V2Error("invalid_params", "Unknown or missing named operation parameters.") from None
+            return await method(*args, **kwargs)
+        return call
+
+    def extension_events(self, limit=32):
+        self._client.check()
+        if self._client._state.extensions is None:
+            raise not_ready()
+        return self._client._state.extensions.records(limit)
+
+    def extension_status(self, operation_id):
+        self._client.check()
+        if self._client._state.extension_state is None:
+            raise not_ready()
+        return self._client._state.extension_state.operation(self._client.identity.robot, operation_id)
 
     async def request(self, spec):
         self._client.check()
@@ -89,8 +146,6 @@ class V2Client:
 
     async def close(self):
         self._state.closed = True
-        if isinstance(self._state.cache, IdentityCache):
-            self._state.cache.items.clear()
 
     def capabilities(self):
         return {
@@ -99,7 +154,10 @@ class V2Client:
             "basic_scenes": ["group", "c2c", "channel", "dm"] if self._state.sender else [],
             "sending": {"source": "exact event or conservative active policy", "permission": "unknown",
                         "markdown_segment": "nonstandard extension", "max_characters": 4096,
-                        "channel_dm": "online WebSocket required", "media": "not_implemented"},
+                        "channel_dm": "online WebSocket required",
+                        "media": {"support": "conditional", "group_c2c": ["image", "record", "video", "file"], "channel": ["image_http_url", "image_multipart"], "dm": ["image_http_url"]} if self._state.sender and self._state.sender.media else "not_implemented"},
+            "streaming": {"c2c": "native", "other_scenes": "explicit_bounded_aggregate", "permission": "unknown"} if self._state.streaming else "not_implemented",
+            "interaction": {"ack_types": [11, 12], "execution": "opt_in_actor_ticket_host_pipeline", "permission": "unknown"} if self._state.extensions else "not_implemented",
             "actions": {
                 **{name: {"support": "unsupported", "reason": "complete_action_contract_unavailable" if self._state.http else "transport_not_ready", "permission": "unknown"} for name in sorted(REMOTE_ACTIONS)},
                 **{name: {"support": "unsupported", "reason": "no_equivalent_or_not_implemented", "permission": "unknown"} for name in sorted(UNSUPPORTED_ACTIONS)},
@@ -107,8 +165,10 @@ class V2Client:
                           "permission": "unknown", "reason": "local_only"} for name in sorted(LOCAL_ACTIONS)},
                 **({name: {"support": "conditional", "permission": "unknown", "reason": "observed_route_and_shared_quota_required"}
                     for name in ("send_group_msg", "send_private_msg", "send_msg")} if self._state.sender else {}),
+                **({name: {"support": "conditional", "permission": "unknown", "reason": "real_response_and_retained_scope_required; writes_opt_in"}
+                    for name in MANAGEMENT_ACTIONS} if self._state.management else {}),
             },
-            "identity_cache": "durable, robot/kind/scene/target-scoped chat observations" if self._state.sender else "volatile contract cache",
+            "identity_cache": "durable, robot/kind/scene/target-scoped chat observations" if self._state.cache is not None else "not_ready",
         }
 
     async def call_action(self, action, **params):
@@ -131,6 +191,8 @@ class V2Client:
                     raise V2Error("invalid_params", "Message type does not match target.")
             route = self.route_for(scene, params.get("group_id" if scene == "group" else "user_id"))
             return await self.send(route, params["message"], onebot=True, auto_escape=params.get("auto_escape", False), operation_id=params.get("_qq_operation_id"))
+        if action in MANAGEMENT_ACTIONS and self._state.management is not None:
+            return await self._state.management.onebot(action, params)
         if action in REMOTE_ACTIONS:
             if self._state.http:
                 raise unsupported("This action needs a complete contract beyond basic message sending.")
@@ -153,7 +215,8 @@ class V2Client:
         if action == "_qq_get_capabilities":
             return self.capabilities()
         if action in ("can_send_image", "can_send_record"):
-            return {"yes": False, "reason": "media_not_implemented" if self._state.http else "transport_not_ready", "permission": "unknown"}
+            implemented = bool(self._state.sender and self._state.sender.media)
+            return {"yes": False, "implemented": implemented, "reason": "application_permission_unverified" if implemented else "transport_not_ready", "permission": "unknown"}
         if params.get("no_cache", False) is not False:
             raise unsupported("A live OpenID profile lookup is not available.")
         if action == "_qq_get_avatar" and params.get("kind") == "group":
@@ -171,6 +234,8 @@ class V2Client:
             scope = f"{self._route.scene}:{self._route.target}"
         if not isinstance(kind, str) or not isinstance(scope, str):
             raise V2Error("identity_scope_required", "Explicit id_kind and scope are required outside a bound chat route.")
+        if self._state.cache is None:
+            raise not_ready()
         record = self._state.cache.lookup(self.identity.robot, kind, scope, user_id)
         if action == "get_stranger_info":
             return {**record, "source": "chat_cache", "partial": True}
@@ -195,15 +260,30 @@ class V2Client:
         user = self._route.user if self._route and (self._route.scene, self._route.target) == (scene, target) else None
         return SessionRoute(self.identity.robot, scene, target, user)
 
+    async def stream(self, route, generator, **options):
+        self.check()
+        if self._state.streaming is None:
+            raise unsupported("Streaming service is not attached.")
+        source = self._source if self._source and route == self._source.route else None
+        try:
+            return await self._state.streaming.send(route, generator, source=source, **options)
+        finally:
+            if self._state.typing and source is not None:
+                await self._state.typing.stop(route, source=source)
+
     async def send(self, route, message, **options):
-        if options.keys() - {"onebot", "auto_escape", "markdown", "operation_id"}:
+        if options.keys() - {"onebot", "auto_escape", "markdown", "operation_id", "keyboard"}:
             raise V2Error("invalid_params", "Unsupported send options.")
         self.check()
         if route.robot != self.identity.robot:
             raise V2Error("identity_mismatch", "Cannot send into another robot's session.", status=409)
         if self._state.sender:
             source = self._source if self._source and route == self._source.route else None
-            return await self._state.sender.send(route, message, source=source, **options)
+            try:
+                return await self._state.sender.send(route, message, source=source, **options)
+            finally:
+                if self._state.typing and source is not None:
+                    await self._state.typing.stop(route, source=source)
         if self._state.http:
             raise unsupported("This client is not attached to the shared sending service.")
         raise not_ready()

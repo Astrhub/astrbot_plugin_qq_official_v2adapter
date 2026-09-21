@@ -45,7 +45,7 @@ def plugin_module(monkeypatch):
 
 def context():
     value = {"platform": [], "platform_settings": {}}
-    ctx = SimpleNamespace(registered_web_apis=[], get_config=lambda: value)
+    ctx = SimpleNamespace(registered_web_apis=[], get_config=lambda unified_msg_origin=None: value)
     ctx.register_web_api = lambda *args: Context.register_web_api(ctx, *args)
     from astrbot.core.platform.manager import PlatformManager
     ctx.platform_manager = PlatformManager(value, asyncio.Queue())
@@ -143,9 +143,11 @@ async def test_multi_instance_and_event_cleanup(plugin_module, config, count, mo
         assert event.raw_data["id"] == "outer-event"
         message_chain = MessageChain()
         assert instance.sender.closed and instance.consumer.task.done()
+        assert instance.streaming.closed and instance.typing.closed and not instance.typing.jobs
+        assert instance.media.closed and not instance.media.tasks
         for operation, expected in ((lambda: event.send(message_chain), "service_stopped"),
-                                    (lambda: event.send_streaming(None), "unsupported"),
-                                    (lambda: event.send_typing(), "unsupported"),
+                                    (lambda: event.send_streaming(None), "service_stopped"),
+                                    (lambda: event.send_typing(), "service_stopped"),
                                     (lambda: instance.send_by_session(event.session, message_chain), "service_stopped")):
             with pytest.raises(RuntimeError) as exc:
                 await operation()

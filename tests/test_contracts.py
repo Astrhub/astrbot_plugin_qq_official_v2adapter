@@ -1,20 +1,21 @@
-import asyncio
 import json
 
 import pytest
+from test_messaging_state import NOW, chat_payload
 
 from v2.client import V2Client
 from v2.errors import V2Error
+from v2.messaging.convert import convert_chat
+from v2.messaging.store import IdentityView, MessageStore
 from v2.models import InstanceKey, RobotKey, SessionRoute
 from v2.protocol import (
-    AcceptedEvents,
     ExpiringSet,
-    IdentityCache,
     RawEnvelope,
     RequestSpec,
     avatar_url,
     decode_response,
 )
+from v2.transport.inbox import Ingress, RawInbox
 
 
 def chat(*, event="GROUP_AT_MESSAGE_CREATE", uid="member", msg="message", target="group"):
@@ -23,19 +24,29 @@ def chat(*, event="GROUP_AT_MESSAGE_CREATE", uid="member", msg="message", target
               "content": "not an identity: 123456", "ref_idx": "reference"}}).encode(), now=100)
 
 
-def test_original_envelope_and_accepted_sequence():
+async def test_original_envelope_and_durable_accepted_sequence(tmp_path):
     envelope = chat()
     assert envelope.event_id == "outer-event" and envelope.message_id == "message"
     assert envelope.payload["d"]["ref_idx"] == "reference"
-    queue = asyncio.Queue(maxsize=1)
-    queue.put_nowait("busy")
-    accepted = AcceptedEvents()
-    with pytest.raises(asyncio.QueueFull):
-        accepted.accept(envelope, queue.put_nowait)
-    assert accepted.last_sequence is None and not accepted.seen.contains("outer-event")
-    queue.get_nowait()
-    assert accepted.accept(envelope, queue.put_nowait)
-    assert accepted.last_sequence == 9 and not accepted.accept(envelope, queue.put_nowait)
+    inbox = RawInbox(tmp_path / "inbox", max_rows=0)
+    ingress = Ingress(inbox, "app")
+    ingress.start()
+    try:
+        with pytest.raises(V2Error):
+            await ingress.accept(envelope)
+        assert ingress.last_sequence is None and inbox.count("app") == 0
+        inbox.max_rows = 1
+        assert await ingress.accept(envelope)
+        assert ingress.last_sequence == 9 and not await ingress.accept(envelope)
+        pending = inbox.pending("app")
+        assert len(pending) == 1 and pending[0]["payload"] == envelope.payload
+        inbox.acknowledge("another-app", pending[0]["receipt"])
+        assert inbox.count("app") == 1
+        inbox.acknowledge("app", pending[0]["receipt"])
+        assert inbox.count("app") == 0 and not await ingress.accept(envelope)
+    finally:
+        await ingress.close()
+        inbox.close()
     interaction = RawEnvelope.parse(b'{"op":0,"t":"INTERACTION_CREATE","id":"event","d":{"id":"interaction"}}')
     assert interaction.message_id is None
     assert interaction.payload["d"]["id"] == "interaction"
@@ -73,11 +84,15 @@ def test_session_invalid(value):
 
 
 @pytest.mark.parametrize("size", [0, 100, 140, 640])
-def test_avatar_no_identity_side_effect(size):
-    cache = IdentityCache()
-    url = avatar_url(RobotKey("app/a"), "user/?中文", size)
-    assert url == f"https://q.qlogo.cn/qqapp/app%2Fa/user%2F%3F%E4%B8%AD%E6%96%87/{size}"
-    assert not cache.items
+def test_avatar_no_identity_side_effect(size, tmp_path):
+    store = MessageStore(tmp_path / "identities")
+    try:
+        cache = IdentityView(store, RobotKey("app/a"))
+        url = avatar_url(cache.robot, "user/?中文", size)
+        assert url == f"https://q.qlogo.cn/qqapp/app%2Fa/user%2F%3F%E4%B8%AD%E6%96%87/{size}"
+        assert not cache.items
+    finally:
+        store.close()
 
 
 @pytest.mark.parametrize("size", [True, -1, 128, "100", None])
@@ -86,33 +101,44 @@ def test_avatar_invalid(size):
         avatar_url(RobotKey("app"), "user", size)
 
 
-def test_identity_isolation_expiry_eviction():
-    now = [100]
-    cache = IdentityCache(capacity=2, ttl=5, clock=lambda: now[0])
-    app = RobotKey("a")
-    cache.observe_chat(app, chat())
-    for robot, kind, scope, uid in [(RobotKey("b"), "member_openid", "group:group", "member"),
-                                   (RobotKey("a", "sandbox"), "member_openid", "group:group", "member"),
-                                   (app, "user_openid", "group:group", "member"),
-                                   (app, "member_openid", "group:another", "member")]:
-        with pytest.raises(V2Error, match="No available") as exc:
-            cache.lookup(robot, kind, scope, uid)
+def test_identity_isolation_expiry_eviction(config, tmp_path):
+    now = [NOW]
+    identity = InstanceKey.from_config(config)
+    store = MessageStore(tmp_path / "identities", identity_capacity=2, clock=lambda: now[0])
+    cache = IdentityView(store, identity.robot)
+    def observe(**kwargs):
+        store.observe(convert_chat(identity, RawEnvelope(chat_payload(**kwargs), now[0])))
+    try:
+        observe()
+        app = identity.robot
+        for robot, kind, scope in [(RobotKey("other"), "member_openid", "group:group-one"),
+                                   (RobotKey(app.appid, "sandbox"), "member_openid", "group:group-one"),
+                                   (app, "user_openid", "group:group-one"),
+                                   (app, "member_openid", "group:another")]:
+            with pytest.raises(V2Error) as exc:
+                store.lookup(robot, kind, scope, "user-one")
+            assert exc.value.code == "identity_not_observed"
+        assert cache.lookup(app, "member_openid", "group:group-one", "user-one")["source_message_id"] == "msg-one"
+        now[0] += 86400
+        with pytest.raises(V2Error) as exc:
+            cache.lookup(app, "member_openid", "group:group-one", "user-one")
         assert exc.value.code == "identity_not_observed"
-    assert cache.lookup(app, "member_openid", "group:group", "member")["source_message_id"] == "message"
-    now[0] += 5
-    with pytest.raises(V2Error):
-        cache.lookup(app, "member_openid", "group:group", "member")
-    for uid in ("a", "b", "c"):
-        cache.observe_chat(app, chat(uid=uid))
-    assert len(cache.items) == 2
-    with pytest.raises(V2Error):
-        cache.lookup(app, "member_openid", "group:group", "a")
-    with pytest.raises(V2Error):
-        cache.observe_chat(app, chat(event="INTERACTION_CREATE"))
-    projected = chat()
-    projected.payload["derived_from_interaction"] = True
-    with pytest.raises(V2Error):
-        cache.observe_chat(app, projected)
+        for uid in ("a", "b", "c"):
+            observe(sender=uid, message_id=uid, timestamp=now[0])
+        assert len(cache.items) == 2
+        with pytest.raises(V2Error):
+            cache.lookup(app, "member_openid", "group:group-one", "a")
+        for projected in (False, True):
+            payload = chat_payload()
+            if projected:
+                payload["derived_from_interaction"] = True
+            else:
+                payload["t"] = "INTERACTION_CREATE"
+            with pytest.raises(V2Error) as exc:
+                store.observe(convert_chat(identity, RawEnvelope(payload, now[0])))
+            assert exc.value.code == "not_chat_source" and len(cache.items) == 2
+    finally:
+        store.close()
 
 
 def test_http_contracts_no_global_base_and_structured_errors():
@@ -152,7 +178,8 @@ async def test_one_client_entrypoints_no_fake_success(config):
         await client.get_stranger_info(user_id="user", no_cache=True)
     with pytest.raises(V2Error) as exc:
         await client.get_stranger_info(user_id="user", id_kind="user_openid", scope="c2c:user")
-    assert exc.value.code == "identity_not_observed"
+    assert exc.value.code == "transport_not_ready"
+    assert client._state.cache is None and client.capabilities()["identity_cache"] == "not_ready"
     bound = client.bind(SessionRoute(client.identity.robot, "c2c", "user"))
     await client.close()
     with pytest.raises(V2Error) as exc:
@@ -163,6 +190,37 @@ async def test_one_client_entrypoints_no_fake_success(config):
     replacement = V2Client(InstanceKey.from_config(config))
     assert replacement.identity.generation != client.identity.generation
     assert not (await replacement.get_status())["online"]
+
+
+async def test_client_uses_only_attached_durable_identity_view_and_close_keeps_history(config, tmp_path):
+    identity = InstanceKey.from_config(config)
+    store = MessageStore(tmp_path / "durable-identities", clock=lambda: NOW)
+    client = V2Client(identity)
+    route = SessionRoute(identity.robot, "group", "group-one")
+    client._state.cache = IdentityView(store, identity.robot)
+    bound = client.bind(route)
+    try:
+        assert client.capabilities()["identity_cache"].startswith("durable")
+        with pytest.raises(V2Error) as exc:
+            await bound.get_stranger_info(user_id="user-one")
+        assert exc.value.code == "identity_not_observed" and not client._state.cache.items
+        store.observe(convert_chat(identity, RawEnvelope(chat_payload(), NOW)))
+        record = await bound.get_stranger_info(user_id="user-one")
+        assert record["source"] == "chat_cache" and record["source_message_id"] == "msg-one"
+        record["nickname"] = "not persisted"
+        assert (await bound.get_stranger_info(user_id="user-one"))["nickname"] == "same-name"
+        await client.close()
+        with pytest.raises(V2Error) as exc:
+            await bound.get_stranger_info(user_id="user-one")
+        assert exc.value.code == "stale_generation"
+        replacement = V2Client(InstanceKey.from_config(config))
+        replacement._state.cache = IdentityView(store, replacement.identity.robot)
+        assert (await replacement.bind(route).get_stranger_info(user_id="user-one"))["source_message_id"] == "msg-one"
+        await replacement.close()
+        assert len(client._state.cache.items) == 1
+    finally:
+        await client.close()
+        store.close()
 
 
 @pytest.mark.parametrize("field,value", [("environment", "custom"), ("shard", [1, 1]), ("shard", [True, 1]), ("intents", -1), ("id", "a:b")])

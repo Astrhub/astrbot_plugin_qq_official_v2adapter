@@ -38,7 +38,7 @@ def routed_panels(panel_env, monkeypatch):
     context.get_config = get_config
     e.owner.context = context
     e.service.catalog_provider = e.service._catalog
-    monkeypatch.setattr("v2.panels.collect_catalog", lambda config, scene: collect_catalog(
+    monkeypatch.setattr("v2.panels.collect_catalog", lambda config, scene, **kwargs: collect_catalog(
         config, scene, handlers=e.handlers, plugins=e.plugins,
     ))
 

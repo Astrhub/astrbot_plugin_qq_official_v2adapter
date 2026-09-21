@@ -10,8 +10,14 @@ from .models import SCENES
 
 LAYERS = ("home", "plugin", "group", "detail")
 LAYOUT = {"page_size": 8, "columns": 2, "style": "plain", "show_description": True}
+EXTENSION_DEFAULTS = {
+    "media_roots": [], "media_max_bytes": 32_000_000,
+    "stream_fallback": "aggregate", "stream_max_chars": 4096, "stream_timeout": 120,
+    "typing_enabled": False, "keyboard_enabled": False, "keyboard_execute": False,
+    "ticket_ttl": 120, "management_writes": False,
+}
 DEFAULTS = {
-    "schema_version": 1, "title": "机器人菜单",
+    "schema_version": 2, "title": "机器人菜单", "extensions": copy.deepcopy(EXTENSION_DEFAULTS),
     "layout": {layer: dict(LAYOUT) for layer in LAYERS},
     "scene_overrides": {}, "node_overrides": {},
     "panels": {scene: {"mode": "default", "selected": []} for scene in SCENES},
@@ -37,10 +43,32 @@ def layout_check(value, *, partial=False):
 
 
 def validate_settings(value):
+    if isinstance(value, dict) and type(value.get("schema_version")) is int and value["schema_version"] == 1 and value.keys() == DEFAULTS.keys() - {"extensions"}:
+        value = {**copy.deepcopy(value), "schema_version": 2, "extensions": copy.deepcopy(EXTENSION_DEFAULTS)}
     if not isinstance(value, dict) or value.keys() != DEFAULTS.keys():
         invalid("Only documented non-secret settings may be saved.")
-    if type(value["schema_version"]) is not int or value["schema_version"] != 1:
+    if type(value["schema_version"]) is not int or value["schema_version"] != 2:
         invalid("Unsupported schema version.")
+    options = value["extensions"]
+    if not isinstance(options, dict) or options.keys() != EXTENSION_DEFAULTS.keys():
+        invalid("Only documented advanced options are accepted.")
+    for key in ("typing_enabled", "keyboard_enabled", "keyboard_execute", "management_writes"):
+        if type(options[key]) is not bool:
+            invalid("Advanced capability switches must be booleans.")
+    for key, low, high in (("media_max_bytes", 1, 200_000_000), ("stream_max_chars", 1, 4096), ("stream_timeout", 1, 180), ("ticket_ttl", 30, 300)):
+        if type(options[key]) is not int or not low <= options[key] <= high:
+            invalid("Advanced limit is outside its documented local bounds.")
+    if options["stream_fallback"] not in ("aggregate", "reject"):
+        invalid("Choose explicit aggregate or reject fallback.")
+    roots = options["media_roots"]
+    if not isinstance(roots, list) or len(roots) > 8:
+        invalid("At most eight local media directories can be authorized.")
+    for root in roots:
+        if not isinstance(root, str) or not 1 <= len(root) <= 1024 or any(ord(c) < 32 for c in root) or not Path(root).is_absolute() or ".." in Path(root).parts or str(Path(root)) in {"/", "/root", "/home", "/etc", "/proc", "/sys", "/dev"}:
+            invalid("Authorize a specific absolute media directory, not a system root.")
+        path = Path(root)
+        if path == Path(path.anchor) or path.drive.startswith("\\\\") or path.is_reserved() or path.drive and any(":" in p for p in path.parts[1:]):
+            invalid("Authorize a local directory, not a drive root, network or device path.")
     if not isinstance(value["title"], str) or not 1 <= len(value["title"]) <= 80:
         invalid("title must contain 1..80 characters.")
     layers = value["layout"]

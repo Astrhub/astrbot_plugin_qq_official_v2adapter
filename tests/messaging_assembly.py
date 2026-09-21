@@ -12,10 +12,15 @@ from v2 import PLUGIN_NAME
 
 
 async def messaging_roundtrip(lifecycle, client, headers, owner, instance, callback, monkeypatch):
+    from extensions_assembly import ExtensionProbe, extension_roundtrip
+    probe = ExtensionProbe()
     replies, completed = asyncio.Queue(), asyncio.Queue()
     sent = []
     panels, panel_requests = {}, []
     async def upstream_handler(request):
+        result = await probe.handle(request)
+        if result is not None:
+            return result
         if request.path.startswith("/v2/panels"):
             assert request.headers["X-Union-Appid"] == "new-fixture-app"
             panel_requests.append((request.method, request.path))
@@ -30,7 +35,7 @@ async def messaging_roundtrip(lifecycle, client, headers, owner, instance, callb
             assert data["scope"] == "group" and data["target_type"] == "all" and len(data["panel"]["items"]) == 1
             panels["assembly-panel"] = {**data, "panel_id": "assembly-panel", "version": 1}
             return web.json_response({"panel_id": "assembly-panel"})
-        assert request.method == "POST" and request.path == "/v2/groups/group-one/messages"
+        assert request.method == "POST" and request.path in {"/v2/groups/group-one/messages", "/v2/users/user-one/messages"}
         assert request.headers["X-Union-Appid"] == "new-fixture-app"
         assert request.headers["Authorization"].startswith("QQBot ")
         body = await request.json()
@@ -95,9 +100,13 @@ async def messaging_roundtrip(lifecycle, client, headers, owner, instance, callb
             assert panel_requests.count(("POST", "/v2/panels")) == 1
             stopped = await client.post(prefix + "/panels/disable", json={**body, "confirm": True}, headers=headers)
             assert stopped.status_code == 200 and not stopped.json()["enabled"] and len(panels) == 1
+            await extension_roundtrip(lifecycle, client, headers, owner, instance, callback, base, replies, completed, probe, event, monkeypatch)
             assert not owner.delivery_slots.events
             assert instance.consumer.task and not instance.consumer.task.done()
             await asyncio.wait_for(asyncio.gather(*lifecycle.event_bus._pending_tasks), 5)
+            diagnostic = (await client.get(prefix + "/config", params={"platform_id": instance.identity.platform_id}, headers=headers)).json()
+            assert diagnostic["extension_state"]["operations"]
+            assert all("result" not in row and "context" in row for row in diagnostic["extension_state"]["operations"])
     finally:
         dispatcher.cancel()
         await asyncio.gather(dispatcher, return_exceptions=True)

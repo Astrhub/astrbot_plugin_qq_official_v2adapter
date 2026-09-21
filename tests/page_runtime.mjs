@@ -45,7 +45,7 @@ const bridge = {
     calls.push(['POST', endpoint, structuredClone(body)]);
     assert.equal(body.csrf, 'fixture-csrf');
     if (endpoint === 'preview') return {panel: {slots: 2, issues: []}, card: {pages: 1, items: [command], layout: {style: 'plain', show_description: true}}};
-    if (endpoint === 'config/mutate') { if (body.operation === 'apply') state.applied_revision = state.revision; else state.revision++; state.draft.title = body.patch.title || state.draft.title; return structuredClone(state); }
+    if (endpoint === 'config/mutate') { if (body.operation === 'apply') state.applied_revision = state.revision; else state.revision++; state.draft.title = body.patch.title || state.draft.title; if (body.patch.extensions) Object.assign(state.draft.extensions, body.patch.extensions); return structuredClone(state); }
     if (endpoint === 'flags') { Object.assign(flags, body.patch); return {flags: structuredClone(flags), revision: 'fixture-flags'}; }
     if (endpoint === 'panels/plan') return {fingerprint: 'panel-snapshot', issues: [], payload: {scope: body.scene}};
     if (['panels/enable', 'panels/sync', 'panels/disable'].includes(endpoint)) return {state: endpoint.endsWith('disable') ? 'stopped' : 'synced'};
@@ -77,6 +77,14 @@ const saved = calls.find(c => c[1] === 'config/mutate');
 assert.equal(saved[2].operation, 'save');
 assert.deepEqual(saved[2].patch, {title: 'local test'});
 assert.equal(state.draft.title, 'local test');
+nodes.get('ext-keyboard').checked = true; nodes.get('ext-media-max').value = '1000000';
+await nodes.get('preview').onclick();
+assert.deepEqual(calls.at(-1)[2].patch, {extensions: {keyboard_enabled: true, media_max_bytes: 1000000}});
+await nodes.get('apply').onclick(); assert(nodes.get('status').textContent.includes('先保存'));
+await nodes.get('save').onclick();
+assert.equal(state.draft.extensions.keyboard_enabled, true);
+assert.equal(nodes.get('ext-media-max').value, '1000000');
+assert.equal(state.draft.extensions.management_writes, false);
 // Description is plain text; metadata does not run as HTML.
 const group = nodes.get('catalog').children[0];
 const row = group.children[1]; row.children[1].onclick();
