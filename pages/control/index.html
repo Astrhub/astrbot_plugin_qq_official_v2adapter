@@ -7,8 +7,8 @@
   <link rel="stylesheet" href="./style.css">
 </head>
 <body>
-  <header><h1>QQ 官方 V2 <small>P3 基础收发</small></h1>
-    <p>真实消息、指令帮助与显式托管面板 · 媒体、互动回调及 OneBot 网络接口未开放。</p>
+  <header><h1>QQ 官方 V2 <small>P4 媒体与受控扩展</small></h1>
+    <p>独立接入、收发与指令帮助 · 媒体/流式及受控扩展已实现，应用权限未知；OneBot 网络接口未开放。</p>
     <div class="toolbar">
       <label>实例 <select id="instance"></select></label>
       <label>场景 <select id="scene"><option value="group">群聊</option><option value="c2c">单聊</option><option value="channel">文字子频道</option><option value="dm">频道私信</option></select></label>
@@ -64,6 +64,21 @@
         <label>scene_overrides <textarea id="scene-overrides" rows="5"></textarea></label>
         <label>node_overrides <textarea id="node-overrides" rows="5"></textarea></label>
       </details>
+      <details><summary>媒体、流式与受控扩展（随草稿保存、应用）</summary>
+        <label>授权媒体目录（绝对路径，每行一个；默认不读本地文件）<textarea id="ext-media-roots" rows="3"></textarea></label>
+        <label>本机处理单文件字节上限（最多200000000，不限制QQ转存）<input id="ext-media-max" type="number" min="1" max="200000000"></label>
+        <label>默认非原生流式 <select id="ext-stream-fallback"><option value="aggregate">有界聚合后单次发送</option><option value="reject">明确拒绝（调用方可显式选择聚合）</option></select></label>
+        <label>流式字符上限 <input id="ext-stream-chars" type="number" min="1" max="4096"></label>
+        <label>流式总秒数 <input id="ext-stream-timeout" type="number" min="1" max="180"></label>
+        <label><input id="ext-typing" type="checkbox">允许C2C被动输入中状态（不自动续期）</label>
+        <label><input id="ext-keyboard" type="checkbox">允许群/C2C回调键盘；使用 v2menu kb</label>
+        <label><input id="ext-execute" type="checkbox">允许无参数指令二次确认执行（仍走宿主权限管线）</label>
+        <label>票据有效秒数 <input id="ext-ticket-ttl" type="number" min="30" max="300"></label>
+        <label><input id="ext-management" type="checkbox">允许具名管理、分享与撤回写入（由可信插件调用；不代表QQ授予权限）</label>
+        <p>互动订阅需连接配置包含 1&lt;&lt;26；群申请为 1&lt;&lt;24。未知写结果保留账本，不自动重试。原始附件不自动下载，消息文本不能授权本地路径。</p>
+        <p>HTTP(S)媒体外链直接交QQ转存，本机不下载或查外链DNS；本地文件/Base64分片上传，预签名PUT沿用系统网络与TLS校验，不需修改DNS。</p>
+        <button id="ext-refresh">重新读取本地扩展状态</button><pre id="ext-status"></pre>
+      </details>
       <label><input id="confirm-bindings" type="checkbox">确认当前所选 handler 来源及参数（首次固定或来源变化时需要）</label>
       <div class="toolbar"><button id="preview">校验 / 预览</button><button id="save">保存草稿</button><button id="apply">应用已保存草稿（仅本地）</button><button id="discard">撤销草稿</button><button id="defaults">恢复默认草稿</button></div>
       <label>保留版本 <select id="versions"></select></label><button id="restore">恢复为草稿</button>
@@ -74,7 +89,7 @@
         <label>范围 <select id="panel-target-type"><option value="all">该场景全部目标</option><option value="specific">指定已观察目标（群 / C2C）</option></select></label>
         <label>目标 OpenID（逗号分隔，最多20个）<input id="panel-targets" maxlength="10400"></label>
         <label><input id="panel-menu-only" type="checkbox">明确将其他快捷项收进动态帮助，仅发布菜单入口</label>
-        <p>已创建面板不在此迁移范围；停用不删除远端。此处为 /v2/panels 指令面板，支持 C2C 全体/指定目标；独立 /v2/menu 自定义菜单及键盘回调未开放。</p>
+        <p>已创建面板不在此迁移范围；停用不删除远端。此处为 /v2/panels 指令面板，支持 C2C 全体/指定目标；独立 /v2/menu 自定义菜单仍未开放。回调键盘与托管面板开关独立。</p>
         <div class="toolbar"><button id="panel-plan">预览已应用发布范围</button><button id="panel-enable">确认开启此范围托管并发布</button><button id="panel-sync">核对 / 同步已有托管</button><button id="panel-disable">停止此范围托管</button></div>
         <pre id="panel-output">尚未确认远端托管。</pre>
       </fieldset>

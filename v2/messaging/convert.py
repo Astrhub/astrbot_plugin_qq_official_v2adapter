@@ -217,7 +217,7 @@ def convert_chat(identity, envelope, *, isolated=False, bot_id=""):
         parts.insert(0, Reply(id=ref, sender_id=user, sender_nickname=nickname, time=None,
                               chain=[Plain(text)] if text else [], message_str=text))
     if attachments:
-        parts.append(Unknown(text="[附件元数据；本阶段不自动下载]"))
+        parts.append(Unknown(text="[附件元数据；需显式受控读取]"))
     if not parts:
         # Empty/structured chat remains a real chat, not fabricated card prompt text.
         parts.append(Unknown(text="[结构化聊天；见原始信封]"))

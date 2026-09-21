@@ -10,8 +10,13 @@ from astrbot.core.platform.platform_metadata import PlatformMetadata
 from . import PLATFORM_TYPE
 from .client import V2Client
 from .errors import V2Error
+from .media.service import MediaService
+from .extensions.management import Management
+from .extensions.interactions import ExtensionDispatcher
 from .messaging.delivery import ChatConsumer
 from .messaging.outbound import SendingCore
+from .messaging.streaming import StreamingCore
+from .messaging.typing import TypingCore
 from .messaging.store import IdentityView
 from .models import InstanceKey, SessionRoute
 from .transport.http import HTTPTransport
@@ -81,10 +86,21 @@ class V2Adapter(Platform):
         self.ingress = Ingress(self.owner.inbox, identity.settings_key, guard=self.check_generation)
         self.gateway = Gateway(self.http, self.ingress, guard=self.check_generation) if identity.transport == "websocket" else None
         self.webhook = Webhook(identity.robot.appid, platform_config["secret"], self.ingress, guard=self.check_generation) if identity.transport == "webhook" else None
+        self.media = MediaService(identity, self.http, self.owner.extension_state, self.owner.media_pool,
+            settings=lambda: self.owner.store.get(identity.settings_key)["applied"].get("extensions", {}), guard=self.check_generation)
         self.sender = SendingCore(identity, self.http, self.owner.messages, guard=self.check_generation,
             is_online=lambda: self.runtime_status()["online"] or self.state == "webhook_ready",
-            ws_online=lambda: bool(self.gateway and self.gateway.online))
+            ws_online=lambda: bool(self.gateway and self.gateway.online), media=self.media)
         self.client._state.sender = self.sender
+        self.streaming = StreamingCore(self.sender, self.owner.extension_state, settings=self.media.settings)
+        self.typing = TypingCore(self.sender, settings=self.media.settings)
+        self.client._state.streaming, self.client._state.typing = self.streaming, self.typing
+        self.management = Management(identity, self.http, self.owner.extension_state, self.owner.messages, settings=self.media.settings)
+        self.client._state.management = self.management
+        self.client._state.extension_state = self.owner.extension_state
+        self.ack_http = HTTPTransport(identity, platform_config["secret"], guard=self.check_generation, token_provider=self.http.token)
+        self.extensions = ExtensionDispatcher(self, self.ack_http)
+        self.client._state.extensions = self.extensions
         self.owner.instances.add(self)
 
     def check_generation(self):
@@ -187,7 +203,7 @@ class V2Adapter(Platform):
                 except Exception:
                     return type(service).__name__
                 return None
-            failures = await asyncio.gather(*(close_one(s) for s in (self.consumer, self.sender, self.webhook, self.gateway, self.ingress, self.http) if s))
+            failures = await asyncio.gather(*(close_one(s) for s in (self.consumer, self.extensions, self.management, self.streaming, self.typing, self.sender, self.media, self.webhook, self.gateway, self.ingress, self.http) if s))
             if any(failures):
                 self.failure = "cleanup_failed"
                 raise V2Error("cleanup_failed", "Some QQ resources exceeded or failed cleanup: " + ", ".join(f for f in failures if f), status=503)
@@ -210,7 +226,7 @@ class V2Adapter(Platform):
 
     def meta(self):
         return PlatformMetadata(PLATFORM_TYPE, "QQ 官方 V2（基础消息与持久状态）", self.identity.platform_id,
-                                support_streaming_message=False, support_proactive_message=True)
+                                support_streaming_message=True, support_proactive_message=True)
 
     def get_client(self):
         return self.client

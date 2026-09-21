@@ -22,6 +22,16 @@ def failure(code, message, status=409):
     raise V2Error(code, message, status=status)
 
 
+def source_key(source):
+    if source.message_id is not None:
+        return text_id(source.message_id)
+    if source.route.scene not in {"group", "c2c"}:
+        failure("unsupported", "This event does not have a verified passive reply route.", 501)
+    text_id(source.interaction_id)
+    # Chat IDs reject control characters, so this internal namespace cannot collide.
+    return "\x1f" + text_id(source.event_id)
+
+
 def private_file(path):
     if path.is_symlink() or path.exists() and not path.is_file():
         failure("message_state_path_invalid", "Message state must use a regular private file.", 503)
@@ -49,7 +59,7 @@ class MessageStore:
                 failure("message_state_in_use", "Another owner holds this message-state directory.", 503)
             self.db = sqlite3.connect(path, timeout=0.1)
             self.db.row_factory = sqlite3.Row
-            if self.db.execute("PRAGMA user_version").fetchone()[0] not in (0, 1):
+            if self.db.execute("PRAGMA user_version").fetchone()[0] not in (0, 1, 2):
                 failure("message_state_corrupt", "Unsupported message-state schema; data was not reset.", 503)
             self.db.execute("PRAGMA synchronous=FULL")
             page_size = self.db.execute("PRAGMA page_size").fetchone()[0]
@@ -89,7 +99,7 @@ class MessageStore:
                 CREATE INDEX IF NOT EXISTS charge_budget ON charges(robot,bucket,subject,until);
                 CREATE TABLE IF NOT EXISTS attempts (robot TEXT, op_id TEXT, number INTEGER, scene TEXT, target TEXT, active INTEGER, stamp REAL NOT NULL, PRIMARY KEY(robot,op_id,number));
                 CREATE INDEX IF NOT EXISTS attempt_rate ON attempts(robot,stamp);
-                PRAGMA user_version=1;
+                PRAGMA user_version=2;
             """)
             self._water = self.db.execute("SELECT value FROM clock_guard WHERE id=1").fetchone()[0]
             with self.transaction():
@@ -269,7 +279,7 @@ class MessageStore:
     def _source(self, route, source, now):
         if (source.route.robot, source.route.scene, source.route.target) != (route.robot, route.scene, route.target):
             failure("identity_mismatch", "Reply source belongs to another target.")
-        row = self.db.execute("SELECT * FROM sources WHERE robot=? AND scene=? AND target=? AND message_id=?", (*route_key(route), source.message_id)).fetchone()
+        row = self.db.execute("SELECT * FROM sources WHERE robot=? AND scene=? AND target=? AND message_id=?", (*route_key(route), source_key(source))).fetchone()
         if row is None or row["expires"] <= now or source.expires <= now:
             failure("reply_expired", "The original incoming message reply window has expired.")
         if row["blocked"]:
@@ -283,7 +293,22 @@ class MessageStore:
     def block_source(self, route, source, code):
         if source:
             with self.transaction():
-                self.db.execute("UPDATE sources SET blocked=? WHERE robot=? AND scene=? AND target=? AND message_id=?", (str(code), *route_key(route), source.message_id))
+                self.db.execute("UPDATE sources SET blocked=? WHERE robot=? AND scene=? AND target=? AND message_id=?", (str(code), *route_key(route), source_key(source)))
+
+    def register_event_source(self, source):
+        if source.message_id is not None:
+            failure("invalid_event_source", "Chat sources must enter through genuine chat observation.")
+        key = (*route_key(source.route), source_key(source))
+        with self.transaction():
+            now = self.now()
+            self._prune(now)
+            if source.expires <= now:
+                failure("reply_expired", "The original interaction reply window expired.")
+            if self.db.execute("SELECT 1 FROM sources WHERE robot=? AND scene=? AND target=? AND message_id=?", key).fetchone():
+                self.db.execute("UPDATE sources SET expires=min(expires,?),received=min(received,?) WHERE robot=? AND scene=? AND target=? AND message_id=?", (source.expires, source.received_at, *key))
+            else:
+                self._capacity("sources", self.source_capacity)
+                self.db.execute("INSERT INTO sources(robot,scene,target,message_id,started,received,expires,ref_idx) VALUES(?,?,?,?,?,?,?,NULL)", (*key, source.sent_at, source.received_at, source.expires))
 
     def operation(self, robot, op_id):
         row = self.db.execute("SELECT * FROM operations WHERE robot=? AND op_id=?", (robot_key(robot), text_id(op_id))).fetchone()
@@ -297,7 +322,7 @@ class MessageStore:
         return result
 
     def _budgets(self, route, source, now):
-        target = self.target(route)
+        target = self.target(route) if source is None or source.message_id is not None else None
         scene, recipient = route.scene, route.target
         budgets = [("message_qps", "bot", 1, 100)] if scene in {"c2c", "group"} else [("channel_qps", f"{scene}:{recipient}", 1, 5)]
         if source is not None:
@@ -325,7 +350,7 @@ class MessageStore:
             self._prune(now)
             old = self.db.execute("SELECT * FROM operations WHERE robot=? AND op_id=?", (key[0], op_id)).fetchone()
             if old:
-                if (old["scene"], old["target"], old["source"], old["digest"]) != (route.scene, route.target, source.message_id if source else None, digest):
+                if (old["scene"], old["target"], old["source"], old["digest"]) != (route.scene, route.target, source_key(source) if source else None, digest):
                     failure("operation_conflict", "A logical operation cannot change source, target or content.")
                 if old["state"] == "sent":
                     return self.operation(route.robot, op_id)
@@ -350,14 +375,14 @@ class MessageStore:
                 if count >= limit:
                     failure("local_rate_limited", "Conservative local rate limit reached; no message was sent.", 429)
             if source:
-                self.db.execute("UPDATE sources SET seq=?,used=used+1 WHERE robot=? AND scene=? AND target=? AND message_id=?", (seq, *key, source.message_id))
+                self.db.execute("UPDATE sources SET seq=?,used=used+1 WHERE robot=? AND scene=? AND target=? AND message_id=?", (seq, *key, source_key(source)))
             self.db.execute("INSERT INTO operations VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
-                            (key[0], op_id, route.scene, route.target, source.message_id if source else None, digest, seq, "reserved", now, now, None, None))
+                            (key[0], op_id, route.scene, route.target, source_key(source) if source else None, digest, seq, "reserved", now, now, None, None))
             for bucket, subject, window, _ in budgets:
                 self.db.execute("INSERT INTO charges VALUES(?,?,?,?,?)", (key[0], op_id, bucket, subject, now + window))
             return self.operation(route.robot, op_id)
 
-    def prepare_attempt(self, route, source, op_id):
+    def prepare_attempt(self, route, source, op_id, *, continuation=False):
         with self.transaction():
             now, robot = self.now(), robot_key(route.robot)
             if source:
@@ -369,17 +394,17 @@ class MessageStore:
             count = self.db.execute("SELECT count(*) FROM attempts WHERE robot=? AND stamp>?" + clauses, args).fetchone()[0]
             if count >= limit:
                 failure("local_rate_limited", "Wire-attempt rate limit reached; retry later explicitly.", 429)
-            if source is None and route.scene in {"group", "c2c"}:
+            if source is None and not continuation and route.scene in {"group", "c2c"}:
                 count = self.db.execute("SELECT count(*) FROM attempts WHERE robot=? AND active=1 AND stamp>?", (robot, now - 1)).fetchone()[0]
                 if count >= 5:
                     failure("local_rate_limited", "Conservative active wire-attempt rate reached.", 429)
-            for bucket, subject, window, limit in self._budgets(route, source, now):
+            for bucket, subject, window, limit in ([] if continuation else self._budgets(route, source, now)):
                 count = self.db.execute("SELECT count(*) FROM charges WHERE robot=? AND bucket=? AND subject=? AND until>? AND op_id!=?", (robot, bucket, subject, now, op_id)).fetchone()[0]
                 if count >= limit:
                     failure("local_rate_limited", "Quota changed while waiting to send.", 429)
                 self.db.execute("INSERT INTO charges VALUES(?,?,?,?,?) ON CONFLICT(robot,op_id,bucket,subject) DO UPDATE SET until=max(until,excluded.until)", (robot, op_id, bucket, subject, now + window))
             number = self.db.execute("SELECT coalesce(max(number),0)+1 FROM attempts WHERE robot=? AND op_id=?", (robot, op_id)).fetchone()[0]
-            self.db.execute("INSERT INTO attempts VALUES(?,?,?,?,?,?,?)", (robot, op_id, number, route.scene, route.target, int(source is None), now))
+            self.db.execute("INSERT INTO attempts VALUES(?,?,?,?,?,?,?)", (robot, op_id, number, route.scene, route.target, int(source is None and not continuation), now))
             self.db.execute("UPDATE operations SET state='in_flight',updated=? WHERE robot=? AND op_id=?", (now, robot, op_id))
 
     def mark_in_flight(self, robot, op_id):
@@ -398,7 +423,7 @@ class MessageStore:
             self.db.execute("DELETE FROM charges WHERE robot=? AND op_id=?", (robot, op_id))
         self.db.execute("UPDATE operations SET state=?,updated=?,result=?,error=? WHERE robot=? AND op_id=?",
                         (state, now, json.dumps(result) if result else None, json.dumps(error) if error else None, robot, op_id))
-        if state == "sent":
+        if state == "sent" and result.get("message_id"):
             self._put_ref((robot, row["scene"], row["target"]), result["message_id"], result.get("ref_idx"), now + 86400)
             if result.get("ref_idx") and row["scene"] in {"group", "c2c"}:
                 self._put_ref((robot, row["scene"], row["target"]), result["ref_idx"], result["ref_idx"], now + 86400)

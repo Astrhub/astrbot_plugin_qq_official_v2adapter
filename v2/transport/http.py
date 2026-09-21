@@ -10,6 +10,7 @@ from email.utils import parsedate_to_datetime
 import aiohttp
 
 from ..errors import V2Error
+from ..media.types import FilePart
 from ..protocol import RequestSpec, decode_response, openapi_base, validate_openapi_url
 
 TOKEN_URL = "https://api.bot.qq.com/app/getAppAccessToken"
@@ -37,8 +38,9 @@ def retry_delay(value, attempt, *, wall=time.time):
 
 class HTTPTransport:
     def __init__(self, identity, secret, *, guard=lambda: None, session_factory=None,
-                 clock=time.monotonic, sleep=asyncio.sleep, timeout=10, max_attempts=3):
+                 clock=time.monotonic, sleep=asyncio.sleep, timeout=10, max_attempts=3, token_provider=None):
         self.identity, self._secret, self.guard = identity, secret, guard
+        self.token_provider = token_provider
         self.clock, self.sleep = clock, sleep
         self.timeout, self.max_attempts = timeout, max_attempts
         self._factory = session_factory or self._make_session
@@ -47,7 +49,8 @@ class HTTPTransport:
         self._expires = 0
         self._refresh = None
         self._active = set()
-        self._slots = asyncio.Semaphore(8)
+        # Leave connector capacity for the owned websocket and single-flight token refresh.
+        self._slots = asyncio.Semaphore(6)
         self.closed = False
         self._closing = None
         self.last_outcome = "not_sent"
@@ -81,12 +84,19 @@ class HTTPTransport:
                 raise V2Error("invalid_request", "Multipart requires a finite mapping.")
             total = 0
             for key, value in multipart.items():
-                if not isinstance(key, str) or not isinstance(value, (str, bytes)):
-                    raise V2Error("invalid_request", "Multipart fields must be strings or bytes.")
-                total += len(value.encode() if isinstance(value, str) else value)
-                form.add_field(key, value, **({"filename": key} if isinstance(value, bytes) else {}))
-            if total > 8 * 1024 * 1024:
-                raise V2Error("request_too_large", "Multipart exceeds 8 MiB.", status=413)
+                if not isinstance(key, str) or not isinstance(value, (str, bytes, FilePart)):
+                    raise V2Error("invalid_request", "Multipart fields must be text, bytes or owned media.")
+                if isinstance(value, FilePart):
+                    if value.blob.closed or value.blob.pool.blobs.get(value.blob.handle) is not value.blob:
+                        raise V2Error("invalid_media_handle", "Multipart requires an open owned media resource.")
+                    total += value.blob.size
+                    form.add_field(key, value.payload(), filename=value.name)
+                else:
+                    total += len(value.encode() if isinstance(value, str) else value)
+                    form.add_field(key, value, **({"filename": key} if isinstance(value, bytes) else {}))
+            limit = 20_000_000 if any(isinstance(v, FilePart) for v in multipart.values()) else 8 * 1024 * 1024
+            if total > limit:
+                raise V2Error("request_too_large", "Multipart exceeds its bounded request size.", status=413)
             kwargs["data"] = form
         self.check()
         self.last_outcome = "result_unknown"
@@ -157,6 +167,11 @@ class HTTPTransport:
 
     async def token(self, *, rejected=None):
         self.check()
+        if self.token_provider is not None:
+            token = await self.token_provider(rejected=rejected)
+            self.check()
+            self._token = token
+            return token
         if rejected is not None and self._token == rejected:
             self._expires = 0
         if self._token and self.clock() < self._expires:

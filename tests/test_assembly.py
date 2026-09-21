@@ -54,7 +54,7 @@ async def test_real_astrbot_assembly(config, monkeypatch, qq_reject_server, qq_p
         initialized = True
         assert not lifecycle.plugin_manager.failed_plugin_dict, lifecycle.plugin_manager.failed_plugin_dict.keys()
         metadata = lifecycle.star_context.get_registered_star(PLUGIN_NAME)
-        assert metadata is not None and metadata.version == "v0.3.0"
+        assert metadata is not None and metadata.version == "v0.4.0"
         owner = metadata.star_cls
         assert owner and not owner.stopping
         assert PLATFORM_TYPE in platform_cls_map

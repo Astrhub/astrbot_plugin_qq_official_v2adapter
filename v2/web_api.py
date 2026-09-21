@@ -96,6 +96,10 @@ class ControlAPI:
                 "connection": {"transport": identity.transport, "intents": identity.intents, "shard": identity.shard},
                 "runtime_state": instance.runtime_status()["state"] if instance else "not_loaded",
                 "remote_state": remote, "panel_worker_error": self.owner.panels.last_error if self.owner.panels else None,
+                "extension_state": {"events": instance.extensions.records(10), "last_error": instance.extensions.last_error,
+                    "operations": self.owner.extension_state.recent(identity.robot),
+                    "stream_cleanup_error": getattr(instance.streaming, "last_cleanup_error", None),
+                    "media_pending": len(instance.media.tasks), "stream_pending": len(instance.streaming.tasks)} if instance else {"state": "not_loaded"},
                 "versions": self.owner.store.versions(identity.settings_key)}
 
     async def handle(self, operation):
@@ -219,7 +223,7 @@ class ControlAPI:
             return {"csrf": self.csrf(username), "flags": self.flags(), "flags_revision": self.fingerprint(self.flags()),
                     "instances": [{"id": c.get("id"), "appid": c.get("appid"), "environment": c.get("environment", "production")}
                                   for c in configs if c.get("type") == PLATFORM_TYPE],
-                    "defaults": DEFAULTS, "phase": "P3", "remote_state": "opt_in_managed_panels"}
+                    "defaults": DEFAULTS, "phase": "P4", "remote_state": "opt_in_managed_panels"}
         if operation == "flags":
             if body.get("confirm") is not True:
                 raise V2Error("confirmation_required", "Confirm the basic switch change.")

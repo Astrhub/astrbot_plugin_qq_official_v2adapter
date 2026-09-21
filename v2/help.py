@@ -170,18 +170,19 @@ def render_help(catalog, settings, query="", *, admin=False, markdown=False):
     for label, invocation in nav:
         lines.append((text_link(invocation, label, scene=catalog["scene"]) if markdown else None) or f"{label}：{invocation}")
     if catalog["scene"] in {"group", "channel"}:
-        lines.append("仅收@的场景请真实@机器人后发送；点击只预填，不会直接执行。")
+        lines.append("仅收@的场景请真实@机器人后发送；文字链只预填，执行仍经正常管线。")
     if mode == "detail":
         lines.append("参数只作提示/预填；权限和参数仍由正常指令管线校验。")
     body = "\n".join(lines)
     if len(body) > 4096 or len(body.encode()) > 16384:
         raise V2Error("menu_too_large", "Menu text exceeds the basic send limit; reduce page size or description.")
     return {"text": body, "page": page, "pages": len(chunks), "total": len(entries), "items": chunks[page],
-            "breadcrumb": breadcrumb, "layout": layout, "inheritance": inheritance, "markdown": markdown}
+            "breadcrumb": breadcrumb, "layout": layout, "inheritance": inheritance, "markdown": markdown, "navigation": nav}
 
 
 async def send_help(owner, event, query):
-    markdown = query == "md" or query.startswith("md ")
+    keyboard_requested = query == "kb" or query.startswith("kb ")
+    markdown = keyboard_requested or query == "md" or query.startswith("md ")
     if markdown:
         query = query[2:].strip()
     config = owner.context.get_config(event.unified_msg_origin)
@@ -189,10 +190,24 @@ async def send_help(owner, event, query):
     settings = owner.store.get(event.bot.identity.settings_key)["applied"]
     settings = owner.panels.filter_pins(event.bot, settings, catalog)
     page = render_help(catalog, settings, query, admin=event.is_admin(), markdown=markdown)
+    keyboard = None
     try:
-        await event.send(MessageChain([Plain(page["text"])]).use_markdown(markdown))
+        if keyboard_requested:
+            if event.route.scene not in {"group", "c2c"} or not settings["extensions"]["keyboard_enabled"]:
+                page["text"] = "当前场景或开关未启用回调键盘；保留文字预填帮助。\n" + page["text"]
+            else:
+                from .extensions.keyboard import make_keyboard
+                keyboard = make_keyboard(event.bot._state.extensions.tickets, event, catalog, page)
+        if keyboard:
+            await event.send_card(page["text"], keyboard)
+        else:
+            await event.send(MessageChain([Plain(page["text"])]).use_markdown(markdown))
     except V2Error as exc:
-        if not markdown or exc.phase != "rejected" or exc.business_code not in MARKDOWN_DENIED:
+        denied = exc.phase == "rejected" and exc.business_code in MARKDOWN_DENIED | {305007, 40034029}
+        local_fallback = exc.phase == "not_sent" and exc.code in {"ticket_capacity", "keyboard_limit", "keyboard_disabled"}
+        if not markdown or not (denied or local_fallback):
             raise
+        if keyboard:
+            keyboard.revoke()
         page = render_help(catalog, settings, query, admin=event.is_admin(), markdown=False)
-        await event.send(MessageChain([Plain("Markdown权限被拒绝，改用纯文本帮助。\n" + page["text"])]).use_markdown(False))
+        await event.send(MessageChain([Plain("键盘/Markdown被明确拒绝或不可用，改用纯文本帮助。\n" + page["text"])]).use_markdown(False))

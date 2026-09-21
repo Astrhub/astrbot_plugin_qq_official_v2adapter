@@ -1,5 +1,6 @@
 """Read effective host command metadata without executing filters or handlers."""
 
+import functools
 import hashlib
 import inspect
 import json
@@ -29,7 +30,13 @@ from .settings import effective_layout
 
 
 def binding_fingerprint(plugin, handler, ancestry, params):
-    function = handler.handler.__func__ if inspect.ismethod(handler.handler) else handler.handler
+    function = handler.handler
+    if type(function) is functools.partial:
+        # AstrBot 4.28.1 binds exactly the live Star instance after plugin loading.
+        if len(function.args) != 1 or function.args[0] is not getattr(plugin, "star_cls", None) or function.keywords:
+            return None
+        function = function.func
+    function = function.__func__ if inspect.ismethod(function) else function
     if not inspect.isfunction(function):
         return None
     source = hashlib.sha256(marshal.dumps(function.__code__)).hexdigest()

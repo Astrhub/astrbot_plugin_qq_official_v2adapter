@@ -28,10 +28,32 @@ class V2MessageEvent(AstrMessageEvent):
         self.set_extra("qq_send_result", result)
         await super().send(message)
 
+    async def send_card(self, text, keyboard):
+        from astrbot.core.message.components import Plain
+        from astrbot.core.message.message_event_result import MessageChain
+        from .errors import V2Error
+        chain = MessageChain([Plain(text)]).use_markdown(True)
+        try:
+            result = await self.bot.send(self.route, chain, keyboard=keyboard)
+        except V2Error as exc:
+            if exc.phase in {"not_sent", "rejected"}:
+                keyboard.revoke()
+            raise
+        self.set_extra("qq_send_result", result)
+        await super().send(chain)
+
     async def send_streaming(self, generator, use_fallback=False):
         self.bot.check()
-        raise unsupported("Streaming and fallback sending are not implemented.")
+        if self.bot._state.streaming is None:
+            raise unsupported("Streaming service is not attached.")
+        self.set_extra("qq_stream_mode", self.bot._state.streaming.mode(self.route, use_fallback))
+        result = await self.bot.stream(self.route, generator, use_fallback=use_fallback)
+        self.set_extra("qq_send_result", result)
+        await super().send_streaming(generator, use_fallback)
 
     async def send_typing(self):
-        self.bot.check()
-        raise unsupported("Typing is not implemented.")
+        return await self.bot.qq.typing(self.route.scene, self.route.target)
+
+    async def stop_typing(self):
+        if self.bot._state.typing and self.bot._source is not None:
+            await self.bot._state.typing.stop(self.route, source=self.bot._source)
