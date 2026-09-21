@@ -10,14 +10,14 @@ from astrbot.core.platform.platform_metadata import PlatformMetadata
 from . import PLATFORM_TYPE
 from .client import V2Client
 from .errors import V2Error
-from .media.service import MediaService
-from .extensions.management import Management
 from .extensions.interactions import ExtensionDispatcher
+from .extensions.management import Management
+from .media.service import MediaService
 from .messaging.delivery import ChatConsumer
 from .messaging.outbound import SendingCore
+from .messaging.store import IdentityView
 from .messaging.streaming import StreamingCore
 from .messaging.typing import TypingCore
-from .messaging.store import IdentityView
 from .models import InstanceKey, SessionRoute
 from .transport.http import HTTPTransport
 from .transport.inbox import Ingress

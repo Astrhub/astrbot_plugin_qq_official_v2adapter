@@ -166,6 +166,7 @@ async def test_upload_timeout_is_unknown_not_replayed_and_closes_session(tmp_pat
 
 async def test_upload_network_error_traceback_does_not_expose_signed_url(tmp_path):
     import traceback
+
     import aiohttp
     class BrokenSession:
         async def __aenter__(self):

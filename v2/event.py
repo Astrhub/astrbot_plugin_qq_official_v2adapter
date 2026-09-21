@@ -31,6 +31,7 @@ class V2MessageEvent(AstrMessageEvent):
     async def send_card(self, text, keyboard):
         from astrbot.core.message.components import Plain
         from astrbot.core.message.message_event_result import MessageChain
+
         from .errors import V2Error
         chain = MessageChain([Plain(text)]).use_markdown(True)
         try:

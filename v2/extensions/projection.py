@@ -5,8 +5,8 @@ from astrbot.core.message.components import Plain
 from astrbot.core.platform.astrbot_message import AstrBotMessage, MessageMember
 from astrbot.core.platform.message_type import MessageType
 
-from ..event import V2MessageEvent
 from ..errors import V2Error
+from ..event import V2MessageEvent
 from .events import EventReplySource
 
 

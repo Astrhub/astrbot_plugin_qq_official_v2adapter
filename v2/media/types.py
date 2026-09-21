@@ -16,7 +16,7 @@ class MediaInput:
             raise V2Error("invalid_media_input", "Unsupported media kind or local file fallback policy.")
         if not isinstance(self.value, str) or not self.value or len(self.value) > 12 * 1024 * 1024:
             raise V2Error("invalid_media_input", "Media input is missing or too large.")
-        if not isinstance(self.name, str) or not 1 <= len(self.name.encode()) <= 255 or any(c in self.name for c in '/\\') or any(ord(c) < 32 or ord(c) == 127 for c in self.name) or self.name in {".", ".."}:
+        if not isinstance(self.name, str) or not 1 <= len(self.name.encode()) <= 255 or any(c in self.name for c in "/\\") or any(ord(c) < 32 or ord(c) == 127 for c in self.name) or self.name in {".", ".."}:
             raise V2Error("invalid_media_name", "Use a bounded filename without path separators or control characters.")
         return self
 

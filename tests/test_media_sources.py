@@ -3,10 +3,22 @@ import asyncio
 import hashlib
 
 import pytest
-from test_media_upload import media as media, sending_core
+from test_media_upload import media as media
+from test_media_upload import sending_core
 
 from v2.errors import V2Error
+from v2.media.service import PreparedMedia
 from v2.media.types import MediaInput
+
+
+async def test_prepared_media_default_release_is_instance_callback(media):
+    value = MediaInput("file", "base64://eA==")
+    blob = await media.pool.load(value.value, roots=[], max_bytes=1)
+    prepared = PreparedMedia((), value, blob, "file")
+    assert prepared.release is vars(prepared)["release"]
+    prepared.close()
+    prepared.close()
+    assert prepared.closed and blob.closed and not media.pool.blobs and media.pool.used == 0
 
 
 @pytest.fixture
@@ -174,6 +186,7 @@ async def test_simplified_urls_do_not_expand_channel_dm_media(media, no_local_me
 async def test_media_url_query_survives_public_message_representations(media, no_local_media_io, form):
     from astrbot.core.message.components import Image
     from astrbot.core.message.message_event_result import MessageChain
+
     from v2.client import V2Client
     core, chat = sending_core(media)
     url = "https://assets.test/image?x=one,two&x=a%2Bb&name=%E4%B8%AD"

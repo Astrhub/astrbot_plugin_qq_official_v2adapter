@@ -193,6 +193,7 @@ async def test_upload_codes_and_unknown_not_replayed(media, mode, expected):
 
 def sending_core(m, event="GROUP_AT_MESSAGE_CREATE"):
     from test_messaging_state import chat_payload
+
     from v2.messaging.convert import convert_chat
     from v2.messaging.outbound import SendingCore
     from v2.protocol import RawEnvelope

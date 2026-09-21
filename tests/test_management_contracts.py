@@ -116,8 +116,8 @@ async def test_management_unknown_mutation_survives_restart_without_replay(manag
             await m.service.channel_delete("c", operation_id="uncertain")
         assert error.value.phase == "result_unknown"
         assert m.state.operation(m.http.identity.robot, "uncertain")["state"] == "unknown"
-        from v2.extensions.state import ExtensionStore
         from v2.extensions.management import Management
+        from v2.extensions.state import ExtensionStore
         from v2.messaging.store import MessageStore
         from v2.transport.http import HTTPTransport
         path = m.store.db.execute("PRAGMA database_list").fetchone()[2]

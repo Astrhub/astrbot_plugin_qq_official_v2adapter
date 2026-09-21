@@ -7,7 +7,8 @@ from types import SimpleNamespace
 
 import pytest
 from test_messaging_state import NOW, chat_payload
-from test_streaming import chains, streaming as streaming
+from test_streaming import chains
+from test_streaming import streaming as streaming
 
 from v2.commands import binding_fingerprint
 from v2.errors import V2Error

@@ -40,13 +40,22 @@ def no_external_network(event, args):
 
 
 sys.addaudithook(no_external_network)
-import astrbot
-from astrbot.core.utils import media_utils as host_media
-assert Path(host_media.__file__).resolve().is_relative_to(CORE.resolve())
-assert os.environ["ASTRBOT_ROOT"].startswith(str(STAGE))
-from v2.errors import V2Error
-from v2.media import io
-from v2.settings import DEFAULTS, validate_settings
+
+
+def load_host_modules():
+    import astrbot
+    from astrbot.core.utils import media_utils as host_media
+
+    from v2.errors import V2Error
+    from v2.media import io
+    from v2.settings import DEFAULTS, validate_settings
+
+    assert Path(host_media.__file__).resolve().is_relative_to(CORE.resolve())
+    assert os.environ["ASTRBOT_ROOT"].startswith(str(STAGE))
+    return astrbot, host_media, V2Error, io, DEFAULTS, validate_settings
+
+
+astrbot, host_media, V2Error, io, DEFAULTS, validate_settings = load_host_modules()
 
 
 class NativeMedia(unittest.IsolatedAsyncioTestCase):
@@ -142,7 +151,7 @@ class NativeMedia(unittest.IsolatedAsyncioTestCase):
         other.mkdir()
         (other / "file.bin").write_bytes(b"not authorized")
         junction = self.allowed / "junction"
-        made = subprocess.run([r"C:\Windows\System32\cmd.exe", "/d", "/c", "mklink", "/J", str(junction), str(other)], capture_output=True)
+        made = await asyncio.to_thread(subprocess.run, [r"C:\Windows\System32\cmd.exe", "/d", "/c", "mklink", "/J", str(junction), str(other)], capture_output=True)
         self.assertEqual(made.returncode, 0, "Could not create own temporary junction")
         try:
             self.assertTrue(junction.is_junction())

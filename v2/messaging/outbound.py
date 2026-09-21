@@ -13,8 +13,8 @@ from astrbot.core.message.components import At, File, Image, Plain, Record, Repl
 from astrbot.core.message.message_event_result import MessageChain
 
 from ..errors import V2Error, unsupported
-from ..models import text_id
 from ..media.types import FilePart, MediaInput
+from ..models import text_id
 from ..protocol import RequestSpec, openapi_base
 
 AMBIGUOUS_CODES = {304023, 304024, 40054005, 50055001, 50055002, 50055006}

@@ -5,7 +5,8 @@ from dataclasses import replace
 import pytest
 from aiohttp import web
 from test_media_boundary import PNG
-from test_media_upload import AssetSession, media as media
+from test_media_upload import AssetSession
+from test_media_upload import media as media
 from test_messaging_state import NOW, chat_payload
 from test_transport_http import upstream
 

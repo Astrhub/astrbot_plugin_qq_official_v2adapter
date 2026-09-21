@@ -7,7 +7,8 @@ from astrbot.core.message.components import Plain
 from astrbot.core.message.message_event_result import MessageChain
 from test_interactions import interaction
 from test_lifecycle import plugin_module as plugin_module
-from test_messaging_delivery import accept, receiver as receiver
+from test_messaging_delivery import accept
+from test_messaging_delivery import receiver as receiver
 from test_messaging_state import NOW
 from test_transport_http import MappedSession, upstream
 

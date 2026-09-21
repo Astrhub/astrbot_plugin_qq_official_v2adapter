@@ -15,11 +15,11 @@ from astrbot.core.star.filter.command import GreedyStr
 from .v2 import PLATFORM_TYPE, PLUGIN_NAME
 from .v2.adapter import DEFAULT_PLATFORM_CONFIG, V2Adapter
 from .v2.connections import Connections
+from .v2.extensions.state import ExtensionStore
 from .v2.help import send_help
+from .v2.media.io import BlobPool
 from .v2.messaging.delivery import DeliverySlots
 from .v2.messaging.store import MessageStore
-from .v2.extensions.state import ExtensionStore
-from .v2.media.io import BlobPool
 from .v2.onboarding import Onboarding
 from .v2.panels import PanelService
 from .v2.settings import SettingsStore
