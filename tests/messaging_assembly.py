@@ -4,6 +4,7 @@ import importlib
 import time
 
 from aiohttp import web
+from network_assembly import network_roundtrip
 from test_messaging_state import chat_payload
 from test_transport_http import MappedSession, upstream
 from test_transport_receive import signed
@@ -101,6 +102,7 @@ async def messaging_roundtrip(lifecycle, client, headers, owner, instance, callb
             stopped = await client.post(prefix + "/panels/disable", json={**body, "confirm": True}, headers=headers)
             assert stopped.status_code == 200 and not stopped.json()["enabled"] and len(panels) == 1
             await extension_roundtrip(lifecycle, client, headers, owner, instance, callback, base, replies, completed, probe, event, monkeypatch)
+            await network_roundtrip(client, headers, owner, instance, callback, replies, completed)
             assert not owner.delivery_slots.events
             assert instance.consumer.task and not instance.consumer.task.done()
             await asyncio.wait_for(asyncio.gather(*lifecycle.event_bus._pending_tasks), 5)

@@ -23,10 +23,10 @@ const command = {id: 'fixture_handler', name: 'fixture', command: '/fixture', us
 let calls = [], ready = false;
 let state = {platform_id: 'fixture', revision: 0, applied_revision: 0, remote_state: 'not_implemented', fingerprint: 'fixture-fingerprint',
   draft: structuredClone(defaults), versions: [], identity: {appid: 'fixture-app', environment: 'sandbox'}, credentials_configured: true, runtime_state: 'transport_not_ready'};
-let flags = {remote_menu_sync: false, webui_enabled: true};
+let flags = {remote_menu_sync: false, webui_enabled: true, onebot_network_enabled: false};
 const timers = new Map(), events = new Map(); let timerId = 0, failSave = false;
 const connection = {platform_id: 'fixture', fingerprint: 'connection-fingerprint', exists: true,
-  fields: {appid: 'fixture-app', environment: 'production', transport: 'websocket', intents: 33554432, shard: [0, 1], enable: false},
+  fields: {appid: 'fixture-app', environment: 'production', transport: 'websocket', intents: 33554432, shard: [0, 1], enable: false, onebot: {host: '127.0.0.1', port: 5700, writes: false, enable: false}},
   credentials_configured: true, runtime: {state: 'configured', online: false}, reload: 'not_requested'};
 const binding = {ticket: 'fixture-ticket', platform_id: 'fixture', state: 'pending', expires_in: 180, lease_seconds: 30, qr_matrix: [[true, false], [false, true]]};
 let retainedRows = [{receipt: 7, version: 'a'.repeat(64), confirmation: 'fixture-confirmation', event_type: '<script>plain text</script>', state: 'extension', reason: 'unsupported', received_at: 1800000000, size: 100}];
@@ -50,7 +50,7 @@ const bridge = {
     if (endpoint === 'panels/plan') return {fingerprint: 'panel-snapshot', issues: [], payload: {scope: body.scene}};
     if (['panels/enable', 'panels/sync', 'panels/disable'].includes(endpoint)) return {state: endpoint.endsWith('disable') ? 'stopped' : 'synced'};
     if (endpoint === 'inbox/discard') { assert.equal(body.confirm, true); assert.equal(body.entries.length, 1); assert.equal(body.entries[0].confirmation, 'fixture-confirmation'); retainedRows = []; return {discarded: 1, counts: {pending: 1}}; }
-    if (endpoint === 'connection/save') { if (failSave) throw new Error('fixture conflict'); Object.assign(connection.fields, body.patch); return structuredClone(connection); }
+    if (endpoint === 'connection/save') { if (failSave) throw new Error('fixture conflict'); const {onebot, ...rest} = body.patch; Object.assign(connection.fields, rest); Object.assign(connection.fields.onebot, onebot || {}); if (body.network_token_action !== 'keep') connection.network_token_configured = body.network_token_action === 'replace'; return structuredClone(connection); }
     if (endpoint === 'connection/reload') { connection.runtime.state = 'connecting'; return structuredClone(connection); }
     if (endpoint === 'onboarding/start') return structuredClone(binding);
     if (endpoint === 'onboarding/status') return {...binding, state: 'ready_to_commit', qr_matrix: null, commit_handle: 'fixture-handle'};
@@ -151,4 +151,24 @@ assert.equal(retainedCheck.checked, true); assert.equal(calls.length, beforeSele
 window.confirm = () => true; await nodes.get('retained-discard').onclick();
 const discard = calls.find(c => c[1] === 'inbox/discard'); assert.equal(discard[2].platform_id, 'fixture'); assert.equal(discard[2].fingerprint, 'fixture-fingerprint');
 assert.equal(nodes.get('retained-list').children.length, 0); assert(nodes.get('status').textContent.includes('已明确丢弃 1'));
+await nodes.get('bind-cancel').onclick(); // The earlier pagehide probe deliberately left a pending in-memory binding.
+assert.equal(nodes.get('network-enable').checked, false); assert.equal(nodes.get('network-writes').checked, false);
+assert.equal(nodes.get('network-host').value, '127.0.0.1'); assert.equal(nodes.get('network-token').value, '');
+nodes.get('network-enable').checked = true; nodes.get('network-writes').checked = true; nodes.get('network-port').value = '5799';
+nodes.get('network-token-action').value = 'replace'; nodes.get('network-token').value = 'synthetic-network-token-only';
+nodes.get('network-confirm-token').checked = true; nodes.get('network-confirm-writes').checked = true;
+const beforeNetworkSave = calls.length; await nodes.get('connect-save').onclick();
+const networkSaved = calls.at(-1); assert.equal(networkSaved[1], 'connection/save');
+assert.deepEqual(networkSaved[2].patch, {onebot: {enable: true, writes: true, port: 5799}});
+assert.equal(networkSaved[2].network_token, 'synthetic-network-token-only'); assert.equal(networkSaved[2].confirm_network_token, true);
+assert.equal(networkSaved[2].confirm_network_writes, true); assert.equal(nodes.get('network-token').value, '');
+assert(!calls.slice(beforeNetworkSave).some(c => c[1] === 'connection/reload'));
+assert(nodes.get('network-token-state').textContent.includes('已配置'));
+assert(!nodes.get('network-capabilities').textContent.includes('synthetic-network-token-only'));
+nodes.get('network-token-action').value = 'replace'; nodes.get('network-token').value = 'synthetic-failing-token'; failSave = true;
+await nodes.get('connect-save').onclick(); assert.equal(nodes.get('network-token').value, ''); failSave = false;
+await nodes.get('connect-read').onclick();
+await nodes.get('network-gate').onclick(); assert.equal(calls.at(-1)[1], 'flags'); assert.equal(calls.at(-1)[2].patch.onebot_network_enabled, true);
+const beforeHide = calls.length; nodes.get('network-token').value = 'synthetic-ephemeral-token'; events.get('pagehide')();
+assert.equal(nodes.get('network-token').value, ''); assert.equal(calls.length, beforeHide, 'page close must not disable listener or rotate token');
 console.log('PAGE: bridge-ready, real endpoint wiring, save/preview split, partial patches, safe text and parameter assistant passed');

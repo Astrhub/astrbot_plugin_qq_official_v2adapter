@@ -175,7 +175,9 @@ class ControlAPI:
         if operation == "connection_save":
             return await connections.save(platform_id, body.get("fingerprint"), body.get("patch", {}),
                 secret_action=body.get("secret_action", "keep"), secret=body.get("secret"), confirm=body.get("confirm"),
-                confirm_identity=body.get("confirm_identity"), confirm_secret=body.get("confirm_secret"))
+                confirm_identity=body.get("confirm_identity"), confirm_secret=body.get("confirm_secret"),
+                network_token_action=body.get("network_token_action", "keep"), network_token=body.get("network_token"),
+                confirm_network_token=body.get("confirm_network_token"), confirm_network_writes=body.get("confirm_network_writes"))
         if operation == "connection_reload":
             return await connections.reload(platform_id, body.get("fingerprint"), confirm=body.get("confirm"))
         if operation == "onboarding_start":
@@ -223,7 +225,7 @@ class ControlAPI:
             return {"csrf": self.csrf(username), "flags": self.flags(), "flags_revision": self.fingerprint(self.flags()),
                     "instances": [{"id": c.get("id"), "appid": c.get("appid"), "environment": c.get("environment", "production")}
                                   for c in configs if c.get("type") == PLATFORM_TYPE],
-                    "defaults": DEFAULTS, "phase": "P4", "remote_state": "opt_in_managed_panels"}
+                    "defaults": DEFAULTS, "phase": "P5", "remote_state": "opt_in_managed_panels"}
         if operation == "flags":
             if body.get("confirm") is not True:
                 raise V2Error("confirmation_required", "Confirm the basic switch change.")
@@ -232,8 +234,6 @@ class ControlAPI:
             patch = body.get("patch")
             if not isinstance(patch, dict) or patch.keys() - FLAGS.keys() or any(type(v) is not bool for v in patch.values()):
                 raise V2Error("invalid_settings", "Only basic boolean switches are allowed.")
-            if patch.get("onebot_network_enabled"):
-                raise unsupported("OneBot network listeners are not implemented.")
             old = dict(self.owner.config)
             try:
                 self.owner.config.update(patch)
@@ -242,6 +242,9 @@ class ControlAPI:
                 self.owner.config.clear()
                 self.owner.config.update(old)
                 raise V2Error("config_save_failed", "Host switch save failed; reload to verify disk state.", status=503) from exc
+            if patch.get("onebot_network_enabled") is False:
+                for instance in self.owner.instances:
+                    instance.network.revoke()
             return {"flags": self.flags(), "revision": self.fingerprint(self.flags())}
         platform_id = body.get("platform_id") if request.method == "POST" else request.query.get("platform_id")
         config, identity, fingerprint = self.platform(platform_id)

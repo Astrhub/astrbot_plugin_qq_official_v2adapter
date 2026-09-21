@@ -7,8 +7,8 @@
   <link rel="stylesheet" href="./style.css">
 </head>
 <body>
-  <header><h1>QQ 官方 V2 <small>P4 媒体与受控扩展</small></h1>
-    <p>独立接入、收发与指令帮助 · 媒体/流式及受控扩展已实现，应用权限未知；OneBot 网络接口未开放。</p>
+  <header><h1>QQ 官方 V2 <small>P5 OneBot 网络子集</small></h1>
+    <p>独立接入、收发与指令帮助 · 应用权限未知；HTTP/正向WS默认关闭，启用需要独立token和重载。</p>
     <div class="toolbar">
       <label>实例 <select id="instance"></select></label>
       <label>场景 <select id="scene"><option value="group">群聊</option><option value="c2c">单聊</option><option value="channel">文字子频道</option><option value="dm">频道私信</option></select></label>
@@ -34,6 +34,20 @@
       <label>新 AppSecret <input id="connect-secret" type="password" maxlength="512" autocomplete="new-password" placeholder="未编辑时留空；服务端不返回原凭据"></label>
       <label><input id="connect-confirm-secret" type="checkbox">明确同意替换 / 清空凭据（扫码提交也需要）</label>
       <label><input id="connect-confirm-identity" type="checkbox">明确同意改绑 AppID / 环境</label>
+      <fieldset><legend>OneBot HTTP / 正向 WS（默认关闭）</legend>
+        <button id="network-gate">切换网络总闸</button><span id="network-gate-state"></span>
+        <label><input id="network-enable" type="checkbox">为此实例启用监听（保存后重载生效）</label>
+        <label>绑定 IP <input id="network-host" maxlength="64" placeholder="127.0.0.1"></label>
+        <label>端口 <input id="network-port" type="number" min="1" max="65535"></label>
+        <label><input id="network-writes" type="checkbox">允许网络写动作（默认只读）</label>
+        <label><input id="network-confirm-writes" type="checkbox">确认授予此专用 token 写入权；管理写还需高级区开关</label>
+        <label>token 操作 <select id="network-token-action"><option value="keep">保留专用 token</option><option value="replace">替换专用 token</option><option value="clear">清空 token（先关闭监听）</option></select></label>
+        <label>新专用 token <input id="network-token" type="password" minlength="16" maxlength="512" autocomplete="new-password" placeholder="16–512字符；不复用QQ凭据或Dashboard令牌"></label>
+        <label><input id="network-confirm-token" type="checkbox">明确确认替换 / 清空网络 token</label>
+        <p id="network-token-state"></p>
+        <p>HTTP /:action；WS /api、/event、/。真实字符串OpenID子集，聊天为qq_event扩展视图；不是数字QQ号或全量OneBot。关闭总闸立即拒绝新操作并回收监听，重新开启需重载；关闭本页面不停止运行。</p>
+        <details><summary>实际网络状态与能力</summary><pre id="network-capabilities"></pre></details>
+      </fieldset>
       <div class="toolbar"><button id="connect-save">保存连接配置（不重载）</button><button id="connect-reload">重载已保存连接</button><button id="bind-start">创建官方扫码任务</button><button id="bind-cancel">取消扫码</button><button id="bind-commit">确认提交扫码凭据（保持禁用）</button></div>
       <p id="connect-status" role="status"></p><p id="bind-status" role="status">未创建扫码任务。</p>
       <canvas id="bind-qr" aria-label="本地生成的官方绑定二维码" hidden></canvas>

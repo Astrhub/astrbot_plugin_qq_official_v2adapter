@@ -15,8 +15,10 @@ function changed(old, next) {
   for (const key of new Set([...Object.keys(old), ...Object.keys(next)])) {
     if (!(key in next)) patch[key] = null;
     else if (JSON.stringify(old[key]) !== JSON.stringify(next[key])) {
-      patch[key] = old[key] && next[key] && typeof old[key] === "object" && typeof next[key] === "object" && !Array.isArray(next[key])
-        ? changed(old[key], next[key]) : next[key];
+      if (old[key] && next[key] && typeof old[key] === "object" && typeof next[key] === "object" && !Array.isArray(next[key])) {
+        const nested = changed(old[key], next[key]);
+        if (Object.keys(nested).length) patch[key] = nested;
+      } else patch[key] = next[key];
     }
   }
   return patch;
@@ -313,7 +315,8 @@ const bindingActive = () => binding && ["creating", "pending", "ready_to_commit"
 function connectionFields() {
   return {appid: $("connect-appid").value.trim(), environment: $("connect-environment").value,
     transport: $("connect-transport").value, intents: Number($("connect-intents").value),
-    shard: JSON.parse($("connect-shard").value), enable: $("connect-enable").checked};
+    shard: JSON.parse($("connect-shard").value), enable: $("connect-enable").checked,
+    onebot: {enable: $("network-enable").checked, host: $("network-host").value.trim(), port: Number($("network-port").value), writes: $("network-writes").checked}};
 }
 function connectionPayload(extra = {}) {
   if (!connectionView || $("connect-id").value.trim() !== connectionView.platform_id) throw new Error("请先读取接入目标，再编辑或操作。");
@@ -326,6 +329,14 @@ function showConnection(value) {
   $("connect-shard").value = JSON.stringify(value.fields.shard); $("connect-enable").checked = value.fields.enable;
   $("connect-secret").value = ""; $("connect-secret-action").value = "keep";
   $("connect-confirm-secret").checked = false; $("connect-confirm-identity").checked = false;
+  const network = value.fields.onebot;
+  $("network-enable").checked = network.enable; $("network-writes").checked = network.writes;
+  $("network-host").value = network.host; $("network-port").value = String(network.port);
+  $("network-token").value = ""; $("network-token-action").value = "keep";
+  $("network-confirm-token").checked = false; $("network-confirm-writes").checked = false;
+  $("network-token-state").textContent = `专用 token ${value.network_token_configured ? "已配置（不回传原值）" : "未配置"}`;
+  $("network-gate-state").textContent = boot.flags?.onebot_network_enabled ? "总闸开启；未运行实例需重载" : "总闸关闭";
+  $("network-capabilities").textContent = JSON.stringify(value.capabilities || {network_api: {state: "not_loaded"}}, null, 2);
   $("connect-status").textContent = `${value.platform_id} · 凭据${value.credentials_configured ? "已配置" : "未配置"} · ${value.runtime.state} · online=${value.runtime.online} · ${value.reload}。${value.webhook_path || ""}`;
   const failure = value.runtime.failure_details || value.runtime.last_transport_failure;
   if (failure) $("connect-status").textContent += ` 最近故障：${failure.code} / 业务或关闭码 ${failure.business_code ?? "无"} / HTTP ${failure.http_status ?? "无"}`;
@@ -335,7 +346,7 @@ function showConnection(value) {
 }
 function connectionDirty() {
   if (!connectionView) return false;
-  try { return !!Object.keys(changed(connectionView.fields, connectionFields())).length || !!$("connect-secret").value || $("connect-secret-action").value !== "keep"; }
+  try { return !!Object.keys(changed(connectionView.fields, connectionFields())).length || !!$("connect-secret").value || $("connect-secret-action").value !== "keep" || !!$("network-token").value || $("network-token-action").value !== "keep"; }
   catch { return true; }
 }
 function showBinding(value) {
@@ -376,11 +387,15 @@ $("connect-save").onclick = () => run(async () => {
   if (bindingActive()) throw new Error("请先取消扫码，避免覆盖待提交的连接配置。");
   if (!window.confirm("保存到本体平台配置，不自动连接；现有运行代次将失效。继续？")) return;
   const value = connectionPayload({patch: changed(connectionView.fields, connectionFields()), secret_action: $("connect-secret-action").value,
-    confirm: true, confirm_secret: $("connect-confirm-secret").checked, confirm_identity: $("connect-confirm-identity").checked});
-  if (value.secret_action === "replace") value.secret = $("connect-secret").value;
-  else if ($("connect-secret").value) throw new Error("已输入凭据，请选择替换并确认，或清空输入以保留原凭据。");
-  try { showConnection(await bridge.apiPost("connection/save", value)); }
-  finally { $("connect-secret").value = ""; delete value.secret; }
+    confirm: true, confirm_secret: $("connect-confirm-secret").checked, confirm_identity: $("connect-confirm-identity").checked,
+    network_token_action: $("network-token-action").value, confirm_network_token: $("network-confirm-token").checked, confirm_network_writes: $("network-confirm-writes").checked});
+  try {
+    if (value.secret_action === "replace") value.secret = $("connect-secret").value;
+    else if ($("connect-secret").value) throw new Error("已输入QQ凭据，请选择替换并确认，或清空输入以保留原凭据。");
+    if (value.network_token_action === "replace") value.network_token = $("network-token").value;
+    else if ($("network-token").value) throw new Error("已输入网络token，请选择替换并确认，或清空输入。");
+    showConnection(await bridge.apiPost("connection/save", value));
+  } finally { $("connect-secret").value = ""; $("network-token").value = ""; delete value.secret; delete value.network_token; }
 });
 $("connect-reload").onclick = () => run(async () => {
   if (connectionDirty() || bindingActive()) throw new Error("请先保存连接编辑或取消扫码，再重载已保存配置。");
@@ -400,8 +415,14 @@ $("bind-commit").onclick = () => run(async () => {
     confirm: true, confirm_secret: $("connect-confirm-secret").checked, confirm_identity: $("connect-confirm-identity").checked})));
   scheduleBinding(); if (binding.result) showConnection(binding.result);
 });
+$("network-gate").onclick = () => run(async () => {
+  if (!window.confirm("切换OneBot网络总闸？关闭将撤销所有监听；开启仍需实例启用并重载。")) return;
+  const value = await bridge.apiPost("flags", {csrf: boot.csrf, revision: boot.flags_revision, patch: {onebot_network_enabled: !boot.flags.onebot_network_enabled}, confirm: true});
+  boot.flags = value.flags; boot.flags_revision = value.revision;
+  $("network-gate-state").textContent = boot.flags.onebot_network_enabled ? "总闸开启；需重载" : "总闸关闭";
+});
 window.addEventListener("pagehide", () => {
-  window.clearTimeout(bindingTimer); $("connect-secret").value = "";
+  window.clearTimeout(bindingTimer); $("connect-secret").value = ""; $("network-token").value = "";
   if (bindingActive()) bridge.apiPost("onboarding/cancel", {csrf: boot.csrf, platform_id: binding.platform_id, ticket: binding.ticket}).catch(() => {});
 });
 $("bind-commit").hidden = true; $("bind-cancel").hidden = true;
