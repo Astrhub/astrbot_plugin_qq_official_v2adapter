@@ -252,7 +252,7 @@ class ControlAPI:
         scene = body.get("scene", "group") if request.method == "POST" else request.query.get("scene", "group")
         if scene not in SCENES:
             raise V2Error("invalid_scene", "Unknown scene.")
-        catalog = collect_catalog(self.owner.context.get_config(), scene)
+        catalog = collect_catalog(self.owner.context.get_config(), scene, context=self.owner.context)
         if operation == "commands":
             return catalog
         if body.get("fingerprint") != fingerprint:

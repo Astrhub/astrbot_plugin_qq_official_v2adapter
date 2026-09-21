@@ -143,7 +143,7 @@ class PanelService:
         else:
             manager = getattr(context, "astrbot_config_mgr", None)
             configs = list(getattr(manager, "confs", {}).values()) or [context.get_config()]
-        catalogs = [collect_catalog(config, scene) for config in configs]
+        catalogs = [collect_catalog(config, scene, context=context) for config in configs]
         first = copy.deepcopy(catalogs[0])
         first["scope_variants"] = catalogs
         return first
@@ -152,7 +152,7 @@ class PanelService:
         selected = {n for p in settings["panels"].values() if p["mode"] == "custom" for n in p["selected"]}
         nodes = {}
         for scene in SCENES:
-            nodes.update({n["id"]: n for n in collect_catalog(self.owner.context.get_config(), scene)["nodes"]})
+            nodes.update({n["id"]: n for n in collect_catalog(self.owner.context.get_config(), scene, context=self.owner.context)["nodes"]})
         key = instance.identity.settings_key
         current = dict(self.owner.store.db.execute("SELECT handler,binding FROM command_bindings WHERE settings_key=?", (key,)))
         changes = [identity for identity in selected if identity not in nodes or current.get(identity) != nodes[identity]["binding"]]

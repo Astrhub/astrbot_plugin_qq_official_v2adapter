@@ -25,7 +25,11 @@ async def test_prepared_media_default_release_is_instance_callback(media):
 async def no_local_media_io(media, monkeypatch):
     def forbidden(*args, **kwargs):
         raise AssertionError("URL media must not allocate blobs, resolve DNS or contact its origin")
+    from PIL import Image
+
     from v2.media import io
+    monkeypatch.setattr(Image, "open", forbidden)
+    monkeypatch.setattr(media.pool, "load", forbidden)
     monkeypatch.setattr(io, "MediaResolver", forbidden)
     monkeypatch.setattr(media.pool, "create", forbidden)
     monkeypatch.setattr(media.service.transfer, "session_factory", forbidden)

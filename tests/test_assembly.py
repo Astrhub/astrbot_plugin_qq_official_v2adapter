@@ -5,6 +5,7 @@ import json
 import shutil
 import sys
 import time
+from functools import partial
 from pathlib import Path
 
 import httpx
@@ -103,6 +104,16 @@ async def test_real_astrbot_assembly(config, monkeypatch, qq_reject_server, qq_p
             assert any(n["system"] for n in catalog["nodes"])
             assert len([n for n in catalog["nodes"] if n["menu_entry"]]) == 1
             assert all(n["id"] for n in catalog["nodes"])
+            from astrbot.core.star.star_handler import star_handlers_registry
+            from test_command_framework_reuse import freeze
+            menu_node = next(n for n in catalog["nodes"] if n["menu_entry"])
+            menu_handler = star_handlers_registry.get_handler_by_full_name(menu_node["id"])
+            assert type(menu_handler.handler) is partial and menu_handler.handler.args == (owner,)
+            assert menu_node["binding"]
+            runtime = [menu_handler, *menu_handler.event_filters]
+            snapshot = [freeze(vars(obj)) for obj in runtime]
+            catalog_again = (await client.get(prefix + "/commands", params={"platform_id": config["id"], "scene": "group"}, headers=headers)).json()
+            assert catalog_again == catalog and snapshot == [freeze(vars(obj)) for obj in runtime]
             payload = {"platform_id": config["id"], "scene": "group", "fingerprint": view["fingerprint"],
                        "revision": view["revision"], "csrf": boot["csrf"], "patch": {"title": "fixture title"}}
             assert (await client.post(prefix + "/config/mutate", json={**payload, "csrf": "invalid", "operation": "save"}, headers=headers)).status_code == 403
@@ -182,6 +193,10 @@ async def test_real_astrbot_assembly(config, monkeypatch, qq_reject_server, qq_p
             await lifecycle.platform_manager._platform_tasks[new_instance.client_self_id].wrapper
             assert new_instance.identity.generation != instance.identity.generation
             assert new_instance.local_settings["title"] == "fixture title"
+            reloaded_catalog = (await client.get(prefix + "/commands", params={"platform_id": config["id"], "scene": "group"}, headers=headers)).json()
+            reloaded_menu = next(n for n in reloaded_catalog["nodes"] if n["menu_entry"])
+            assert reloaded_menu["binding"] == menu_node["binding"] and reloaded_menu["enabled"]
+            assert star_handlers_registry.get_handler_by_full_name(reloaded_menu["id"]).handler.args == (new_owner,)
             # P2: real host save/reload, QR lease/commit and unified callback dispatch.
             from test_transport_receive import StepClock, event, signed
             clock = StepClock()

@@ -1,4 +1,4 @@
-"""Pure P0 boundaries to be used by the P2 transport, never a live driver."""
+"""QQ envelope, request, replay and response contracts."""
 
 import copy
 import json
@@ -75,76 +75,6 @@ class ExpiringSet:
         self.items.move_to_end(key)
         while len(self.items) > self.capacity:
             self.items.popitem(last=False)
-
-
-class AcceptedEvents:
-    """Advance only after a bounded downstream queue has accepted the envelope."""
-
-    def __init__(self, **kwargs):
-        self.seen = ExpiringSet(**kwargs)
-        self.last_sequence = None
-
-    def accept(self, envelope, put_nowait):
-        identity = envelope.event_id
-        if identity and self.seen.contains(identity):
-            return False
-        put_nowait(envelope)
-        if identity:
-            self.seen.add(identity)
-        seq = envelope.payload.get("s")
-        if type(seq) is int and (self.last_sequence is None or seq > self.last_sequence):
-            self.last_sequence = seq
-        return True
-
-
-class IdentityCache:
-    """Only structured chat authors enter this bounded prototype cache."""
-
-    def __init__(self, *, capacity=4096, ttl=86400, clock=time.time):
-        if capacity < 1 or ttl <= 0:
-            raise ValueError("capacity and ttl must be positive")
-        self.capacity, self.ttl, self.clock = capacity, ttl, clock
-        self.items = OrderedDict()
-
-    def observe_chat(self, robot: RobotKey, envelope: RawEnvelope):
-        event_type = envelope.payload.get("t")
-        if envelope.payload.get("op") != 0 or event_type not in CHAT_EVENTS:
-            raise V2Error("not_chat_source", "Only original chat envelopes may create identities.")
-        data = envelope.payload.get("d")
-        if not isinstance(data, dict) or envelope.payload.get("derived_from_interaction"):
-            raise V2Error("not_chat_source", "Projected events are not chat records.")
-        message_id = text_id(envelope.message_id)
-        kind, scene, author_field = CHAT_EVENTS[event_type]
-        author = data.get("author", {})
-        if not isinstance(author, dict):
-            raise V2Error("not_chat_source", "A structured author is required.")
-        openid = text_id(author.get(author_field))
-        target_field = {"group": "group_openid", "channel": "channel_id", "dm": "guild_id"}.get(scene)
-        target = text_id(data.get(target_field)) if target_field else openid
-        scope = f"{scene}:{target}"
-        key = (robot, kind, scope, openid)
-        now = self.clock()
-        old = self.items.get(key)
-        first = old["first_seen"] if old and old["last_seen"] + self.ttl > now else now
-        record = {"user_id": openid, "id_kind": kind, "scope": scope,
-                  "source_message_id": message_id, "first_seen": first, "last_seen": now}
-        if isinstance(author.get("username"), str) and len(author["username"]) <= 256:
-            record["nickname"] = author["username"]
-        self.items[key] = record
-        self.items.move_to_end(key)
-        while len(self.items) > self.capacity:
-            self.items.popitem(last=False)
-        return copy.deepcopy(record)
-
-    def lookup(self, robot, kind, scope, openid):
-        key = (robot, kind, scope, openid)
-        record = self.items.get(key)
-        if record and record["last_seen"] + self.ttl <= self.clock():
-            del self.items[key]
-            record = None
-        if record is None:
-            raise V2Error("identity_not_observed", "No available chat observation in this robot and scope.", status=404)
-        return copy.deepcopy(record)
 
 
 def avatar_url(robot: RobotKey, openid: str, size=100):

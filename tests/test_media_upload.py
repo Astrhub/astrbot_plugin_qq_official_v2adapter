@@ -84,12 +84,13 @@ async def media(config, tmp_path):
             return web.json_response({"code": 40093002})
         if request.path.endswith("upload_prepare"):
             size = int(body["file_size"])
-            parts = [{"index": i, "block_size": str(min(40, size - i * 40)), "presigned_url": f"https://cos.test/part/{i}?sign=do-not-store"}
-                     for i in range((size + 39) // 40)]
+            block = modes[0].get("block_size", 40) if modes and isinstance(modes[0], dict) else 40
+            parts = [{"index": i, "block_size": str(min(block, size - i * block)), "presigned_url": f"https://cos.test/part/{i}?sign=do-not-store"}
+                     for i in range((size + block - 1) // block)]
             if modes and isinstance(modes[0], dict) and "part_indices" in modes[0]:
                 for part, index in zip(parts, modes[0]["part_indices"], strict=True):
                     part["index"] = index
-            return web.json_response({"upload_id": "fixture-upload", "block_size": "40", "parts": parts, "upload_config": {"concurrency": 1, "retry_timeout": 30, "retry_delay": 0}})
+            return web.json_response({"upload_id": "fixture-upload", "block_size": str(block), "parts": parts, "upload_config": {"concurrency": 1, "retry_timeout": 30, "retry_delay": 0}})
         if request.path.endswith("upload_part_finish"):
             return web.json_response({})
         if request.path.endswith("files"):

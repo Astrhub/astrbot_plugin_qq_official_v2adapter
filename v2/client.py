@@ -4,7 +4,7 @@ from . import PLATFORM_TYPE, VERSION
 from .errors import V2Error, not_ready, unsupported
 from .extensions.management import MANAGEMENT_ACTIONS, NATIVE_ACTIONS
 from .models import SessionRoute, text_id
-from .protocol import IdentityCache, avatar_url
+from .protocol import avatar_url
 
 REMOTE_ACTIONS = {
     "send_group_msg", "send_private_msg", "send_msg", "delete_msg", "get_msg",
@@ -24,7 +24,7 @@ class ClientState:
     def __init__(self, identity):
         self.identity = identity
         self.closed = False
-        self.cache = IdentityCache()
+        self.cache = None
         self.guard = lambda: None
         self.status = None
         self.http = None
@@ -146,8 +146,6 @@ class V2Client:
 
     async def close(self):
         self._state.closed = True
-        if isinstance(self._state.cache, IdentityCache):
-            self._state.cache.items.clear()
 
     def capabilities(self):
         return {
@@ -170,7 +168,7 @@ class V2Client:
                 **({name: {"support": "conditional", "permission": "unknown", "reason": "real_response_and_retained_scope_required; writes_opt_in"}
                     for name in MANAGEMENT_ACTIONS} if self._state.management else {}),
             },
-            "identity_cache": "durable, robot/kind/scene/target-scoped chat observations" if self._state.sender else "volatile contract cache",
+            "identity_cache": "durable, robot/kind/scene/target-scoped chat observations" if self._state.cache is not None else "not_ready",
         }
 
     async def call_action(self, action, **params):
@@ -236,6 +234,8 @@ class V2Client:
             scope = f"{self._route.scene}:{self._route.target}"
         if not isinstance(kind, str) or not isinstance(scope, str):
             raise V2Error("identity_scope_required", "Explicit id_kind and scope are required outside a bound chat route.")
+        if self._state.cache is None:
+            raise not_ready()
         record = self._state.cache.lookup(self.identity.robot, kind, scope, user_id)
         if action == "get_stranger_info":
             return {**record, "source": "chat_cache", "partial": True}

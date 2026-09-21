@@ -26,7 +26,7 @@ class TicketStore:
         return self.adapter.owner.context.get_config(str(MessageSession(self.adapter.identity.platform_id, message_type, route.encode())))
 
     def catalog(self, route):
-        return self.catalog_provider(route) if self.catalog_provider else collect_catalog(self.config(route), route.scene)
+        return self.catalog_provider(route) if self.catalog_provider else collect_catalog(self.config(route), route.scene, context=self.adapter.owner.context)
 
     def settings(self):
         self.adapter.check_generation()

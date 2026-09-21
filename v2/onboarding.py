@@ -10,6 +10,7 @@ from urllib.parse import quote
 
 import aiohttp
 import qrcode
+from astrbot.core.utils.http_ssl import build_ssl_context_with_certifi
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 from .errors import V2Error
@@ -57,7 +58,7 @@ class Onboarding:
         self.stopped = False
 
     def _make_session(self):
-        return aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10), connector=aiohttp.TCPConnector(limit=4),
+        return aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10), connector=aiohttp.TCPConnector(ssl=build_ssl_context_with_certifi(), limit=4),
                                      trust_env=False, cookie_jar=aiohttp.DummyCookieJar(), auto_decompress=False)
 
     def _check(self, binding):

@@ -12,6 +12,7 @@ from urllib.parse import urlsplit
 from uuid import uuid4
 
 import aiohttp
+from astrbot.core.utils.http_ssl import build_ssl_context_with_certifi
 from astrbot.core.utils.media_utils import MediaResolver, file_uri_to_path
 
 from ..errors import V2Error
@@ -48,8 +49,6 @@ class Blob:
         self.handle = uuid4().hex
         self.size = 0
         self.closed = False
-        self.mime = "application/octet-stream"
-        self.width = self.height = None
         self._md5, self._sha1, self._prefix = hashlib.md5(), hashlib.sha1(), hashlib.md5()
         self._sha256 = hashlib.sha256()
 
@@ -226,7 +225,7 @@ class UploadTransfer:
 
     @staticmethod
     def _session():
-        return aiohttp.ClientSession(connector=aiohttp.TCPConnector(force_close=True, limit=1),
+        return aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=build_ssl_context_with_certifi(), force_close=True, limit=1),
             trust_env=False, cookie_jar=aiohttp.DummyCookieJar(), auto_decompress=False,
             timeout=aiohttp.ClientTimeout(total=30), headers={"Accept-Encoding": "identity"})
 

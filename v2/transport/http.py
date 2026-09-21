@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from email.utils import parsedate_to_datetime
 
 import aiohttp
+from astrbot.core.utils.http_ssl import build_ssl_context_with_certifi
 
 from ..errors import V2Error
 from ..media.types import FilePart
@@ -57,7 +58,7 @@ class HTTPTransport:
 
     def _make_session(self):
         return aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=self.timeout),
-                                     connector=aiohttp.TCPConnector(limit=8), trust_env=False,
+                                     connector=aiohttp.TCPConnector(ssl=build_ssl_context_with_certifi(), limit=8), trust_env=False,
                                      cookie_jar=aiohttp.DummyCookieJar(), auto_decompress=False)
 
     def check(self):

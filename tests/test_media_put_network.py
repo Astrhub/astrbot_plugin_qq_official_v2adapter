@@ -102,14 +102,17 @@ async def test_production_put_uses_system_resolver_and_verifies_tls(tmp_path, mo
         monkeypatch.setattr(loop, "getaddrinfo", system_dns)
         pool = BlobPool(tmp_path / "spool")
         blob = await pool.load("base64://" + base64.b64encode(PNG).decode(), roots=[], max_bytes=100)
+        from astrbot.core.utils import http_ssl as host_tls
+        monkeypatch.setattr(host_tls, "_SHARED_TLS_CONTEXT", None)
+        if trusted:
+            monkeypatch.setenv("SSL_CERT_FILE", str(certificate))
+        else:
+            monkeypatch.delenv("SSL_CERT_FILE", raising=False)
         transfer = UploadTransfer(pool)
         session = transfer._session()
-        assert session.connector._ssl is True and not session.trust_env
-        # Trust only the generated fixture CA; hostname verification remains enabled.
-        if trusted:
-            context = ssl.create_default_context(cafile=str(certificate))
-            assert context.verify_mode == ssl.CERT_REQUIRED and context.check_hostname
-            session.connector._ssl = context
+        context = host_tls.build_ssl_context_with_certifi()
+        assert session.connector._ssl is context and not session.trust_env
+        assert context.verify_mode == ssl.CERT_REQUIRED and context.check_hostname
         transfer.session_factory = lambda: session
         try:
             if trusted and hostname == "cos.test":

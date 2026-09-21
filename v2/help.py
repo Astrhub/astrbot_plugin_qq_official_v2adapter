@@ -186,7 +186,7 @@ async def send_help(owner, event, query):
     if markdown:
         query = query[2:].strip()
     config = owner.context.get_config(event.unified_msg_origin)
-    catalog = collect_catalog(config, event.route.scene)
+    catalog = collect_catalog(config, event.route.scene, context=owner.context)
     settings = owner.store.get(event.bot.identity.settings_key)["applied"]
     settings = owner.panels.filter_pins(event.bot, settings, catalog)
     page = render_help(catalog, settings, query, admin=event.is_admin(), markdown=markdown)

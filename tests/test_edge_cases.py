@@ -1,23 +1,32 @@
 import json
 
 import pytest
+from test_messaging_state import NOW, chat_payload
 
 from v2.commands import layout_preview
 from v2.errors import V2Error
-from v2.models import RobotKey
-from v2.protocol import IdentityCache, RawEnvelope
+from v2.messaging.convert import convert_chat
+from v2.messaging.store import MessageStore
+from v2.models import InstanceKey
+from v2.protocol import RawEnvelope
 from v2.settings import DEFAULTS
 
 
 @pytest.mark.parametrize("data", [{"id": "m", "author": {"member_openid": "u"}},
                                    {"id": "m", "group_openid": "g", "author": "u"},
                                    {"group_openid": "g", "author": {"member_openid": "u"}}])
-def test_incomplete_chat_cannot_create_identity(data):
-    cache = IdentityCache()
-    envelope = RawEnvelope.parse(json.dumps({"op": 0, "t": "GROUP_AT_MESSAGE_CREATE", "d": data}).encode())
-    with pytest.raises(V2Error):
-        cache.observe_chat(RobotKey("app"), envelope)
-    assert not cache.items
+def test_incomplete_chat_cannot_create_identity(data, config, tmp_path):
+    store = MessageStore(tmp_path / "identities", clock=lambda: NOW)
+    payload = chat_payload()
+    payload["d"] = {"timestamp": payload["d"]["timestamp"], **data}
+    envelope = RawEnvelope.parse(json.dumps(payload).encode(), now=NOW)
+    try:
+        with pytest.raises(V2Error):
+            store.observe(convert_chat(InstanceKey.from_config(config), envelope))
+        for table in ("identities", "targets", "sources"):
+            assert store.db.execute(f"SELECT count(*) FROM {table}").fetchone()[0] == 0
+    finally:
+        store.close()
 
 
 @pytest.mark.parametrize("node", [{}, [], 1])

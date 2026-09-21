@@ -310,7 +310,8 @@ class SendingCore:
                 path += quote(route.target, safe="") + "/messages"
                 if prepared and route.scene == "channel" and prepared.blob is not None:
                     form = {key: json.dumps(value) if isinstance(value, dict) else str(value) for key, value in body.items()}
-                    form["file_image"] = FilePart(prepared.blob, prepared.input.name, prepared.blob.mime, check_source)
+                    # file_image needs file bytes, not a locally inferred image format.
+                    form["file_image"] = FilePart(prepared.blob, prepared.input.name, "application/octet-stream", check_source)
                     spec = RequestSpec(robot.environment, "POST", path, multipart=form)
                 else:
                     spec = RequestSpec(robot.environment, "POST", path, json_body=body)
