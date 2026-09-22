@@ -1,7 +1,7 @@
 name: astrbot_plugin_qq_official_v2adapter
 display_name: QQ 官方 V2 原型
-desc: 独立 QQ 官方 V2 收发、媒体、流式、指令键盘与受控管理；OpenID 子集兼容。
-version: v0.4.0
+desc: 独立 QQ 官方 V2 收发、媒体、流式与受控管理；可选 HTTP/正向WS OpenID 子集，默认关闭。
+version: v0.5.0
 author: Astrhub
 repo: https://github.com/Astrhub/astrbot_plugin_qq_official_v2adapter
 astrbot_version: ">=4.28.1,<4.29"

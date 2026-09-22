@@ -40,7 +40,7 @@ def owner(config, tmp_path):
         manager.calls.append(copy.deepcopy(value))
     manager.reload = reload
     value = SimpleNamespace(context=SimpleNamespace(get_config=lambda: cfg, platform_manager=manager),
-        stopping=False, instances=set(), control=SimpleNamespace(fingerprint=lambda value:
+        stopping=False, config={}, instances=set(), control=SimpleNamespace(fingerprint=lambda value:
             hmac.new(b"fixture-hmac", json.dumps(value, sort_keys=True).encode(), hashlib.sha256).hexdigest()))
     value.connections = Connections(value)
     return value

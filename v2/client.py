@@ -18,6 +18,44 @@ UNSUPPORTED_ACTIONS = {
 }
 LOCAL_ACTIONS = {"get_status", "get_version_info", "get_stranger_info", "_qq_get_avatar",
                  "_qq_get_capabilities", "can_send_image", "can_send_record"}
+SEND_ACTIONS = {"send_group_msg", "send_private_msg", "send_msg"}
+WRITE_ACTIONS = SEND_ACTIONS | {"delete_msg", "set_group_ban", "set_group_kick", "set_group_add_request"}
+LOCAL_ACTIONS |= {"_qq_get_send_status", "_qq_get_extension_status"}
+# Shared descriptors are used by the network normalizer and capability projection, not a second dispatcher.
+ACTION_PARAMS = {
+    "send_group_msg": {"group_id": "id", "message": "message", "auto_escape": "bool", "_qq_operation_id": "id", "_qq_reply_context": "id"},
+    "send_private_msg": {"user_id": "id", "message": "message", "auto_escape": "bool", "_qq_operation_id": "id", "_qq_reply_context": "id"},
+    "send_msg": {"group_id": "id", "user_id": "id", "message_type": "str", "message": "message", "auto_escape": "bool", "_qq_operation_id": "id", "_qq_reply_context": "id"},
+    "get_stranger_info": {"user_id": "id", "no_cache": "bool", "id_kind": "str", "scope": "str"},
+    "_qq_get_avatar": {"user_id": "id", "group_id": "id", "id_kind": "str", "scope": "str", "size": "int", "kind": "str"},
+    "get_login_info": {},
+    "get_group_info": {"group_id": "id", "no_cache": "bool"},
+    "get_group_member_info": {"group_id": "id", "user_id": "id", "no_cache": "bool"},
+    "get_group_member_list": {"group_id": "id"},
+    "set_group_ban": {"group_id": "id", "user_id": "id", "duration": "int", "_qq_operation_id": "id"},
+    "set_group_kick": {"group_id": "id", "user_id": "id", "reject_add_request": "bool", "_qq_operation_id": "id"},
+    "set_group_add_request": {"flag": "id", "sub_type": "str", "approve": "bool", "reason": "str"},
+    "delete_msg": {"message_id": "id", "_qq_operation_id": "id"},
+    "_qq_get_send_status": {"operation_id": "id"}, "_qq_get_extension_status": {"operation_id": "id"},
+}
+ACTION_RETURNS = {
+    **{name: ["message_id", "operation_id", "msg_seq", "state", "wire_started", "timestamp?", "ref_idx?", "media?"] for name in SEND_ACTIONS},
+    "get_status": ["online", "good", "state", "platform_id", "generation", "network"],
+    "get_version_info": ["app_name", "app_version", "protocol_version"],
+    "get_login_info": ["user_id", "nickname", "id_kind", "source"],
+    "get_stranger_info": ["user_id", "id_kind", "scope", "nickname?", "source", "partial", "first_seen", "last_seen", "source_message_id"],
+    "get_group_info": ["group_id", "group_name", "member_count", "partial", "permission"],
+    "get_group_member_info": ["group_id", "user_id", "nickname", "role", "bot", "partial", "id_kind"],
+    "get_group_member_list": ["array of get_group_member_info"],
+    "_qq_get_avatar": ["url", "kind", "size", "source", "verified"],
+    "_qq_get_send_status": ["op_id", "scene", "target", "source", "state", "seq", "result", "error"],
+    "_qq_get_extension_status": ["op_id", "kind", "state", "updated", "error"],
+    "_qq_get_capabilities": ["actions", "network_api", "compatibility"],
+    "set_group_ban": ["state"], "delete_msg": ["state"], "set_group_add_request": ["state"],
+    "set_group_kick": ["state", "removed"],
+    "can_send_image": ["yes", "implemented", "permission", "reason"],
+    "can_send_record": ["yes", "implemented", "permission", "reason"],
+}
 
 
 class ClientState:
@@ -34,6 +72,7 @@ class ClientState:
         self.management = None
         self.extensions = None
         self.extension_state = None
+        self.network = None
 
     def check(self, generation):
         if self.closed or generation != self.identity.generation:
@@ -148,9 +187,10 @@ class V2Client:
         self._state.closed = True
 
     def capabilities(self):
-        return {
+        result = {
             "compatibility": "OneBot v11-style OpenID subset; string IDs, not QQ numbers",
-            "transport": "implemented" if self._state.http else "not_implemented", "network_api": "not_implemented",
+            "transport": "implemented" if self._state.http else "not_implemented",
+            "network_api": self._state.network.capabilities() if self._state.network else {"support": "conditional", "state": "not_attached"},
             "basic_scenes": ["group", "c2c", "channel", "dm"] if self._state.sender else [],
             "sending": {"source": "exact event or conservative active policy", "permission": "unknown",
                         "markdown_segment": "nonstandard extension", "max_characters": 4096,
@@ -170,15 +210,32 @@ class V2Client:
             },
             "identity_cache": "durable, robot/kind/scene/target-scoped chat observations" if self._state.cache is not None else "not_ready",
         }
+        for name, entry in result["actions"].items():
+            entry.update({"parameters": dict(ACTION_PARAMS.get(name, {})),
+                          "returns": list(ACTION_RETURNS.get(name, [])),
+                          "id_semantics": "AppID-scoped string OpenID / official message ID, never QQ number",
+                          "permission_evidence": "per-request QQ response only; implementation does not grant permission"})
+        for name in WRITE_ACTIONS - SEND_ACTIONS:
+            result["actions"][name]["data_semantics"] = "adapter confirmed outcome object, not standard v11 null; partial compatibility"
+        for name, missing in {"get_group_info": ["max_member_count"],
+                              "get_group_member_info": ["sex", "age", "card", "title", "level"],
+                              "get_group_member_list": ["sex", "age", "card", "title", "level"],
+                              "get_stranger_info": ["unobserved profile fields", "live no_cache=true lookup"]}.items():
+            result["actions"][name]["missing_fields"] = missing
+        return result
 
     async def call_action(self, action, **params):
         self.check()
         if not isinstance(action, str) or not action:
             raise V2Error("invalid_action", "Action must be a nonempty string.")
+        if action in SEND_ACTIONS and "_qq_reply_context" in params:
+            if self._state.network is None:
+                raise not_ready()
+            params = dict(params)
+            bound = self._state.network.bind_context(params.pop("_qq_reply_context"), action, params)
+            return await bound.call_action(action, **params)
         if action in {"send_group_msg", "send_private_msg", "send_msg"} and self._state.sender:
-            allowed = {"group_id", "message", "auto_escape", "_qq_operation_id"} if action == "send_group_msg" else {"user_id", "message", "auto_escape", "_qq_operation_id"}
-            if action == "send_msg":
-                allowed |= {"group_id", "message_type"}
+            allowed = ACTION_PARAMS[action]
             if params.keys() - allowed or "message" not in params:
                 raise V2Error("invalid_params", "Unsupported or missing send parameters.")
             scene = {"send_group_msg": "group", "send_private_msg": "c2c"}.get(action)
@@ -199,12 +256,14 @@ class V2Client:
             raise not_ready()
         if action in UNSUPPORTED_ACTIONS or action not in LOCAL_ACTIONS:
             raise unsupported("Unknown or unsupported OneBot action.")
-        allowed = {
-            "get_stranger_info": {"user_id", "no_cache", "id_kind", "scope"},
-            "_qq_get_avatar": {"user_id", "group_id", "id_kind", "scope", "size", "kind"},
-        }.get(action, set())
+        allowed = ACTION_PARAMS.get(action, {})
         if params.keys() - allowed:
             raise V2Error("invalid_params", "Unsupported action parameters.")
+        if action == "_qq_get_send_status":
+            return self.qq.send_status(params.get("operation_id"))
+        if action == "_qq_get_extension_status":
+            record = self.qq.extension_status(params.get("operation_id"))
+            return {key: record[key] for key in ("op_id", "kind", "state", "updated", "error")}
         if action == "get_status":
             if self._state.status:
                 return self._state.status()

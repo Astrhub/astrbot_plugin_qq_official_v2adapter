@@ -86,6 +86,8 @@ class ChatConsumer:
                         return True
                 self.inbox.retain(self.owner_key, receipt, "non_chat_event")
                 self.state = "extension_retained"
+                if payload.get("op") == 0 and isinstance(payload.get("d"), dict) and (network := getattr(self.adapter, "network", None)):
+                    network.events.retained(payload.get("t"))
                 return True
             try:
                 chat = convert_chat(self.adapter.identity, RawEnvelope(payload, item["received_at"]),
@@ -124,6 +126,8 @@ class ChatConsumer:
             self.store.mark_delivered(chat)
             self.inbox.acknowledge(self.owner_key, receipt)
             self.enqueued.discard(receipt)
+            if network := getattr(self.adapter, "network", None):
+                network.observe_chat(chat)
             self.state, self.last_error = "delivered_to_host", None
             return True
         self.state = "idle"

@@ -55,7 +55,7 @@ async def test_real_astrbot_assembly(config, monkeypatch, qq_reject_server, qq_p
         initialized = True
         assert not lifecycle.plugin_manager.failed_plugin_dict, lifecycle.plugin_manager.failed_plugin_dict.keys()
         metadata = lifecycle.star_context.get_registered_star(PLUGIN_NAME)
-        assert metadata is not None and metadata.version == "v0.4.0"
+        assert metadata is not None and metadata.version == "v0.5.0"
         owner = metadata.star_cls
         assert owner and not owner.stopping
         assert PLATFORM_TYPE in platform_cls_map
@@ -126,7 +126,9 @@ async def test_real_astrbot_assembly(config, monkeypatch, qq_reject_server, qq_p
             assert (await client.post(prefix + "/preview", json={**payload, "csrf": expired}, headers=headers)).status_code == 403
             response = await client.post(prefix + "/flags", json={"csrf": boot["csrf"], "revision": boot["flags_revision"],
                                         "patch": {"onebot_network_enabled": True}, "confirm": True}, headers=headers)
-            assert response.status_code == 501 and not owner.config.get("onebot_network_enabled")
+            assert response.status_code == 200 and owner.config.get("onebot_network_enabled") is True
+            assert instance.network.runner is None  # The instance switch is still off; saving a gate does not start it.
+            boot["flags_revision"] = response.json()["revision"]
             response = await client.post(prefix + "/flags", json={"csrf": boot["csrf"], "revision": boot["flags_revision"],
                                         "patch": {"remote_menu_sync": True}, "confirm": True}, headers=headers)
             assert response.status_code == 200 and owner.config["remote_menu_sync"]
@@ -236,7 +238,13 @@ async def test_real_astrbot_assembly(config, monkeypatch, qq_reject_server, qq_p
             assert saved_target["secret"] == "new-fixture-secret" and not saved_target["enable"]
             assert "not-a-chat-observation" not in json.dumps(astrbot_config.get("admins_id", []))
             connection = committed.json()["result"]
-            response = await client.post(prefix + "/connection/save", json={**save_body, "fingerprint": connection["fingerprint"], "patch": {"enable": True}}, headers=headers)
+            from test_onebot_network import TOKEN, free_port
+            network_save = {**save_body, "fingerprint": connection["fingerprint"],
+                            "patch": {"enable": True, "onebot": {"enable": True, "port": free_port(), "writes": True}},
+                            "network_token_action": "replace", "network_token": TOKEN, "confirm_network_token": True}
+            denied = await client.post(prefix + "/connection/save", json=network_save, headers=headers)
+            assert denied.status_code == 400 and denied.json()["code"] == "network_write_confirmation_required"
+            response = await client.post(prefix + "/connection/save", json={**network_save, "confirm_network_writes": True}, headers=headers)
             assert response.status_code == 200, response.text
             connection = response.json()
             response = await client.post(prefix + "/connection/reload", json={"csrf": boot2["csrf"], "platform_id": target, "fingerprint": connection["fingerprint"], "confirm": True}, headers=headers)
@@ -244,6 +252,7 @@ async def test_real_astrbot_assembly(config, monkeypatch, qq_reject_server, qq_p
             hook_instance = next(i for i in new_owner.instances if i.identity.platform_id == target)
             await asyncio.wait_for(hook_instance.ready.wait(), 2)
             assert hook_instance.state == "webhook_ready" and not hook_instance.runtime_status()["online"]
+            assert hook_instance.network.listening and TOKEN not in json.dumps(connection)
             callback = connection["webhook_path"]
             challenge = {"op": 13, "d": {"plain_token": "fixture", "event_ts": str(int(time.time()))}}
             response = await client.post(callback, json=challenge, headers={"X-Bot-Appid": "new-fixture-app"})
@@ -268,7 +277,25 @@ async def test_real_astrbot_assembly(config, monkeypatch, qq_reject_server, qq_p
             response = await client.post(prefix + "/connection/reload", json={"csrf": boot2["csrf"], "platform_id": target, "fingerprint": response.json()["fingerprint"], "confirm": True}, headers=headers)
             assert response.status_code == 200, response.text
             assert (await client.post(callback, content=fixture_request.raw, headers=dict(fixture_request.headers))).status_code == 404
-            await lifecycle.plugin_manager.turn_off_plugin(PLUGIN_NAME)
+            # Persisted endpoint restarts through the real host reload and survives Page closure.
+            connection = (await client.get(prefix + "/connection", params={"platform_id": target}, headers=headers)).json()
+            rotated = "rotated-assembly-network-token"
+            response = await client.post(prefix + "/connection/save", json={**save_body, "fingerprint": connection["fingerprint"],
+                "patch": {"enable": True}, "network_token_action": "replace", "network_token": rotated, "confirm_network_token": True}, headers=headers)
+            assert response.status_code == 200
+            response = await client.post(prefix + "/connection/reload", json={"csrf": boot2["csrf"], "platform_id": target, "fingerprint": response.json()["fingerprint"], "confirm": True}, headers=headers)
+            assert response.status_code == 200
+            running = next(i for i in new_owner.instances if i.identity.platform_id == target)
+            await asyncio.wait_for(running.ready.wait(), 2)
+            import aiohttp
+            base = f"http://127.0.0.1:{running.network.config['port']}"
+            async with aiohttp.ClientSession() as net:
+                async with net.get(base + "/get_status", headers={"Authorization": "Bearer " + TOKEN}) as response:
+                    assert response.status == 403
+                async with net.ws_connect(base + "/event", headers={"Authorization": "Bearer " + rotated}) as ws:
+                    assert (await ws.receive_json(timeout=2))["_qq"]["generation"] == running.identity.generation
+                    await lifecycle.plugin_manager.turn_off_plugin(PLUGIN_NAME)
+            assert running.network.stopped.is_set() and not running.network.peers and running.network.runner is None
         print("ASSEMBLY: real core initialize, plugin load/disable/re-enable, platform wrapper, dashboard auth, Pages, restore and cleanup passed")
     finally:
         if initialized:

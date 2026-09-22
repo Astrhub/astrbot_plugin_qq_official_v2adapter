@@ -19,6 +19,8 @@ from .messaging.store import IdentityView
 from .messaging.streaming import StreamingCore
 from .messaging.typing import TypingCore
 from .models import InstanceKey, SessionRoute
+from .network import OneBotServer
+from .network_config import DEFAULT_NETWORK, network_config
 from .transport.http import HTTPTransport
 from .transport.inbox import Ingress
 from .transport.webhook import Webhook
@@ -29,6 +31,7 @@ DEFAULT_PLATFORM_CONFIG = {
     "appid": "", "secret": "", "environment": "production",
     "transport": "websocket", "intents": 33554432, "shard": [0, 1],
     "unified_webhook_mode": False, "webhook_uuid": "",
+    "onebot": dict(DEFAULT_NETWORK),
 }
 
 
@@ -58,6 +61,9 @@ class V2Adapter(Platform):
                     raise ValueError
             except (ValueError, AttributeError):
                 raise V2Error("invalid_webhook_config", "Save a unique V2 unified webhook configuration before loading.") from None
+        network = network_config(platform_config.get("onebot"))
+        if network["token"] and network["token"] == platform_config["secret"]:
+            raise V2Error("invalid_network_token", "OneBot must not reuse the QQ secret.")
         super().__init__(copy.deepcopy(platform_config), event_queue)
         self.identity = identity
         self._terminated = False
@@ -101,6 +107,8 @@ class V2Adapter(Platform):
         self.ack_http = HTTPTransport(identity, platform_config["secret"], guard=self.check_generation, token_provider=self.http.token)
         self.extensions = ExtensionDispatcher(self, self.ack_http)
         self.client._state.extensions = self.extensions
+        self.network = OneBotServer(self, network)
+        self.client._state.network = self.network
         self.owner.instances.add(self)
 
     def check_generation(self):
@@ -122,6 +130,7 @@ class V2Adapter(Platform):
             state = "stopped"
         return {"online": online, "good": online and self.consumer.state != "backpressured" and not self.consumer.last_error and not self.sender.storage_failed, "state": state, "failure": self.failure,
                 "send_storage_failed": self.sender.storage_failed,
+                "network": self.network.status(),
                 "failure_details": self.failure_details,
                 "last_transport_failure": self.gateway.last_failure if self.gateway else None,
                 "platform_id": self.identity.platform_id, "generation": self.identity.generation,
@@ -136,6 +145,7 @@ class V2Adapter(Platform):
     def revoke(self):
         self._revoked = True
         self._stop.set()
+        self.network.revoke()
         if self._run_task and self._run_task is not asyncio.current_task():
             self._run_task.cancel()
 
@@ -144,6 +154,8 @@ class V2Adapter(Platform):
             await asyncio.sleep(1)
             try:
                 self.check_generation()
+                if self.owner.config.get("onebot_network_enabled") is not True and self.network.runner is not None:
+                    await self.network.close()
             except V2Error:
                 self.revoke()
                 raise
@@ -153,6 +165,7 @@ class V2Adapter(Platform):
         tasks = set()
         try:
             self.check_generation()
+            await self.network.start()
             self.state = "connecting"
             self.ingress.start()
             self.consumer.start()
@@ -203,7 +216,9 @@ class V2Adapter(Platform):
                 except Exception:
                     return type(service).__name__
                 return None
+            network_failure = await close_one(self.network)
             failures = await asyncio.gather(*(close_one(s) for s in (self.consumer, self.extensions, self.management, self.streaming, self.typing, self.sender, self.media, self.webhook, self.gateway, self.ingress, self.http) if s))
+            failures.append(network_failure)
             if any(failures):
                 self.failure = "cleanup_failed"
                 raise V2Error("cleanup_failed", "Some QQ resources exceeded or failed cleanup: " + ", ".join(f for f in failures if f), status=503)

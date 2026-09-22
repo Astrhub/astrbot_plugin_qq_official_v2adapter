@@ -321,16 +321,9 @@ class Management:
                                  params={"hidetip": "false"} if scene in {"channel", "dm"} else None, guard=deadline, limit=10, seconds=1)
 
     async def onebot(self, action, params):
-        allowed = {
-            "get_group_info": {"group_id", "no_cache"},
-            "get_group_member_info": {"group_id", "user_id", "no_cache"},
-            "get_group_member_list": {"group_id"}, "get_login_info": set(),
-            "set_group_ban": {"group_id", "user_id", "duration", "_qq_operation_id"},
-            "set_group_kick": {"group_id", "user_id", "reject_add_request", "_qq_operation_id"},
-            "set_group_add_request": {"flag", "sub_type", "approve", "reason"},
-            "delete_msg": {"message_id", "_qq_operation_id"},
-        }
-        if action not in allowed or params.keys() - allowed[action]:
+        from ..client import ACTION_PARAMS
+        allowed = ACTION_PARAMS
+        if action not in MANAGEMENT_ACTIONS or params.keys() - allowed[action]:
             raise V2Error("invalid_params", "Unsupported management action parameters.")
         if "no_cache" in params and type(params["no_cache"]) is not bool:
             raise V2Error("invalid_params", "no_cache must be boolean; official reads are always fresh.")

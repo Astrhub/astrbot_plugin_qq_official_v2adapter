@@ -69,6 +69,8 @@ class ExtensionDispatcher:
                 raise V2Error("extension_state_full", "Protected extension receipts hold their bounded capacity.", status=503)
             ack = "pending" if event.interaction_type in {11, 12} else "not_required"
             self.store.db.execute("INSERT INTO extension_events VALUES(?,?,?,?,?,?,?,?,?)", (self.robot, key, event.name, received, json.dumps(event.metadata()), ack, "pending", None, self.store.now()))
+        if network := getattr(self.adapter, "network", None):
+            network.observe_extension(event)
         task = asyncio.create_task(self.process(key, event), name="qq-v2-extension-dispatch")
         self.tasks.add(task)
         def finished(t):
