@@ -66,7 +66,7 @@ OneBot 接入通过 Pages“连接配置”管理，每实例单独端口和专�
 
 在 Pages 接入区或本体平台管理维护 AppID、AppSecret、环境、传输、intents/shard；两者都以本体平台配置为唯一权威存储。未编辑 secret 时保留原值，替换/清空和改绑均需确认；服务端不返回原 secret，浏览器不持久保存凭据。扫码提交后保持禁用，需另行启用并重载。
 
-生产 OpenAPI 使用 `https://api.bot.qq.com`，WSS 仅接受 `wss://api.bot.qq.com`；不后备到旧域名。**沙箱网络接入暂不支持**：现行官方环境选择规则尚未确认，保留 `sandbox` 配置和本地数据，但在 token、连接及扫码创建前报 `unsupported_environment`，不会自动转向生产。
+生产 OpenAPI 使用 `https://api.bot.qq.com`，WebSocket 直接使用官方 `/gateway/bot` 返回的地址。**沙箱网络接入暂不支持**：现行官方环境选择规则尚未确认，保留 `sandbox` 配置和本地数据，但在 token、连接及扫码创建前报 `unsupported_environment`，不会自动转向生产。
 
 数据保存在 `data/plugin_data/astrbot_plugin_qq_official_v2adapter/`：`settings.sqlite3` 存草稿与快捷项来源，`transport.sqlite3` 存有界原始收件，`messaging.sqlite3` 存机器人共享身份、配额、发送结果和面板所有权，旁边 `.lock` 用于单写入者互斥。满额或损坏时拒绝新操作，不删除未交付或未知记录；备份/恢复应先停止插件并保留整套文件。
 
