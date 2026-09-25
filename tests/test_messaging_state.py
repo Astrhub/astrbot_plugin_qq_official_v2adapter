@@ -6,7 +6,7 @@ import pytest
 from v2.errors import V2Error
 from v2.messaging.convert import convert_chat
 from v2.messaging.store import MessageStore
-from v2.models import InstanceKey, RobotKey, SessionRoute
+from v2.models import InstanceKey, RobotKey
 from v2.protocol import RawEnvelope
 
 NOW = 1800000000.0
@@ -46,7 +46,8 @@ def state(tmp_path, clock):
     ("C2C_MESSAGE_CREATE", "c2c"), ("AT_MESSAGE_CREATE", "channel"), ("MESSAGE_CREATE", "channel"), ("DIRECT_MESSAGE_CREATE", "dm")])
 def test_six_real_message_shapes_keep_identifiers(config, event, scene):
     chat = observed(config, event)
-    assert chat.route.scene == scene and SessionRoute.decode(chat.message.session_id) == chat.route
+    assert chat.route.scene == scene and chat.message.v2_source.route == chat.route
+    assert chat.message.session_id == ("user-one" if scene in {"c2c", "dm"} else "group-one")
     assert chat.message.message_id == "msg-one" and chat.source.event_id == "event-msg-one"
     assert chat.source.interaction_id is None and chat.source.received_at == NOW and chat.source.sent_at == NOW
     assert chat.message.timestamp == NOW and chat.message.sender.user_id == "user-one"

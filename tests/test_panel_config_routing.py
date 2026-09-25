@@ -4,7 +4,6 @@ from types import SimpleNamespace
 
 import pytest
 from astrbot.core.astrbot_config_mgr import AstrBotConfigManager
-from astrbot.core.platform.message_session import MessageSession
 from astrbot.core.platform.message_type import MessageType
 from astrbot.core.star.context import Context
 from astrbot.core.umop_config_router import UmopConfigRouter
@@ -15,7 +14,6 @@ from v2 import PLUGIN_NAME
 from v2.commands import collect_catalog
 from v2.errors import V2Error
 from v2.messaging.convert import convert_chat
-from v2.models import SessionRoute
 from v2.protocol import RawEnvelope
 
 
@@ -48,9 +46,8 @@ def routed_panels(panel_env, monkeypatch):
         payload = chat_payload(event, message_id=profile_id, target=target,
                                sender=target if scene == "c2c" else "member-one")
         e.owner.messages.observe(convert_chat(e.instance.identity, RawEnvelope(payload, NOW)))
-        route = SessionRoute(e.instance.identity.robot, scene, target)
         message_type = MessageType.GROUP_MESSAGE if scene == "group" else MessageType.FRIEND_MESSAGE
-        umo = str(MessageSession(e.instance.identity.platform_id, message_type, route.encode()))
+        umo = f"{e.instance.identity.platform_id}:{message_type.value}:{target}"
         manager.confs[profile_id] = copy.deepcopy(profile)
         manager.abconf_data[profile_id] = {"name": profile_id, "path": profile_id + ".json"}
         router.umop_to_conf_id[umo] = profile_id

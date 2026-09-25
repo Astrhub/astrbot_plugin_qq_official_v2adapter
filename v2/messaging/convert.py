@@ -141,12 +141,29 @@ def convert_chat(identity, envelope, *, isolated=False, bot_id=""):
     mentions = data.get("mentions", [])
     if not isinstance(mentions, list) or len(mentions) > 64:
         invalid()
-    mentioned = {user for entry in mentions if (user := observe(entry)) is not None}
+    mentioned, group_self_tags = set(), set()
+    group_self_id = ""
+    for entry in mentions:
+        user = observe(entry)
+        if scene == "group" and entry.get("is_you") is True:
+            # Event-local mention IDs can differ from READY; only member_openid enters the cache.
+            own_id = entry.get("id")
+            own_id = user if own_id is None else text_id(own_id)
+            if own_id is not None:
+                group_self_id = group_self_id or own_id
+                group_self_tags.add(own_id)
+                if user is not None:
+                    group_self_tags.add(user)
+                user = own_id
+        if user is not None:
+            mentioned.add(user)
     if bot_id:
         text_id(bot_id)
     content = data.get("content", "")
     if not isinstance(content, str):
         invalid()
+    for user in group_self_tags:
+        content = content.replace(f"<@{user}>", "").replace(f"<@!{user}>", "")
     # Only documented channel tags with structured mentions (or known bot ID) become At.
     parts, plain, offset = [], [], 0
     if scene in {"channel", "dm"}:
@@ -167,7 +184,10 @@ def convert_chat(identity, envelope, *, isolated=False, bot_id=""):
         plain.append(remaining)
     existing_ats = {p.qq for p in parts if isinstance(p, At)}
     for user in sorted(mentioned - existing_ats):
-        parts.append(At(qq=user))
+        part = At(qq=user)
+        if scene == "group":
+            part.qq = user  # Preserve OpenID leading zeros; the host At constructor coerces numeric strings.
+        parts.append(part)
     quoted = {}
     nodes = 0
 
@@ -225,7 +245,7 @@ def convert_chat(identity, envelope, *, isolated=False, bot_id=""):
                          indices.get("msg_idx") if scene in {"group", "c2c"} else None, sent_at, envelope.received_at)
     message = AstrBotMessage()
     message.type = MessageType.GROUP_MESSAGE if scene in {"group", "channel"} else MessageType.FRIEND_MESSAGE
-    message.session_id, message.self_id, message.message_id = route.encode(), bot_id, message_id
+    message.session_id, message.self_id, message.message_id = route.public_session(identity.platform_id, sender=sender).session_id, group_self_id or bot_id, message_id
     message.sender = MessageMember(sender, author.get("username") if isinstance(author.get("username"), str) else None)
     message.group_id = target if scene in {"group", "channel"} else ""
     message.message, message.message_str = parts, "".join(plain)

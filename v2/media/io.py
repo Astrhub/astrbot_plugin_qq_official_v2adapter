@@ -229,7 +229,7 @@ class UploadTransfer:
             trust_env=False, cookie_jar=aiohttp.DummyCookieJar(), auto_decompress=False,
             timeout=aiohttp.ClientTimeout(total=30), headers={"Accept-Encoding": "identity"})
 
-    async def put(self, url, *, blob, offset=0, count=None):
+    async def put(self, url, *, blob, offset=0, count=None, request_seconds=None):
         media_url(url, upload=True)
         if self.closed or len(self.tasks) >= self.max_tasks:
             bad("media_transfer_unavailable", "Media upload is closed or at capacity.", status=429)
@@ -242,11 +242,13 @@ class UploadTransfer:
         self.tasks.add(task)
         started = False
         try:
-            async with asyncio.timeout(self.timeout):
+            wait_seconds = self.timeout if request_seconds is None else request_seconds
+            async with asyncio.timeout(wait_seconds):
                 headers = {"Accept-Encoding": "identity", "Content-Length": str(length), "Content-Type": "application/octet-stream"}
                 async with self.session_factory() as session:
                     started = True
-                    async with session.request("PUT", url, headers=headers, data=blob.chunks(offset, length), allow_redirects=False) as response:
+                    async with session.request("PUT", url, headers=headers, data=blob.chunks(offset, length), allow_redirects=False,
+                                               timeout=aiohttp.ClientTimeout(total=wait_seconds)) as response:
                         if 300 <= response.status < 400:
                             bad("media_redirect_rejected", "Upload redirects are not permitted.", phase="result_unknown")
                         if not 200 <= response.status < 300:

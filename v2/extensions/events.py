@@ -62,7 +62,8 @@ class ExtensionEvent:
         if not isinstance(nested, dict) or not isinstance(nested.get("resolved", {}), dict):
             raise V2Error("invalid_extension_event", "Interaction data is malformed.")
         resolved = nested.get("resolved", {})
-        if nested.get("type", data["type"]) != data["type"]:
+        # Authorization notices carry subtypes such as outer 20 / inner 2001.
+        if data["type"] in {11, 12} and nested.get("type", data["type"]) != data["type"]:
             raise V2Error("invalid_extension_event", "Interaction type fields disagree.")
         if not isinstance(data.get("scene"), str):
             raise V2Error("invalid_extension_event", "Interaction scene must be a string.")
