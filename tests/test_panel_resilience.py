@@ -8,6 +8,7 @@ from test_messaging_state import NOW, chat_payload
 
 from v2.errors import V2Error
 from v2.messaging.convert import convert_chat
+from v2.messaging.store import robot_key
 from v2.models import InstanceKey
 from v2.panels import PanelService
 from v2.protocol import RawEnvelope
@@ -34,13 +35,25 @@ async def worker_ticks(env, service=None):
     return tick
 
 
+async def test_legacy_panel_rate_rows_do_not_block_server_requests(panel_env):
+    e = panel_env
+    robot = robot_key(e.instance.identity.robot)
+    with e.owner.messages.transaction():
+        e.owner.messages.db.executemany("INSERT INTO panel_rates VALUES(?,?,?)",
+            [(robot, "read", e.clock[0])] * 30 + [(robot, "write", e.clock[0])] * 10)
+    await enable(e)
+    assert e.service.state(e.instance, "group")["state"] == "synced"
+    assert any(method == "POST" for method, *_ in e.calls)
+    assert e.owner.messages.db.execute("SELECT count(*) FROM panel_rates").fetchone()[0] == 40
+
+
 @pytest.mark.parametrize("stage", ["list", "detail"])
 @pytest.mark.parametrize("code,status,http_status,phase", [
     ("network_failure", 503, None, "result_unknown"),
     ("connect_failed", 503, None, "not_sent"),
     ("request_deadline", 504, None, "result_unknown"),
     ("request_capacity", 429, None, "not_sent"),
-    ("panel_rate_limited", 429, None, "not_sent"),
+    ("qq_rate_limited", 429, 429, "rejected"),
     ("qq_api_error", 503, 503, "result_unknown"),
     ("qq_api_error", 429, 429, "rejected"),
     ("token_refresh_failed", 503, 503, "rejected"),
@@ -76,7 +89,7 @@ async def test_panel_retry_after_does_not_hot_loop(panel_env, monkeypatch):
     original = e.instance.http.request
 
     async def limited(spec, **kwargs):
-        raise V2Error("qq_api_error", "fixture limit", status=429, http_status=429, retry_after="90", phase="rejected")
+        raise V2Error("qq_rate_limited", "fixture limit", status=429, business_code=50002, http_status=429, retry_after="90", phase="rejected")
 
     monkeypatch.setattr(e.instance.http, "request", limited)
     with pytest.raises(V2Error):

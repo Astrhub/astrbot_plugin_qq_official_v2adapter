@@ -89,16 +89,13 @@ def test_identity_provenance_isolation_ttl_and_restart(config, tmp_path, clock):
         store.close()
 
 
-def test_passive_reservations_share_seq_and_do_not_revive(config, state, clock):
+def test_passive_sequences_remain_unique_without_local_quota(config, state, clock):
     chat = observed(config)
     state.observe(chat)
-    operations = [state.reserve(chat.route, chat.source, "digest", f"op{i}") for i in range(5)]
-    assert [op["seq"] for op in operations] == [1, 2, 3, 4, 5]
-    with pytest.raises(V2Error) as exc:
-        state.reserve(chat.route, chat.source, "digest", "overflow")
-    assert exc.value.code == "passive_quota_exhausted"
+    operations = [state.reserve(chat.route, chat.source, "digest", f"op{i}") for i in range(6)]
+    assert [op["seq"] for op in operations] == [1, 2, 3, 4, 5, 6]
     state.finish(chat.route.robot, "op0", "not_sent")
-    assert state.reserve(chat.route, chat.source, "digest", "op5")["seq"] == 6
+    assert state.reserve(chat.route, chat.source, "digest", "op6")["seq"] == 7
     state.mark_in_flight(chat.route.robot, "op1")
     state.finish(chat.route.robot, "op1", "unknown")
     clock[0] += 301

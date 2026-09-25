@@ -93,7 +93,7 @@ class ExtensionDispatcher:
             # This is an internal service objective, not a claimed QQ protocol timeout.
             async with self.timeout_factory(self.ack_timeout):
                 await self.state.execute(self.ack_http, spec, op_id=op_id, kind="interaction_ack", priority=True,
-                    before_send=self.adapter.check_generation, validate=empty, rate=("interaction_ack", 50, 1))
+                    before_send=self.adapter.check_generation, validate=empty)
             self.update(key, ack="succeeded")
             return True
         except (TimeoutError, V2Error) as exc:

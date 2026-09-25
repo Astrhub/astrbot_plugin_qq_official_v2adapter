@@ -14,7 +14,7 @@ from v2.commands import binding_fingerprint
 from v2.errors import V2Error
 from v2.extensions.state import ExtensionStore
 from v2.messaging.convert import convert_chat
-from v2.messaging.store import MessageStore
+from v2.messaging.store import MessageStore, robot_key
 from v2.messaging.typing import TypingCore
 from v2.models import InstanceKey
 from v2.protocol import RawEnvelope
@@ -49,6 +49,7 @@ def test_p3_state_upgrade_keeps_unknown_charges_and_rejects_forward_schema(tmp_p
     store.observe(chat)
     store.reserve(chat.route, chat.source, "binding", "legacy-operation")
     store.prepare_attempt(chat.route, chat.source, "legacy-operation")
+    store.db.execute("INSERT INTO charges VALUES(?,?,?,?,?)", (robot_key(identity.robot), "legacy-operation", "message_qps", "bot", NOW + 86400))
     store.db.execute("PRAGMA user_version=1")
     store.db.commit()
     store.close()

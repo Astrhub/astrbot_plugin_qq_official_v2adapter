@@ -61,7 +61,7 @@ ID 必须是原始字符串，数值 ID 不自动转换。布尔参数可用布�
 
 事件的 `_qq_reply_context` 可传给三个发送 action，引用当前实例已观察的群/C2C源。它校验原来源、目标、代次及 TTL；按原群5分钟/C2C保守60分钟上限，容量淘汰或重载也会失效。无句柄时走现有主动策略，不猜最近消息，不接受客户端自报 `msg_id/event_id`。事件在本体交付确认后旁路观察；无订阅恢复历史回放、无 exactly-once 承诺。
 
-外部与本体发送共享额度、原 `_qq_operation_id` 账本；多个订阅者不获得额外配额。同一操作 ID 不能改变来源、目标或内容。查询：
+外部与本体发送共用原 `_qq_operation_id` 防重账本；本地不预判 QQ 频控，服务端限速错误保留业务码、HTTP 状态与 `Retry-After`。同一操作 ID 不能改变来源、目标或内容。查询：
 
 - `_qq_get_send_status(operation_id)`：发送结果和状态。
 - `_qq_get_extension_status(operation_id)`：扩展操作状态/错误摘要，不返回上传回执或管理请求正文。

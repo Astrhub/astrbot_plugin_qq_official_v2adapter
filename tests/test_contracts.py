@@ -160,6 +160,28 @@ def test_http_contracts_no_global_base_and_structured_errors():
     assert exc.value.phase == "result_unknown"
 
 
+@pytest.mark.parametrize("status,code,expected,path", [
+    (200, 40034128, "passive_quota_exhausted", "/v2/groups/id/messages"),
+    (200, 40034100, "qq_rate_limited", "/v2/groups/id/messages"),
+    (429, 50002, "qq_rate_limited", "/v2/users/id/stream_messages"),
+    (429, None, "qq_rate_limited", "/v2/groups/id/messages"),
+    (200, 50002, "qq_rate_limited", "/v2/users/id/stream_messages"),
+    (200, 50002, "qq_api_error", "/v2/users/id/messages"),
+])
+def test_qq_rate_rejections_keep_server_details(status, code, expected, path):
+    payload = {"message": "secret-url-must-not-leak"}
+    if code is not None:
+        payload["code"] = code
+    with pytest.raises(V2Error) as error:
+        decode_response(status, json.dumps(payload).encode(),
+                        {"X-Tps-Trace-Id": "server-trace", "Retry-After": "3"}, phase="rejected", path=path)
+    assert error.value.code == expected
+    assert error.value.status == (502 if expected == "qq_api_error" else 429)
+    assert error.value.phase == "rejected" and error.value.business_code == code
+    assert error.value.http_status == status and error.value.trace_id == "server-trace"
+    assert error.value.retry_after == "3" and "secret-url" not in str(error.value)
+
+
 async def test_one_client_entrypoints_no_fake_success(config):
     client = V2Client(InstanceKey.from_config(config))
     assert client.api is client

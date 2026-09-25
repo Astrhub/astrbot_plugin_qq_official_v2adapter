@@ -12,7 +12,7 @@ from v2.errors import V2Error
 from v2.extensions.state import ExtensionStore
 from v2.messaging.convert import convert_chat
 from v2.messaging.outbound import SendingCore
-from v2.messaging.store import MessageStore
+from v2.messaging.store import MessageStore, robot_key
 from v2.messaging.streaming import StreamingCore
 from v2.models import InstanceKey
 from v2.protocol import RawEnvelope
@@ -91,6 +91,19 @@ async def test_native_fragments_share_real_id_sequence_and_one_quota(streaming, 
     assert s.store.db.execute("SELECT used FROM sources").fetchone()[0] == 1
     assert s.store.operation(chat.route.robot, "one-stream")["state"] == "sent"
     assert all(url == "https://api.bot.qq.com/v2/users/user-one/stream_messages" for method, url, _ in s.http.session.calls if url.endswith("stream_messages"))
+
+
+async def test_legacy_frame_rate_rows_do_not_delay_stream(streaming):
+    s = streaming
+    robot = robot_key(s.sender.identity.robot)
+    with s.store.transaction():
+        s.store.db.executemany("INSERT INTO extension_rates VALUES(?,?,?)",
+            [(robot, "stream_frames", s.clock[0])] * 50)
+    started = s.clock[0]
+    chat = s.observe()
+    result = await s.core.send(chat.route, chains("frame"), source=chat.source)
+    assert result["state"] == "sent" and s.clock[0] == started
+    assert len(s.calls) == 2
 
 
 @pytest.mark.parametrize("failure", ["format", "prefix", "exception", "expired"])

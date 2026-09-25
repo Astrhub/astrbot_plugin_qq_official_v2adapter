@@ -129,7 +129,7 @@ class RequestSpec:
         return url
 
 
-def decode_response(status: int, body: bytes, headers: dict, *, phase="response_received"):
+def decode_response(status: int, body: bytes, headers: dict, *, phase="response_received", path=None):
     headers = {k.lower(): v for k, v in headers.items()}
     try:
         data = json.loads(body) if body else None
@@ -145,8 +145,18 @@ def decode_response(status: int, body: bytes, headers: dict, *, phase="response_
     if not 200 <= status < 300 or code not in (None, 0):
         if code not in (None, 0):
             phase = "rejected"
+        if code == 40034128:
+            error_code, message = "passive_quota_exhausted", "QQ rejected the passive reply time or count."
+        elif (status == 429 or code == 40034100 or
+              (code == 50002 and isinstance(path, str) and path.startswith("/v2/users/") and path.endswith("/stream_messages"))):
+            error_code, message = "qq_rate_limited", "QQ rate limited the request."
+        else:
+            error_code, message = "qq_api_error", "QQ API rejected the request."
         # Do not echo untrusted bodies, URLs or tokens in error messages.
-        raise V2Error("qq_api_error", "QQ API rejected the request.", status=status if status >= 400 else 502,
+        error_status = status if status >= 400 else 502
+        if error_code != "qq_api_error":
+            error_status = 429
+        raise V2Error(error_code, message, status=error_status,
                       business_code=code, trace_id=headers.get("x-tps-trace-id"),
                       retry_after=headers.get("retry-after"), phase=phase, http_status=status)
     return data

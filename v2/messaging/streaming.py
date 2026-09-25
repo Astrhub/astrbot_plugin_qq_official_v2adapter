@@ -94,12 +94,9 @@ class StreamingCore:
                     result["ref_idx"] = text_id(ext["ref_idx"])
                 return result
             for retry in range(2):
-                delay = self.state.rate_delay(route.robot, "stream_frames", 50, 1)
-                if delay:
-                    await self.sleep(delay)
                 try:
                     last_result = await self.state.execute(self.sender.http, RequestSpec(route.robot.environment, "POST", path, json_body=body),
-                        op_id="stream-" + digest([op_id, index, retry]), kind="stream_frame", validate=validate, before_send=before_send, rate=("stream_frames", 50, 1), ambiguous_codes=AMBIGUOUS_CODES | {50001},
+                        op_id="stream-" + digest([op_id, index, retry]), kind="stream_frame", validate=validate, before_send=before_send, ambiguous_codes=AMBIGUOUS_CODES | {50001},
                         context={"parent_operation_id": op_id, "index": index, "final": final, "stream_msg_id": last_id})
                     last_id = last_result["message_id"]
                     index += 1

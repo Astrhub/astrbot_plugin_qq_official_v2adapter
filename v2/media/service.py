@@ -129,23 +129,17 @@ class MediaService:
         attempt = 0
         last_error = None
         while True:
-            delay = self.state.rate_delay(route.robot, kind, 50 if path.endswith("/files") else 10, 1)
-            if attempt and self.clock() + delay >= deadline:
-                raise last_error from None
-            if delay:
-                await self.sleep(delay)
             if attempt and self.clock() >= deadline:
                 raise last_error from None
             check()
             try:
                 return await self.state.execute(self.http, RequestSpec(route.robot.environment, "POST", path, json_body=body),
-                    op_id=f"{op_id}:{attempt}", kind=kind, validate=validate, before_send=check,
-                    rate=(kind, 50 if path.endswith("/files") else 10, 1))
+                    op_id=f"{op_id}:{attempt}", kind=kind, validate=validate, before_send=check)
             except V2Error as exc:
                 if exc.business_code == 40093002:
                     raise V2Error("upload_daily_capacity", "QQ daily file capacity is exhausted.", status=429, business_code=exc.business_code,
-                                  trace_id=exc.trace_id, http_status=exc.http_status, phase=exc.phase, operation_id=exc.operation_id) from None
-                retryable = exc.business_code == 40093001 and exc.phase == "rejected" or exc.phase == "not_sent" and exc.code in {"connect_failed", "extension_rate_limited"}
+                                  trace_id=exc.trace_id, retry_after=exc.retry_after, http_status=exc.http_status, phase=exc.phase, operation_id=exc.operation_id) from None
+                retryable = exc.business_code == 40093001 and exc.phase == "rejected" or exc.phase == "not_sent" and exc.code == "connect_failed"
                 if not retryable or attempt + 1 >= MAX_UPLOAD_ATTEMPTS or retry_timeout <= 0 or not await self._wait_retry(exc, deadline, retry_delay):
                     raise
                 last_error = exc

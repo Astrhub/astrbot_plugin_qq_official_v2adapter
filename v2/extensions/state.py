@@ -54,19 +54,6 @@ class ExtensionStore:
         self.db.execute("DELETE FROM extension_ops WHERE updated<=? AND state NOT IN ('reserved','in_flight','unknown')", (now - 86400,))
         self.db.execute("UPDATE extension_ops SET result=NULL,error=NULL,context=NULL,state='history_evicted' WHERE rowid IN (SELECT rowid FROM extension_ops WHERE state IN ('succeeded','partial','not_sent','rejected') ORDER BY updated DESC,rowid DESC LIMIT -1 OFFSET ?)", (self.capacity,))
 
-    def rate_delay(self, robot, bucket, limit, seconds):
-        now = self.messages.now()
-        row = self.db.execute("SELECT count(*),min(stamp) FROM extension_rates WHERE robot=? AND bucket=? AND stamp>?", (robot_key(robot), bucket, now - seconds)).fetchone()
-        return max(0, row[1] + seconds - now) if row[0] >= limit else 0
-
-    def rate(self, robot, bucket, limit, seconds):
-        with self.messages.transaction():
-            self.prune()
-            now = self.messages.now()
-            if self.db.execute("SELECT count(*) FROM extension_rates WHERE robot=? AND bucket=? AND stamp>?", (robot_key(robot), bucket, now - seconds)).fetchone()[0] >= limit:
-                raise V2Error("extension_rate_limited", "The shared endpoint rate budget is exhausted.", status=429, retry_after=str(seconds))
-            self.db.execute("INSERT INTO extension_rates VALUES(?,?,?)", (robot_key(robot), bucket, now))
-
     def begin(self, robot, op_id, kind, binding, *, context=None):
         if self.storage_failed:
             raise V2Error("extension_storage_unavailable", "Restore storage and reload before further extension writes.", status=503)
@@ -133,7 +120,7 @@ class ExtensionStore:
             raise V2Error("extension_storage_unavailable", "Operation state could not be finalized; preserve the database and inspect this operation before retrying.",
                           status=503, phase="result_unknown", operation_id=kwargs.get("op_id")) from None
 
-    async def _execute(self, http, spec, *, op_id, kind, validate=lambda data: data, before_send=lambda: None, rate=None, ambiguous_codes=(50001,), priority=False, context=None):
+    async def _execute(self, http, spec, *, op_id, kind, validate=lambda data: data, before_send=lambda: None, ambiguous_codes=(50001,), priority=False, context=None):
         robot = http.identity.robot
         spec.url  # Validate the canonical API path before retaining diagnostic scope.
         context = {**(context or {}), "method": spec.method, "path": spec.path}
@@ -151,8 +138,6 @@ class ExtensionStore:
             def prepare():
                 nonlocal attempted
                 before_send()
-                if rate:
-                    self.rate(robot, *rate)
                 self.attempt(robot, op_id)
                 attempted = True
             response = await http.request(spec, before_send=prepare)

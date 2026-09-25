@@ -126,7 +126,7 @@ async def test_live_or_uncertain_approval_capacity_still_fails_closed(management
     assert not m.calls
 
 
-async def test_ack_uses_official_50_qps_robot_budget_and_window(dispatch):
+async def test_ack_uses_server_rate_response_without_local_budget(dispatch):
     s = dispatch
     clock = [s.owner.messages.now()]
     s.owner.messages.clock = lambda: clock[0]
@@ -136,17 +136,22 @@ async def test_ack_uses_official_50_qps_robot_budget_and_window(dispatch):
         s.owner.messages.db.executemany("INSERT INTO extension_rates VALUES(?,?,?)",
             [(robot, "interaction_ack", clock[0])] * 49 + [(other, "interaction_ack", clock[0])] * 50)
     for number in (50, 51):
+        if number == 51:
+            s.modes.append("server_429")
         payload = interaction(s.config, kind=12, interaction_id=f"ack-{number}", event_id=f"event-{number}")
         assert s.service.accept(payload, clock[0])
         await settle(s)
-    assert s.calls == [("PUT", "/interactions/ack-50", {"code": 0})]
+    assert s.calls == [("PUT", "/interactions/ack-50", {"code": 0}),
+                       ("PUT", "/interactions/ack-51", {"code": 0})]
     record = next(row for row in s.service.records() if row["metadata"]["interaction_id"] == "ack-51")
-    assert record["ack"] == "not_sent" and record["business"] == "not_executed"
-    assert record["error"]["code"] == "extension_rate_limited"
+    assert record["ack"] == "rejected" and record["business"] == "not_executed"
+    assert record["error"]["code"] == "qq_rate_limited"
+    assert record["error"]["business_code"] == 50002
+    assert record["error"]["retry_after"] == "3" and record["error"]["trace_id"] == "ack-rate-trace"
     clock[0] += 1.01
     assert s.service.accept(interaction(s.config, kind=12, interaction_id="next-window", event_id="next-event"), clock[0])
     await settle(s)
-    assert s.calls[-1] == ("PUT", "/interactions/next-window", {"code": 0}) and len(s.calls) == 2
+    assert s.calls[-1] == ("PUT", "/interactions/next-window", {"code": 0}) and len(s.calls) == 3
 
 
 @pytest.mark.parametrize("terminal", ["succeeded", "observed_approved"])

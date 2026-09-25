@@ -39,6 +39,9 @@ async def dispatch(receiver, config, monkeypatch):
             assert request.method == "PUT" and body == {"code": 0}
             if mode == "missing_contract":
                 return web.json_response({"unexpected": True})
+            if mode == "server_429":
+                return web.json_response({"code": 50002}, status=429,
+                                         headers={"Retry-After": "3", "X-Tps-Trace-Id": "ack-rate-trace"})
             return web.Response(status=204)
         assert request.path == "/v2/groups/group-one/messages"
         return web.json_response({"id": "actual-event-reply", "ext_info": {"ref_idx": "REFIDX_callback"}})

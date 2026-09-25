@@ -56,9 +56,9 @@ async def read_deadline():
 
 
 class Management:
-    def __init__(self, identity, http, state, store, *, settings=lambda: {}, sleep=asyncio.sleep):
+    def __init__(self, identity, http, state, store, *, settings=lambda: {}):
         self.identity, self.http, self.state, self.store = identity, http, state, store
-        self.settings, self.sleep = settings, sleep
+        self.settings = settings
         self.tasks, self.closed = set(), False
         self.store.db.execute("""CREATE TABLE IF NOT EXISTS join_flags(robot TEXT,target TEXT,member TEXT,request_id TEXT,
             flag_hash TEXT,expires REAL,observed REAL,state TEXT,op_id TEXT,
@@ -75,7 +75,7 @@ class Management:
         if write and not self.settings().get("management_writes", False):
             raise V2Error("management_disabled", "Enable named management writes in the advanced WebUI first.", status=403)
 
-    async def _read(self, path, *, params=None, kind, limit=30, seconds=60):
+    async def _read(self, path, *, params=None):
         self.check()
         task = asyncio.current_task()
         if task not in self.tasks and len(self.tasks) >= 16:
@@ -83,17 +83,11 @@ class Management:
         self.tasks.add(task)
         try:
             async with read_deadline():
-                delay = self.state.rate_delay(self.identity.robot, kind, limit, seconds)
-                if delay:
-                    await self.sleep(delay)
-                def before():
-                    self.check()
-                    self.state.rate(self.identity.robot, kind, limit, seconds)
-                return (await self.http.request(RequestSpec(self.identity.robot.environment, "GET", path, params=params), before_send=before)).data
+                return (await self.http.request(RequestSpec(self.identity.robot.environment, "GET", path, params=params), before_send=self.check)).data
         finally:
             self.tasks.discard(task)
 
-    async def _write(self, method, path, body, *, kind, operation_id=None, validate=empty, params=None, limit=30, seconds=60, guard=lambda: None):
+    async def _write(self, method, path, body, *, kind, operation_id=None, validate=empty, params=None, guard=lambda: None):
         self.check(write=True)
         body, params = copy.deepcopy(body), copy.deepcopy(params)
         task = asyncio.current_task()
@@ -105,19 +99,19 @@ class Management:
                 self.check(write=True)
                 guard()
             return await self.state.execute(self.http, RequestSpec(self.identity.robot.environment, method, path, json_body=body, params=params),
-                op_id=text_id(operation_id) if operation_id else uuid4().hex, kind=kind, validate=validate, before_send=before, rate=(kind, limit, seconds),
+                op_id=text_id(operation_id) if operation_id else uuid4().hex, kind=kind, validate=validate, before_send=before,
                 context={"request": body, "params": params} if kind != "share" else {})
         finally:
             self.tasks.discard(task)
 
     async def group_info(self, group):
-        data = await self._read(f"/v2/groups/{ident(group)}/info", kind="group_info")
+        data = await self._read(f"/v2/groups/{ident(group)}/info")
         if not isinstance(data, dict) or data.get("group_openid") != group or not isinstance(data.get("group_name"), str) or type(data.get("group_member_num")) is not int or data["group_member_num"] < 0:
             invalid()
         return data
 
     async def bot_state(self, group):
-        data = await self._read(f"/v2/groups/{ident(group)}/bot_state", kind="bot_state")
+        data = await self._read(f"/v2/groups/{ident(group)}/bot_state")
         if not isinstance(data, dict) or data.get("member_role") not in ("member", "admin", "owner"):
             invalid()
         text_id(data.get("member_openid"))
@@ -137,13 +131,13 @@ class Management:
         return data
 
     async def group_member(self, group, user):
-        return self._member(await self._read(f"/v2/groups/{ident(group)}/members/{ident(user)}", kind="group_member"), user)
+        return self._member(await self._read(f"/v2/groups/{ident(group)}/members/{ident(user)}"), user)
 
-    async def _pages(self, path, *, kind, field, page_limit, limit, key):
+    async def _pages(self, path, *, field, page_limit, key):
         cursor, cursors, rows, seen, size = "", set(), [], set(), 0
         async with read_deadline():
             for _ in range(200):
-                data = await self._read(path, params={"cursor": cursor}, kind=kind, limit=limit)
+                data = await self._read(path, params={"cursor": cursor})
                 if not isinstance(data, dict) or not isinstance(data.get(field), list) or len(data[field]) > page_limit or not isinstance(data.get("next_cursor"), str) or len(data["next_cursor"]) > 4096:
                     invalid()
                 size += len(json.dumps(data).encode())
@@ -167,11 +161,11 @@ class Management:
         raise V2Error("pagination_incomplete", "Complete listing exceeded the page budget.", status=502)
 
     async def group_members(self, group):
-        rows = await self._pages(f"/v2/groups/{ident(group)}/members", kind="group_members", field="members", page_limit=30, limit=60, key="member_openid")
+        rows = await self._pages(f"/v2/groups/{ident(group)}/members", field="members", page_limit=30, key="member_openid")
         return [self._member(row) for row in rows]
 
     async def group_mutes(self, group):
-        data = await self._read(f"/v2/groups/{ident(group)}/restrict_chat_setting", kind="group_mutes")
+        data = await self._read(f"/v2/groups/{ident(group)}/restrict_chat_setting")
         if not isinstance(data, dict) or not isinstance(data.get("members"), list):
             invalid()
         return data
@@ -188,7 +182,7 @@ class Management:
             member = await self.group_member(group, user)
             if member["member_role"] != "member" or member["bot"]:
                 raise V2Error("member_not_mutable", "Only ordinary non-bot group members can be muted.", status=403)
-            data = await self._read(f"/v2/groups/{ident(group)}/restrict_chat_setting", kind="group_mutes")
+            data = await self._read(f"/v2/groups/{ident(group)}/restrict_chat_setting")
             if not isinstance(data, dict) or not isinstance(data.get("members"), list):
                 invalid()
             for row in data["members"]:
@@ -197,7 +191,7 @@ class Management:
                 text_id(row.get("member_openid"))
             op = "update" if any(row["member_openid"] == user for row in data["members"]) else "add"
         expiry = datetime.fromtimestamp(self.store.now() + duration, UTC).isoformat() if duration else ""
-        return await self._write("POST", f"/v2/groups/{ident(group)}/restrict_chat_setting", {"members": [{"op": op, "member_openid": user, "mute_expire_at": expiry}]}, kind="group_ban", operation_id=operation_id, limit=60)
+        return await self._write("POST", f"/v2/groups/{ident(group)}/restrict_chat_setting", {"members": [{"op": op, "member_openid": user, "mute_expire_at": expiry}]}, kind="group_ban", operation_id=operation_id)
 
     async def group_kick(self, group, users, *, blacklist=False, operation_id=None):
         ident(group)
@@ -250,7 +244,7 @@ class Management:
         return flag
 
     async def join_requests(self, group):
-        rows = await self._pages(f"/v2/groups/{ident(group)}/join_request_list", kind="join_requests", field="list", page_limit=50, limit=30, key="join_request_id")
+        rows = await self._pages(f"/v2/groups/{ident(group)}/join_request_list", field="list", page_limit=50, key="join_request_id")
         return [{**row, "flag": self.observe_request(group, row, fresh_read=True)} for row in rows]
 
     async def approve(self, flag, *, approve, reason="", blacklist=False):
@@ -274,7 +268,7 @@ class Management:
                 if count != 1:
                     raise V2Error("request_flag_invalid", "Request flag changed or expired before sending.", status=409)
         try:
-            result = await self._write("POST", f"/v2/groups/{ident(row['target'])}/approval_join_request/{ident(row['member'])}", body, kind="approve_request", operation_id=op_id, limit=60, guard=claim)
+            result = await self._write("POST", f"/v2/groups/{ident(row['target'])}/approval_join_request/{ident(row['member'])}", body, kind="approve_request", operation_id=op_id, guard=claim)
         except V2Error as exc:
             if exc.phase in {"not_sent", "rejected"}:
                 with self.store.transaction():
@@ -285,7 +279,7 @@ class Management:
         return result
 
     async def login_info(self):
-        data = await self._read("/users/@me", kind="profile", limit=50, seconds=1)
+        data = await self._read("/users/@me")
         if not isinstance(data, dict) or data.get("bot") is not True or not isinstance(data.get("username"), str) or not data["username"]:
             invalid("A complete real bot ID and username are required for login_info.")
         return {"user_id": text_id(data.get("id")), "nickname": data["username"], "id_kind": "channel_user_id", "source": "official_profile"}
@@ -302,7 +296,7 @@ class Management:
             except (ValueError, TypeError):
                 invalid("QQ did not return a valid official share link.")
             return {"url": value}
-        return await self._write("POST", "/v2/generate_url_link", {"callback_data": callback_data}, kind="share", operation_id=operation_id, validate=validate, limit=50, seconds=1)
+        return await self._write("POST", "/v2/generate_url_link", {"callback_data": callback_data}, kind="share", operation_id=operation_id, validate=validate)
 
     async def delete_message(self, message_id, *, operation_id=None):
         text_id(message_id)
@@ -318,7 +312,7 @@ class Management:
         deadline()
         path = {"c2c": "/v2/users/", "group": "/v2/groups/", "channel": "/channels/", "dm": "/dms/"}[scene] + ident(target) + "/messages/" + ident(message_id)
         return await self._write("DELETE", path, None, kind="delete_message", operation_id=operation_id or "delete-" + hashlib.sha256((scene + target + message_id).encode()).hexdigest(),
-                                 params={"hidetip": "false"} if scene in {"channel", "dm"} else None, guard=deadline, limit=10, seconds=1)
+                                 params={"hidetip": "false"} if scene in {"channel", "dm"} else None, guard=deadline)
 
     async def onebot(self, action, params):
         from ..client import ACTION_PARAMS
@@ -349,13 +343,13 @@ class Management:
         return await self.group_kick(group, [user], blacklist=params.get("reject_add_request", False), operation_id=params.get("_qq_operation_id"))
 
     async def guild_info(self, guild):
-        data = await self._read(f"/guilds/{ident(guild)}", kind="guild_info", limit=50, seconds=1)
+        data = await self._read(f"/guilds/{ident(guild)}")
         if not isinstance(data, dict) or data.get("id") != guild:
             invalid()
         return data
 
     async def channels(self, guild):
-        data = await self._read(f"/guilds/{ident(guild)}/channels", kind="channels", limit=50, seconds=1)
+        data = await self._read(f"/guilds/{ident(guild)}/channels")
         rows = data.get("channels") if isinstance(data, dict) else data
         if not isinstance(rows, list) or len(rows) > 5000:
             invalid()
@@ -366,7 +360,7 @@ class Management:
         return rows
 
     async def channel_info(self, channel):
-        data = await self._read(f"/channels/{ident(channel)}", kind="channel_info", limit=50, seconds=1)
+        data = await self._read(f"/channels/{ident(channel)}")
         if not isinstance(data, dict) or data.get("id") != channel:
             invalid()
         return data
@@ -378,7 +372,7 @@ class Management:
                 invalid()
             text_id(data.get("id"))
             return data
-        return await self._write("POST", f"/guilds/{ident(guild)}/channels", fields, kind="channel_create", operation_id=operation_id, validate=validate, limit=50, seconds=1)
+        return await self._write("POST", f"/guilds/{ident(guild)}/channels", fields, kind="channel_create", operation_id=operation_id, validate=validate)
 
     async def channel_update(self, channel, fields, *, operation_id=None):
         self._channel_fields(fields, create=False)
@@ -386,7 +380,7 @@ class Management:
             if not isinstance(data, dict) or data.get("id") != channel:
                 invalid()
             return data
-        return await self._write("PATCH", f"/channels/{ident(channel)}", fields, kind="channel_update", operation_id=operation_id, validate=validate, limit=50, seconds=1)
+        return await self._write("PATCH", f"/channels/{ident(channel)}", fields, kind="channel_update", operation_id=operation_id, validate=validate)
 
     @staticmethod
     def _channel_fields(fields, *, create):
@@ -413,10 +407,10 @@ class Management:
                 text_id(user)
 
     async def channel_delete(self, channel, *, operation_id=None):
-        return await self._write("DELETE", f"/channels/{ident(channel)}", None, kind="channel_delete", operation_id=operation_id, limit=50, seconds=1)
+        return await self._write("DELETE", f"/channels/{ident(channel)}", None, kind="channel_delete", operation_id=operation_id)
 
     async def guild_member(self, guild, user):
-        data = await self._read(f"/guilds/{ident(guild)}/members/{ident(user)}", kind="guild_member", limit=50, seconds=1)
+        data = await self._read(f"/guilds/{ident(guild)}/members/{ident(user)}")
         if not isinstance(data, dict) or not isinstance(data.get("user"), dict) or data["user"].get("id") != user:
             invalid()
         return data
@@ -425,7 +419,7 @@ class Management:
         after, cursors, seen, rows, size = "0", set(), set(), [], 0
         async with read_deadline():
             for _ in range(200):
-                page = await self._read(f"/guilds/{ident(guild)}/members", params={"after": after, "limit": 400}, kind="guild_members", limit=50, seconds=1)
+                page = await self._read(f"/guilds/{ident(guild)}/members", params={"after": after, "limit": 400})
                 if not isinstance(page, list) or len(page) > 400:
                     invalid()
                 if not page:
@@ -452,12 +446,12 @@ class Management:
         if type(blacklist) is not bool or type(delete_history_days) is not int or delete_history_days not in {-1, 0, 3, 7, 15, 30}:
             raise V2Error("invalid_kick_options", "Guild deletion options are invalid.")
         return await self._write("DELETE", f"/guilds/{ident(guild)}/members/{ident(user)}",
-            {"add_blacklist": blacklist, "delete_history_msg_days": delete_history_days}, kind="guild_kick", operation_id=operation_id, limit=50, seconds=1)
+            {"add_blacklist": blacklist, "delete_history_msg_days": delete_history_days}, kind="guild_kick", operation_id=operation_id)
 
     async def guild_mute(self, guild, user, duration, *, operation_id=None):
         if type(duration) is not int or not 0 <= duration <= 2592000:
             raise V2Error("invalid_duration", "Guild mute exceeds the local 0..30 day bound.")
-        return await self._write("PATCH", f"/guilds/{ident(guild)}/members/{ident(user)}/mute", {"mute_seconds": str(duration)}, kind="guild_mute", operation_id=operation_id, limit=50, seconds=1)
+        return await self._write("PATCH", f"/guilds/{ident(guild)}/members/{ident(user)}/mute", {"mute_seconds": str(duration)}, kind="guild_mute", operation_id=operation_id)
 
     async def guild_mute_batch(self, guild, users, duration, *, operation_id=None):
         if not isinstance(users, list) or not 1 <= len(users) <= 20 or type(duration) is not int or not 0 <= duration <= 2592000:
@@ -473,7 +467,7 @@ class Management:
             if set(data["user_ids"]) != set(users):
                 raise V2Error("partial_failure", "Only some guild members were muted; the batch must not be replayed.", phase="partial", status=502, details={"succeeded": data["user_ids"]})
             return {"state": "succeeded", "user_ids": data["user_ids"]}
-        return await self._write("PATCH", f"/guilds/{ident(guild)}/mute", {"mute_seconds": str(duration), "user_ids": users}, kind="guild_mute_batch", operation_id=operation_id, validate=validate, limit=50, seconds=1)
+        return await self._write("PATCH", f"/guilds/{ident(guild)}/mute", {"mute_seconds": str(duration), "user_ids": users}, kind="guild_mute_batch", operation_id=operation_id, validate=validate)
 
     async def close(self):
         self.closed = True

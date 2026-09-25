@@ -7,7 +7,7 @@ from test_transport_http import MappedSession, upstream
 
 from v2.errors import V2Error
 from v2.extensions.state import ExtensionStore
-from v2.messaging.store import MessageStore
+from v2.messaging.store import MessageStore, robot_key
 from v2.models import InstanceKey
 from v2.transport.http import HTTPTransport
 
@@ -51,11 +51,9 @@ async def management(config, tmp_path):
         if request.path.endswith("/info"):
             return web.json_response({"group_openid": "g", "group_name": "actual-group", "group_member_num": 2})
         raise AssertionError(request.path)
-    async def sleep(seconds):
-        clock[0] += seconds
     async with upstream(handle) as base:
         http = HTTPTransport(identity, config["secret"], session_factory=lambda: MappedSession(base))
-        service = Management(identity, http, state, store, settings=lambda: policy, sleep=sleep)
+        service = Management(identity, http, state, store, settings=lambda: policy)
         try:
             yield SimpleNamespace(service=service, policy=policy, calls=calls, modes=modes, clock=clock, store=store, state=state, http=http)
         finally:
@@ -76,6 +74,19 @@ async def test_complete_members_query_cursor_and_no_chat_identity_pollution(mana
     with pytest.raises(V2Error) as error:
         await m.service.group_members("g")
     assert error.value.code == "pagination_incomplete"
+
+
+async def test_legacy_management_rate_rows_do_not_delay_server_requests(management):
+    m = management
+    robot = robot_key(m.http.identity.robot)
+    with m.store.transaction():
+        m.store.db.executemany("INSERT INTO extension_rates VALUES(?,?,?)",
+            [(robot, "group_info", m.clock[0])] * 30 + [(robot, "group_ban", m.clock[0])] * 60)
+    started = m.clock[0]
+    await m.service.group_info("g")
+    await m.service.group_ban("g", "u", 60, operation_id="unthrottled-ban")
+    assert m.clock[0] == started
+    assert any(method == "POST" and path.endswith("restrict_chat_setting") for method, path, *_ in m.calls)
 
 
 async def test_ban_update_unban_and_write_gate(management):
