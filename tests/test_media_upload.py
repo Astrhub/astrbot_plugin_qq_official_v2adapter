@@ -215,6 +215,17 @@ async def test_media_send_uses_one_message_reservation_and_actual_id(media, even
     assert media.pool.used == 0 and not core.tasks
 
 
+@pytest.mark.parametrize("event,path", [("GROUP_AT_MESSAGE_CREATE", "/v2/groups/group-one/messages"), ("C2C_MESSAGE_CREATE", "/v2/users/user-one/messages")])
+async def test_group_c2c_media_keeps_text_caption(media, event, path):
+    from astrbot.core.message.components import Image, Plain
+    from astrbot.core.message.message_event_result import MessageChain
+    core, chat = sending_core(media, event)
+    image = Image.fromBase64(base64.b64encode(PNG).decode())
+    result = await core.send(chat.route, MessageChain([Plain("caption"), image]), source=chat.source, operation_id="caption-image")
+    assert result["message_id"] == "actual-media-message"
+    assert media.calls[-1] == (path, {"content": "caption", "msg_type": 7, "media": {"file_info": "actual-file-receipt"}, "msg_id": "msg-one", "msg_seq": 1})
+
+
 async def test_channel_multipart_auth_retry_rewinds_owned_bytes(media):
     from astrbot.core.message.components import Image, Plain
     from astrbot.core.message.message_event_result import MessageChain

@@ -3,6 +3,7 @@
 import asyncio
 import copy
 
+from astrbot.api import logger
 from astrbot.api.event import AstrMessageEvent, filter
 from astrbot.api.star import Context, Star, StarTools
 from astrbot.core.platform.register import (
@@ -112,6 +113,17 @@ class QQOfficialV2(Star):
     async def catalog_loaded(self, plugin):
         if self.panels:
             self.panels.stable.clear()
+        if plugin is not self.context.get_registered_star(PLUGIN_NAME):
+            return
+        for item in self.context.get_config().get("platform", []):
+            if item.get("type") != PLATFORM_TYPE or item.get("enable") is not True:
+                continue
+            if any(instance.identity.platform_id == item.get("id") for instance in self.instances):
+                continue
+            try:
+                await self.context.platform_manager.load_platform(item)
+            except Exception:
+                logger.exception("qq-v2 failed to restore platform %s after plugin reload", item.get("id"))
 
     @filter.on_plugin_unloaded()
     async def catalog_unloaded(self, plugin):
