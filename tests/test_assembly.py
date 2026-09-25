@@ -187,10 +187,8 @@ async def test_real_astrbot_assembly(config, monkeypatch, qq_reject_server, qq_p
             await lifecycle.plugin_manager.turn_on_plugin(PLUGIN_NAME)
             new_owner = lifecycle.star_context.get_registered_star(PLUGIN_NAME).star_cls
             assert new_owner is not owner and not new_owner.stopping
-            assert not new_owner.instances  # Hot plugin reload does not silently reconnect.
             assert new_owner.store.get(instance.identity.settings_key)["applied"]["title"] == "fixture title"
             map_qq()
-            await lifecycle.platform_manager.load_platform(dict(config))
             new_instance = next(iter(new_owner.instances))
             await lifecycle.platform_manager._platform_tasks[new_instance.client_self_id].wrapper
             assert new_instance.identity.generation != instance.identity.generation

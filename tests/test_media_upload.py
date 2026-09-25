@@ -215,6 +215,17 @@ async def test_media_send_uses_one_message_reservation_and_actual_id(media, even
     assert media.pool.used == 0 and not core.tasks
 
 
+@pytest.mark.parametrize("event,path", [("GROUP_AT_MESSAGE_CREATE", "/v2/groups/group-one/messages"), ("C2C_MESSAGE_CREATE", "/v2/users/user-one/messages")])
+async def test_group_c2c_media_keeps_text_caption(media, event, path):
+    from astrbot.core.message.components import Image, Plain
+    from astrbot.core.message.message_event_result import MessageChain
+    core, chat = sending_core(media, event)
+    image = Image.fromBase64(base64.b64encode(PNG).decode())
+    result = await core.send(chat.route, MessageChain([Plain("caption"), image]), source=chat.source, operation_id="caption-image")
+    assert result["message_id"] == "actual-media-message"
+    assert media.calls[-1] == (path, {"content": "caption", "msg_type": 7, "media": {"file_info": "actual-file-receipt"}, "msg_id": "msg-one", "msg_seq": 1})
+
+
 async def test_channel_multipart_auth_retry_rewinds_owned_bytes(media):
     from astrbot.core.message.components import Image, Plain
     from astrbot.core.message.message_event_result import MessageChain
@@ -247,14 +258,14 @@ async def test_upload_finish_does_not_mean_message_sent_and_rechecks_window(medi
 async def test_entire_media_chain_and_cross_target_preflight(media):
     core, chat = sending_core(media)
     value = MediaInput("image", "https://assets.test/image")
-    with pytest.raises(V2Error):
-        await core.send(chat.route, [value, {"type": "text", "data": {"text": "not silently dropped"}}], source=chat.source)
-    assert not media.calls and not media.transfers
+    result = await core.send(chat.route, [value, {"type": "text", "data": {"text": "not silently dropped"}}], source=chat.source)
+    assert result["message_id"] == "actual-media-message"
+    assert media.calls[-1][1]["content"] == "not silently dropped" and media.calls[-1][1]["media"]["file_info"] == "actual-file-receipt"
     prepared = await media.service.prepare(chat.route, value)
     try:
         other = SessionRoute(media.identity.robot, "group", "different")
         with pytest.raises(V2Error) as error:
             await media.service.upload(other, prepared)
-        assert error.value.code == "media_scope_mismatch" and not media.calls
+        assert error.value.code == "media_scope_mismatch"
     finally:
         prepared.close()

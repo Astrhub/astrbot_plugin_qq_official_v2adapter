@@ -29,7 +29,7 @@ from .transport.websocket import Gateway
 DEFAULT_PLATFORM_CONFIG = {
     "id": "qq_v2", "type": PLATFORM_TYPE, "enable": False,
     "appid": "", "secret": "", "environment": "production",
-    "transport": "websocket", "intents": 33554432, "shard": [0, 1],
+    "transport": "websocket", "intents": 1174409216, "shard": [0, 1],
     "unified_webhook_mode": False, "webhook_uuid": "",
     "onebot": dict(DEFAULT_NETWORK),
 }
@@ -241,6 +241,7 @@ class V2Adapter(Platform):
 
     def meta(self):
         return PlatformMetadata(PLATFORM_TYPE, "QQ 官方 V2（基础消息与持久状态）", self.identity.platform_id,
+                                adapter_display_name="QQ 官方 V2",
                                 support_streaming_message=True, support_proactive_message=True)
 
     def get_client(self):

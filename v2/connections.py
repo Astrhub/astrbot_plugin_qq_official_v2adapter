@@ -14,7 +14,7 @@ from .network_config import DEFAULT_NETWORK, NETWORK_FIELDS, network_config
 
 EDITABLE = {"appid", "environment", "transport", "intents", "shard", "enable"}
 DEFAULT_CONNECTION = {"type": PLATFORM_TYPE, "enable": False, "appid": "", "secret": "",
-                      "environment": "production", "transport": "websocket", "intents": 33554432, "shard": [0, 1]}
+                       "environment": "production", "transport": "websocket", "intents": 1174409216, "shard": [0, 1]}
 EDITABLE |= {"onebot"}
 DEFAULT_CONNECTION["onebot"] = dict(DEFAULT_NETWORK)
 

@@ -254,8 +254,6 @@ class SendingCore:
             if len(media) != 1 or use_md:
                 raise unsupported("One media item is supported; mixed Markdown/media or multiple items cannot be sent equivalently.")
             ordinary = [(kind, value) for kind, value in atoms if kind != "media"]
-            if route.scene in {"group", "c2c"} and any(kind != "reply" for kind, _ in ordinary):
-                raise unsupported("Group/C2C media cannot preserve a text caption as one equivalent message.")
             if route.scene in {"channel", "dm"} and atoms[-1][0] != "media":
                 raise unsupported("Channel/DM media must follow its text/reference components.")
             if any(kind != "reply" for kind, _ in ordinary):
