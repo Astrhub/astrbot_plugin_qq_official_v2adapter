@@ -105,6 +105,7 @@ ASTRBOT_SOURCE=/patch/AstrBot bash scripts/test-isolated.sh -q
 ```
 astrbot_plugin_qq_official_v2adapter/
 ├── main.py               # 插件主入口：注册/注销 qq_official_v2 平台
+├── assets/               # QQ 官方平台图标与来源许可
 ├── v2/                   # 适配器核心
 │   ├── adapter.py        #   平台适配器与实例生命周期
 │   ├── event.py          #   V2 事件与发送入口
@@ -133,6 +134,7 @@ astrbot_plugin_qq_official_v2adapter/
 ## 相关链接
 
 - [AstrBot](https://docs.astrbot.app/)
+- 平台图标复用 [AstrBot 的 QQ 图标](https://github.com/AstrBotDevs/AstrBot/blob/8b5e24ba2eac3375a0e17bdf3f0ea790eb91de15/dashboard/src/assets/images/platform_logos/qq.png)，其 Dashboard MIT 许可见 [随附声明](assets/LICENSE.AstrBot-Dashboard)。
 - [Issues](https://github.com/Astrhub/astrbot_plugin_qq_official_v2adapter/issues)
 - [QQ 机器人官方文档](https://bot.q.qq.com/wiki/develop/api-v2/)
 

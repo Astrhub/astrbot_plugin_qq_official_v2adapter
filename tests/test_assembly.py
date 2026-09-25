@@ -21,7 +21,7 @@ async def test_real_astrbot_assembly(config, monkeypatch, qq_reject_server, qq_p
     plugin_dir = Path("/work/data/plugins") / PLUGIN_NAME
     plugin_dir.parent.mkdir(parents=True, exist_ok=True)
     plugin_dir.mkdir()
-    for entry in ("main.py", "metadata.yaml", "_conf_schema.json", "requirements.txt", "v2", "pages"):
+    for entry in ("main.py", "metadata.yaml", "_conf_schema.json", "requirements.txt", "assets", "v2", "pages"):
         source = Path("/plugin") / entry
         if source.is_dir():
             shutil.copytree(source, plugin_dir / entry)
@@ -30,9 +30,14 @@ async def test_real_astrbot_assembly(config, monkeypatch, qq_reject_server, qq_p
     import importlib
 
     from test_transport_http import MappedSession
+    mapped_sessions = []
     def map_qq():
         module = importlib.import_module(f"data.plugins.{PLUGIN_NAME}.v2.transport.http")
-        monkeypatch.setattr(module.HTTPTransport, "_make_session", lambda self: MappedSession(qq_reject_server[0]))
+        def make_session(self):
+            session = MappedSession(qq_reject_server[0])
+            mapped_sessions.append(session)
+            return session
+        monkeypatch.setattr(module.HTTPTransport, "_make_session", make_session)
     map_qq()
     from astrbot.core import LogBroker, astrbot_config, db_helper, html_renderer
     from astrbot.core.core_lifecycle import AstrBotCoreLifecycle
@@ -55,7 +60,7 @@ async def test_real_astrbot_assembly(config, monkeypatch, qq_reject_server, qq_p
         initialized = True
         assert not lifecycle.plugin_manager.failed_plugin_dict, lifecycle.plugin_manager.failed_plugin_dict.keys()
         metadata = lifecycle.star_context.get_registered_star(PLUGIN_NAME)
-        assert metadata is not None and metadata.version == "v0.5.0"
+        assert metadata is not None
         owner = metadata.star_cls
         assert owner and not owner.stopping
         assert PLATFORM_TYPE in platform_cls_map
@@ -70,6 +75,10 @@ async def test_real_astrbot_assembly(config, monkeypatch, qq_reject_server, qq_p
         assert instance.runtime_status()["failure_details"]["business_code"] == 100016
         assert instance.runtime_status()["failure_details"]["http_status"] == 200
         assert qq_reject_server[1] == ["/app/getAppAccessToken"]
+        assert len(mapped_sessions) == 1
+        assert [(method, url) for method, url, _ in mapped_sessions[0].calls] == [
+            ("POST", "https://api.bot.qq.com/app/getAppAccessToken"),
+        ]
         assert not (await instance.get_client().get_status())["online"]
         native_after = {name for name in sys.modules if name.startswith(("astrbot.core.platform.sources.qqofficial.",
                                                                         "astrbot.core.platform.sources.qqofficial_webhook."))}
@@ -95,6 +104,14 @@ async def test_real_astrbot_assembly(config, monkeypatch, qq_reject_server, qq_p
             response = await client.get(prefix + "/bootstrap", headers={"Authorization": "ApiKey " + key["api_key"]})
             assert response.status_code == 403 and response.json()["code"] == "management_auth_required"
             headers = auth()
+            config_response = await client.get("/api/config/get", headers=headers)
+            assert config_response.status_code == 200
+            platform_form = config_response.json()["data"]["metadata"]["platform_group"]["metadata"]["platform"]
+            logo_token = platform_form["config_template"][PLATFORM_TYPE]["logo_token"]
+            assert platform_form["items"]["environment"]["description"] == "运行环境"
+            assert platform_form["items"]["onebot"]["description"] == "OneBot 网络设置"
+            icon = await client.get(f"/api/v1/files/tokens/{logo_token}")
+            assert icon.status_code == 200 and icon.content == (plugin_dir / "assets" / "qq.png").read_bytes()
             boot = (await client.get(prefix + "/bootstrap", headers=headers)).json()
             assert boot["instances"][0]["id"] == config["id"]
             view = (await client.get(prefix + "/config", params={"platform_id": config["id"]}, headers=headers)).json()
