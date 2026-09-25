@@ -24,11 +24,12 @@ let calls = [], ready = false;
 let state = {platform_id: 'fixture', revision: 0, applied_revision: 0, remote_state: 'not_implemented', fingerprint: 'fixture-fingerprint',
   draft: structuredClone(defaults), versions: [], identity: {appid: 'fixture-app', environment: 'sandbox'}, credentials_configured: true, runtime_state: 'transport_not_ready'};
 let flags = {remote_menu_sync: false, webui_enabled: true, onebot_network_enabled: false};
-const timers = new Map(), events = new Map(); let timerId = 0, failSave = false;
+const events = new Map(), timers = new Map(); let failSave = false, timerId = 0, lastDelay = 0, deferQr = false;
+const binding = {ticket: 'fixture-ticket', platform_id: 'fixture', state: 'pending', hint: '请用手机 QQ 扫码，并在 QQ 里确认授权。',
+  expires_in: 180, lease_seconds: 30, qr_matrix: [[true, false], [false, true]], appid: null, commit_handle: null};
 const connection = {platform_id: 'fixture', fingerprint: 'connection-fingerprint', exists: true,
   fields: {appid: 'fixture-app', environment: 'production', transport: 'websocket', intents: 33554432, shard: [0, 1], enable: false, onebot: {host: '127.0.0.1', port: 5700, writes: false, enable: false}},
   credentials_configured: true, runtime: {state: 'configured', online: false}, reload: 'not_requested'};
-const binding = {ticket: 'fixture-ticket', platform_id: 'fixture', state: 'pending', expires_in: 180, lease_seconds: 30, qr_matrix: [[true, false], [false, true]]};
 let retainedRows = [{receipt: 7, version: 'a'.repeat(64), confirmation: 'fixture-confirmation', event_type: '<script>plain text</script>', state: 'extension', reason: 'unsupported', received_at: 1800000000, size: 100}];
 const bridge = {
   async ready() { ready = true; },
@@ -52,15 +53,19 @@ const bridge = {
     if (endpoint === 'inbox/discard') { assert.equal(body.confirm, true); assert.equal(body.entries.length, 1); assert.equal(body.entries[0].confirmation, 'fixture-confirmation'); retainedRows = []; return {discarded: 1, counts: {pending: 1}}; }
     if (endpoint === 'connection/save') { if (failSave) throw new Error('fixture conflict'); const {onebot, ...rest} = body.patch; Object.assign(connection.fields, rest); Object.assign(connection.fields.onebot, onebot || {}); if (body.network_token_action !== 'keep') connection.network_token_configured = body.network_token_action === 'replace'; return structuredClone(connection); }
     if (endpoint === 'connection/reload') { connection.runtime.state = 'connecting'; return structuredClone(connection); }
-    if (endpoint === 'onboarding/start') return structuredClone(binding);
-    if (endpoint === 'onboarding/status') return {...binding, state: 'ready_to_commit', qr_matrix: null, commit_handle: 'fixture-handle'};
-    if (endpoint === 'onboarding/commit') return {...binding, state: 'configured', qr_matrix: null, result: structuredClone(connection)};
-    if (endpoint === 'onboarding/cancel') return {...binding, state: 'cancelled', qr_matrix: null};
+    if (endpoint === 'onboarding/start') return deferQr ? {...binding, state: 'creating', hint: '正在向 QQ 申请二维码。不需要事先填写 AppSecret。', qr_matrix: null} : structuredClone(binding);
+    if (endpoint === 'onboarding/status') {
+      if (deferQr) { deferQr = false; return structuredClone(binding); }
+      return {...binding, state: 'ready_to_commit', hint: '已拿到 AppID 和 AppSecret。保存后机器人保持关闭。', qr_matrix: null, appid: 'new-app', commit_handle: 'fixture-handle'};
+    }
+    if (endpoint === 'onboarding/commit') return {...binding, state: 'configured', hint: '凭据已保存，机器人仍是关闭的。', qr_matrix: null, appid: 'new-app', result: structuredClone(connection)};
+    if (endpoint === 'onboarding/cancel') return {...binding, state: 'cancelled', hint: '已取消，没有写入凭据。', qr_matrix: null};
     throw new Error(endpoint);
   }
 };
 const window = {AstrBotPluginPage: bridge, confirm: () => true, addEventListener: (name, fn) => events.set(name, fn),
-  setTimeout: (fn, delay) => { assert.equal(delay, 5000); timers.set(++timerId, fn); return timerId; }, clearTimeout: id => timers.delete(id)};
+  setTimeout: (fn, delay) => { assert.ok(delay === 400 || delay === 5000, String(delay)); lastDelay = delay; timers.set(++timerId, fn); return timerId; },
+  clearTimeout: id => timers.delete(id)};
 const AsyncFunction = Object.getPrototypeOf(async function() {}).constructor;
 await new AsyncFunction('window', 'document', source)(window, document);
 assert.equal(nodes.get('editor').hidden, false);
@@ -107,17 +112,6 @@ nodes.get('connect-confirm-secret').checked = true; failSave = true;
 await nodes.get('connect-save').onclick(); assert.equal(nodes.get('connect-secret').value, '');
 assert(nodes.get('status').textContent.includes('fixture conflict')); failSave = false;
 await nodes.get('connect-read').onclick();
-await nodes.get('bind-start').onclick();
-assert.equal(nodes.get('bind-qr').hidden, false); assert.equal(timers.size, 1);
-await [...timers.values()][0]();
-assert.equal(calls.at(-1)[1], 'onboarding/status'); assert.equal(calls.at(-1)[2].renew, true);
-assert.equal(nodes.get('bind-commit').hidden, false);
-nodes.get('connect-confirm-secret').checked = true; nodes.get('connect-confirm-identity').checked = true;
-await nodes.get('bind-commit').onclick();
-assert.equal(calls.at(-1)[2].commit_handle, 'fixture-handle'); assert.equal(timers.size, 0);
-assert.equal(nodes.get('connect-secret').value, '');
-await nodes.get('bind-start').onclick(); events.get('pagehide')();
-assert.equal(timers.size, 0); assert.equal(calls.at(-1)[1], 'onboarding/cancel');
 const beforePanels = calls.length;
 await nodes.get('panel-enable').onclick();
 assert.equal(calls.length, beforePanels, 'publishing needs the independent switch');
@@ -151,7 +145,6 @@ assert.equal(retainedCheck.checked, true); assert.equal(calls.length, beforeSele
 window.confirm = () => true; await nodes.get('retained-discard').onclick();
 const discard = calls.find(c => c[1] === 'inbox/discard'); assert.equal(discard[2].platform_id, 'fixture'); assert.equal(discard[2].fingerprint, 'fixture-fingerprint');
 assert.equal(nodes.get('retained-list').children.length, 0); assert(nodes.get('status').textContent.includes('已明确丢弃 1'));
-await nodes.get('bind-cancel').onclick(); // The earlier pagehide probe deliberately left a pending in-memory binding.
 assert.equal(nodes.get('network-enable').checked, false); assert.equal(nodes.get('network-writes').checked, false);
 assert.equal(nodes.get('network-host').value, '127.0.0.1'); assert.equal(nodes.get('network-token').value, '');
 nodes.get('network-enable').checked = true; nodes.get('network-writes').checked = true; nodes.get('network-port').value = '5799';
@@ -171,4 +164,19 @@ await nodes.get('connect-read').onclick();
 await nodes.get('network-gate').onclick(); assert.equal(calls.at(-1)[1], 'flags'); assert.equal(calls.at(-1)[2].patch.onebot_network_enabled, true);
 const beforeHide = calls.length; nodes.get('network-token').value = 'synthetic-ephemeral-token'; events.get('pagehide')();
 assert.equal(nodes.get('network-token').value, ''); assert.equal(calls.length, beforeHide, 'page close must not disable listener or rotate token');
+await nodes.get('bind-start').onclick();
+assert.equal(calls.at(-1)[1], 'onboarding/start'); assert.equal(calls.at(-1)[2].confirm, true);
+assert.equal(nodes.get('bind-qr').hidden, false); assert.equal(lastDelay, 5000);
+await [...timers.values()][0]();
+assert.equal(calls.at(-1)[1], 'onboarding/status'); assert.equal(calls.at(-1)[2].renew, true);
+assert.equal(nodes.get('bind-save').hidden, false); assert.equal(nodes.get('bind-qr').hidden, true);
+await nodes.get('bind-save').onclick();
+assert.equal(calls.at(-1)[1], 'onboarding/commit'); assert.equal(calls.at(-1)[2].commit_handle, 'fixture-handle');
+assert.equal(calls.at(-1)[2].confirm_secret, true); assert.equal(timers.size, 0);
+await nodes.get('bind-start').onclick(); events.get('pagehide')();
+assert.equal(calls.at(-1)[1], 'onboarding/cancel');
+deferQr = true; await nodes.get('bind-start').onclick();
+assert.equal(nodes.get('bind-qr').hidden, true); assert.equal(lastDelay, 400);
+await [...timers.values()][0]();
+assert.equal(nodes.get('bind-qr').hidden, false); assert.equal(lastDelay, 5000);
 console.log('PAGE: bridge-ready, real endpoint wiring, save/preview split, partial patches, safe text and parameter assistant passed');

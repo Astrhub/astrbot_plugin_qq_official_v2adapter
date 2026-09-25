@@ -15,5 +15,6 @@ pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: .85rem; }
 .command { padding: .35rem; border-bottom: 1px solid GrayText; }
 .command button { text-align: left; border: 0; background: transparent; color: LinkText; }
 fieldset { margin: 1rem 0; } .layer { display: grid; grid-template-columns: 1fr 1fr; gap: .4rem; }
-#status { font-weight: 600; } #help { overflow-wrap: anywhere; }
+#status, #bind-status { font-weight: 600; } #help { overflow-wrap: anywhere; }
+#bind-qr { margin-top: .75rem; width: 280px; height: 280px; max-width: 100%; image-rendering: pixelated; background: #fff; }
 @media (max-width: 1000px) { main { grid-template-columns: 1fr; } #catalog { max-height: 45vh; } body { padding: .75rem; } }

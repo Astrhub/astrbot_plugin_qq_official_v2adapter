@@ -310,8 +310,44 @@ $("retained-discard").onclick = () => run(async () => {
   await readRetained(); report(`已明确丢弃 ${result.discarded} 条保留事件，其他记录未删除。`);
 });
 
-let connectionView, binding, bindingTimer;
-const bindingActive = () => binding && ["creating", "pending", "ready_to_commit"].includes(binding.state);
+let connectionView, scan, scanTimer;
+const scanActive = () => scan && ["creating", "pending", "ready_to_commit"].includes(scan.state);
+function scanTrace(message, detail) { console.debug("[qq-v2-scan]", message, detail ?? ""); $("bind-status").textContent = message; }
+function paintScan(value) {
+  scan = value;
+  $("bind-status").textContent = value.hint || "扫码状态已更新。";
+  $("bind-save").hidden = value.state !== "ready_to_commit";
+  $("bind-cancel").hidden = !scanActive();
+  const matrix = value.qr_matrix, canvas = $("bind-qr");
+  canvas.hidden = !matrix;
+  if (!matrix) return;
+  if (!Array.isArray(matrix) || matrix.length > 185 || matrix.some(row => !Array.isArray(row) || row.length !== matrix.length)) throw new Error("二维码数据无效。");
+  const size = matrix.length;
+  canvas.width = canvas.height = size * 4;
+  const context = canvas.getContext("2d");
+  context.fillStyle = "#fff";
+  context.fillRect(0, 0, canvas.width, canvas.height);
+  context.fillStyle = "#000";
+  matrix.forEach((row, y) => row.forEach((dark, x) => { if (dark) context.fillRect(x * 4, y * 4, 4, 4); }));
+}
+function scheduleScan() {
+  window.clearTimeout(scanTimer);
+  if (!scanActive()) return;
+  const delay = scan.state === "creating" || (scan.state === "pending" && !scan.qr_matrix) ? 400 : 5000;
+  scanTimer = window.setTimeout(async () => {
+    if (loading) return scheduleScan();
+    await run(async () => {
+      try { paintScan(await bridge.apiPost("onboarding/status", connectionPayload({ticket: scan.ticket, renew: true}))); }
+      catch (error) {
+        window.clearTimeout(scanTimer);
+        $("bind-status").textContent = `没能继续这次扫码：${error.message}。可以重新生成。`;
+        scan = null; $("bind-qr").hidden = true; $("bind-save").hidden = true; $("bind-cancel").hidden = true;
+        throw error;
+      }
+    });
+    scheduleScan();
+  }, delay);
+}
 function connectionFields() {
   return {appid: $("connect-appid").value.trim(), environment: $("connect-environment").value,
     transport: $("connect-transport").value, intents: Number($("connect-intents").value),
@@ -337,7 +373,11 @@ function showConnection(value) {
   $("network-token-state").textContent = `专用 token ${value.network_token_configured ? "已配置（不回传原值）" : "未配置"}`;
   $("network-gate-state").textContent = boot.flags?.onebot_network_enabled ? "总闸开启；未运行实例需重载" : "总闸关闭";
   $("network-capabilities").textContent = JSON.stringify(value.capabilities || {network_api: {state: "not_loaded"}}, null, 2);
-  $("connect-status").textContent = `${value.platform_id} · 凭据${value.credentials_configured ? "已配置" : "未配置"} · ${value.runtime.state} · online=${value.runtime.online} · ${value.reload}。${value.webhook_path || ""}`;
+  const cred = value.credentials_configured ? "已有凭据" : "还没有凭据。点上面的生成二维码，不用先填 AppSecret";
+  const online = value.runtime?.online ? "已连接" : "未连接";
+  const runtime = {not_configured: "尚未配置", configured: "已保存，未启动", connecting: "正在连接", webhook_ready: "Webhook 已就绪"}[value.runtime?.state] || value.runtime?.state || "未知";
+  const reload = {not_requested: "还没有重载", connecting: "正在重载", online: "重载后已在线", connection_failed_configuration_retained: "重载后没连上，配置仍保留", webhook_ready_unverified: "Webhook 已就绪，尚未验证"}[value.reload] || value.reload;
+  $("connect-status").textContent = `${value.platform_id}：${cred}。${runtime}，${online}。${reload}。${value.webhook_path ? "Webhook " + value.webhook_path + "。" : ""}`;
   const failure = value.runtime.failure_details || value.runtime.last_transport_failure;
   if (failure) $("connect-status").textContent += ` 最近故障：${failure.code} / 业务或关闭码 ${failure.business_code ?? "无"} / HTTP ${failure.http_status ?? "无"}`;
   if (value.runtime.message_delivery) $("connect-status").textContent += ` 消息交付：${value.runtime.message_delivery} / ${value.runtime.delivery_error || "无故障"} / 待处理 ${value.runtime.pending_raw ?? "未知"}；保留 ${JSON.stringify(value.runtime.raw_disposition || {})}`;
@@ -349,42 +389,11 @@ function connectionDirty() {
   try { return !!Object.keys(changed(connectionView.fields, connectionFields())).length || !!$("connect-secret").value || $("connect-secret-action").value !== "keep" || !!$("network-token").value || $("network-token-action").value !== "keep"; }
   catch { return true; }
 }
-function showBinding(value) {
-  binding = value;
-  $("bind-status").textContent = `${value.state} · AppID ${value.appid || "尚未取得"} · 剩余 ${value.expires_in}s / 租约 ${value.lease_seconds}s${value.error ? " · " + value.error : ""}。取到凭据不代表在线。`;
-  $("bind-commit").hidden = value.state !== "ready_to_commit";
-  $("bind-cancel").hidden = !bindingActive();
-  const matrix = value.qr_matrix, canvas = $("bind-qr"); canvas.hidden = !matrix;
-  if (matrix) {
-    if (!Array.isArray(matrix) || matrix.length > 185 || matrix.some(row => !Array.isArray(row) || row.length !== matrix.length)) throw new Error("二维码数据无效。");
-    const size = matrix.length; canvas.width = canvas.height = size * 4;
-    const context = canvas.getContext("2d"); context.fillStyle = "#fff"; context.fillRect(0, 0, canvas.width, canvas.height);
-    context.fillStyle = "#000"; matrix.forEach((row, y) => row.forEach((dark, x) => { if (dark) context.fillRect(x * 4, y * 4, 4, 4); }));
-  }
-}
-function scheduleBinding() {
-  window.clearTimeout(bindingTimer);
-  if (!bindingActive()) return;
-  bindingTimer = window.setTimeout(async () => {
-    if (loading) return scheduleBinding();
-    await run(async () => {
-      try { showBinding(await bridge.apiPost("onboarding/status", {csrf: boot.csrf, platform_id: binding.platform_id, ticket: binding.ticket, renew: true})); }
-      catch (error) { window.clearTimeout(bindingTimer); $("bind-status").textContent = `续期失败：${error.message}；服务端租约将自动到期。`; binding = null; $("bind-qr").hidden = true; throw error; }
-    });
-    scheduleBinding();
-  }, 5000);
-}
-async function cancelBinding() {
-  window.clearTimeout(bindingTimer);
-  if (bindingActive()) showBinding(await bridge.apiPost("onboarding/cancel", {csrf: boot.csrf, platform_id: binding.platform_id, ticket: binding.ticket}));
-}
 $("connect-read").onclick = () => run(async () => {
-  if ((connectionDirty() || bindingActive()) && !window.confirm("丢弃未保存的连接编辑并取消当前扫码？")) return;
-  await cancelBinding();
+  if (connectionDirty() && !window.confirm("丢弃未保存的连接编辑？")) return;
   showConnection(await bridge.apiGet("connection", {platform_id: $("connect-id").value.trim()}));
 });
 $("connect-save").onclick = () => run(async () => {
-  if (bindingActive()) throw new Error("请先取消扫码，避免覆盖待提交的连接配置。");
   if (!window.confirm("保存到本体平台配置，不自动连接；现有运行代次将失效。继续？")) return;
   const value = connectionPayload({patch: changed(connectionView.fields, connectionFields()), secret_action: $("connect-secret-action").value,
     confirm: true, confirm_secret: $("connect-confirm-secret").checked, confirm_identity: $("connect-confirm-identity").checked,
@@ -397,23 +406,36 @@ $("connect-save").onclick = () => run(async () => {
     showConnection(await bridge.apiPost("connection/save", value));
   } finally { $("connect-secret").value = ""; $("network-token").value = ""; delete value.secret; delete value.network_token; }
 });
+$("bind-start").onclick = () => run(async () => {
+  scanTrace("已点击生成二维码", {platformId: $("connect-id").value.trim()});
+  if (connectionDirty()) throw new Error("连接配置有未保存的修改。先保存或重新读取，再生成二维码。");
+  if (scanActive()) {
+    scanTrace("取消上一张二维码");
+    window.clearTimeout(scanTimer);
+    await bridge.apiPost("onboarding/cancel", connectionPayload({ticket: scan.ticket}));
+    scan = null;
+  }
+  scanTrace("正在向 QQ 申请二维码");
+  paintScan(await bridge.apiPost("onboarding/start", connectionPayload({confirm: true})));
+  scanTrace(scan.hint || "已拿到扫码状态", {state: scan.state, hasQr: Boolean(scan.qr_matrix)});
+  scheduleScan();
+});
+$("bind-cancel").onclick = () => run(async () => {
+  window.clearTimeout(scanTimer);
+  if (scanActive()) paintScan(await bridge.apiPost("onboarding/cancel", connectionPayload({ticket: scan.ticket})));
+});
+$("bind-save").onclick = () => run(async () => {
+  if (scan?.state !== "ready_to_commit") throw new Error("还没有可保存的凭据。请先用手机 QQ 扫码并确认。");
+  scanTrace(`正在把 AppID ${scan.appid || "（QQ 返回）"} 写入「${scan.platform_id}」，机器人保持关闭`);
+  const saved = await bridge.apiPost("onboarding/commit", connectionPayload({ticket: scan.ticket, commit_handle: scan.commit_handle, confirm: true, confirm_secret: true, confirm_identity: true}));
+  paintScan(saved);
+  if (saved.result) showConnection(saved.result);
+  scheduleScan();
+});
 $("connect-reload").onclick = () => run(async () => {
-  if (connectionDirty() || bindingActive()) throw new Error("请先保存连接编辑或取消扫码，再重载已保存配置。");
+  if (connectionDirty()) throw new Error("请先保存连接编辑，再重载已保存配置。");
   if (!window.confirm("停止旧代次并重载已保存配置？启用的实例会连接 QQ 并处理消息，是否继续？")) return;
   showConnection(await bridge.apiPost("connection/reload", connectionPayload({confirm: true})));
-});
-$("bind-start").onclick = () => run(async () => {
-  if (connectionDirty()) throw new Error("请先保存或撤销连接编辑；扫码绑定当前已读取的目标与配置指纹。");
-  if (!window.confirm("向固定 QQ 官方域名创建短期扫码任务？不会自动保存凭据、连接或授予管理员权限。")) return;
-  showBinding(await bridge.apiPost("onboarding/start", connectionPayload({confirm: true}))); scheduleBinding();
-});
-$("bind-cancel").onclick = () => run(cancelBinding);
-$("bind-commit").onclick = () => run(async () => {
-  if (binding?.state !== "ready_to_commit") throw new Error("尚无可提交的已验证凭据。");
-  if (!window.confirm("将扫码凭据写入此目标，保存后保持禁用；连接需另行启用和重载。继续？")) return;
-  showBinding(await bridge.apiPost("onboarding/commit", connectionPayload({ticket: binding.ticket, commit_handle: binding.commit_handle,
-    confirm: true, confirm_secret: $("connect-confirm-secret").checked, confirm_identity: $("connect-confirm-identity").checked})));
-  scheduleBinding(); if (binding.result) showConnection(binding.result);
 });
 $("network-gate").onclick = () => run(async () => {
   if (!window.confirm("切换OneBot网络总闸？关闭将撤销所有监听；开启仍需实例启用并重载。")) return;
@@ -422,10 +444,10 @@ $("network-gate").onclick = () => run(async () => {
   $("network-gate-state").textContent = boot.flags.onebot_network_enabled ? "总闸开启；需重载" : "总闸关闭";
 });
 window.addEventListener("pagehide", () => {
-  window.clearTimeout(bindingTimer); $("connect-secret").value = ""; $("network-token").value = "";
-  if (bindingActive()) bridge.apiPost("onboarding/cancel", {csrf: boot.csrf, platform_id: binding.platform_id, ticket: binding.ticket}).catch(() => {});
+  $("connect-secret").value = ""; $("network-token").value = "";
+  window.clearTimeout(scanTimer);
+  if (scanActive()) bridge.apiPost("onboarding/cancel", {csrf: boot.csrf, platform_id: scan.platform_id, ticket: scan.ticket}).catch(() => {});
 });
-$("bind-commit").hidden = true; $("bind-cancel").hidden = true;
 await run(async () => {
   if (!bridge) throw new Error("请从 AstrBot Plugin Pages 打开此页；无离线假数据。");
   await bridge.ready(); boot = await bridge.apiGet("bootstrap");
