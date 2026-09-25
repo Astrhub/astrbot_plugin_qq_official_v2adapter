@@ -258,14 +258,14 @@ async def test_upload_finish_does_not_mean_message_sent_and_rechecks_window(medi
 async def test_entire_media_chain_and_cross_target_preflight(media):
     core, chat = sending_core(media)
     value = MediaInput("image", "https://assets.test/image")
-    with pytest.raises(V2Error):
-        await core.send(chat.route, [value, {"type": "text", "data": {"text": "not silently dropped"}}], source=chat.source)
-    assert not media.calls and not media.transfers
+    result = await core.send(chat.route, [value, {"type": "text", "data": {"text": "not silently dropped"}}], source=chat.source)
+    assert result["message_id"] == "actual-media-message"
+    assert media.calls[-1][1]["content"] == "not silently dropped" and media.calls[-1][1]["media"]["file_info"] == "actual-file-receipt"
     prepared = await media.service.prepare(chat.route, value)
     try:
         other = SessionRoute(media.identity.robot, "group", "different")
         with pytest.raises(V2Error) as error:
             await media.service.upload(other, prepared)
-        assert error.value.code == "media_scope_mismatch" and not media.calls
+        assert error.value.code == "media_scope_mismatch"
     finally:
         prepared.close()
