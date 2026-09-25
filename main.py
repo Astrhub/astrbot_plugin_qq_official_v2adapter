@@ -76,10 +76,16 @@ class QQOfficialV2(Star):
                 PLATFORM_TYPE, "QQ 官方 V2（收发与受控扩展）",
                 default_config_tmpl=copy.deepcopy(DEFAULT_PLATFORM_CONFIG),
                 adapter_display_name="QQ 官方 V2 · 原型",
+                logo_path="assets/qq.png",
                 config_metadata={
                     "secret": {"description": "QQ AppSecret", "type": "string", "secret": True,
                                "hint": "仅保存在本体平台配置；启用平台将连接 QQ。"},
                     "appid": {"description": "QQ AppID", "type": "string"},
+                    "environment": {"description": "运行环境", "hint": "当前仅支持 production。"},
+                    "transport": {"description": "连接方式", "hint": "websocket 或 webhook；保存后重载生效。"},
+                    "intents": {"description": "事件意图位掩码"},
+                    "shard": {"description": "WS 分片 [序号, 总数]"},
+                    "onebot": {"description": "OneBot 网络设置", "invisible": True},
                 },
                 support_streaming_message=True,
             )(OwnedAdapter)

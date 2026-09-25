@@ -2,11 +2,13 @@ import asyncio
 import builtins
 import importlib
 import sys
+from pathlib import Path
 from types import ModuleType, SimpleNamespace
 
 import pytest
 from astrbot.core.platform.register import (
     platform_cls_map,
+    platform_registry,
     register_platform_adapter,
     unregister_platform_adapters_by_module,
 )
@@ -64,6 +66,42 @@ async def test_import_activation_and_init_failure_ownership(plugin_module):
     assert PLATFORM_TYPE not in platform_cls_map
     assert ctx.registered_web_apis == [(f"/{PLUGIN_NAME}/config", sentinel, ["GET"], "another owner")]
     await owner.terminate()
+
+
+async def test_registration_uses_bundled_qq_logo(plugin_module):
+    owner = plugin_module.QQOfficialV2(context(), {})
+    await owner.initialize()
+    try:
+        metadata = next(item for item in platform_registry if item.name == PLATFORM_TYPE)
+        assert metadata.logo_path == "assets/qq.png"
+        logo = Path(plugin_module.__file__).parent / metadata.logo_path
+        assert logo.is_file()
+        assert logo.read_bytes().startswith(b"\x89PNG\r\n\x1a\n")
+    finally:
+        await owner.terminate()
+
+
+async def test_platform_form_uses_chinese_labels_without_changing_config(plugin_module):
+    from astrbot.dashboard.services.config_service import ConfigDisplayService
+    owner = plugin_module.QQOfficialV2(context(), {})
+    await owner.initialize()
+    try:
+        data = await ConfigDisplayService(
+            SimpleNamespace(astrbot_config={})
+        ).get_astrbot_config()
+        platform_meta = data["metadata"]["platform_group"]["metadata"]["platform"]
+        items = platform_meta["items"]
+        for key, label in {
+            "environment": "运行环境", "transport": "连接方式",
+            "intents": "事件意图位掩码", "shard": "WS 分片 [序号, 总数]",
+            "onebot": "OneBot 网络设置",
+        }.items():
+            assert items[key]["description"] == label
+        assert items["onebot"]["invisible"] is True
+        assert platform_meta["config_template"][PLATFORM_TYPE]["onebot"]["enable"] is False
+        assert platform_meta["config_template"][PLATFORM_TYPE]["shard"] == [0, 1]
+    finally:
+        await owner.terminate()
 
 
 async def test_registration_collision_does_not_unregister_other_owner(plugin_module):

@@ -17,7 +17,7 @@ args=(--unshare-all --die-with-parent --new-session --cap-drop ALL --uid 65534 -
       --setenv ASTRBOT_ROOT /work --setenv PYTHONPATH /opt/astrbot:/plugin:/work
       --setenv TESTING true --setenv ASTRBOT_TEST_MODE true --setenv PYTHONDONTWRITEBYTECODE 1
       --setenv V2_TEST_SANDBOX 1 --chdir /work)
-for entry in main.py metadata.yaml _conf_schema.json LICENSE requirements.txt v2 pages tests; do
+for entry in main.py metadata.yaml _conf_schema.json LICENSE requirements.txt assets v2 pages tests; do
     args+=(--ro-bind "$ROOT/$entry" "/plugin/$entry")
 done
 if [[ -n "$NODE_BIN" ]]; then
