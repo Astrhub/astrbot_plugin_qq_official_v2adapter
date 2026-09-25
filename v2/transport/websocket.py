@@ -3,7 +3,6 @@
 import asyncio
 import random
 import time
-from urllib.parse import urlsplit
 
 import aiohttp
 
@@ -13,7 +12,6 @@ from ..protocol import RawEnvelope, RequestSpec, openapi_base
 FATAL_CLOSES = {4001, 4002, 4010, 4011, 4012, 4013, 4014, 4914, 4915}
 # QQ 4009 expires the connection, not the session; the official contract allows Resume.
 FRESH_CLOSES = {4006, 4007, *range(4900, 4914)}
-GATEWAY_HOSTS = {"api.bot.qq.com"}
 
 
 class GatewayClosed(V2Error):
@@ -44,17 +42,6 @@ class Gateway:
     @property
     def online(self):
         return self.connected and not self.stopped and self.clock() - self.last_ack <= self.interval * 2
-
-    @staticmethod
-    def validate_gateway(url):
-        try:
-            p = urlsplit(url)
-            if (p.scheme != "wss" or p.hostname not in GATEWAY_HOSTS or p.port not in (None, 443)
-                    or p.username is not None or p.password is not None or p.fragment
-                    or "\\" in url or any(ord(c) <= 32 for c in url)):
-                raise ValueError
-        except (ValueError, TypeError):
-            raise V2Error("invalid_gateway", "QQ gateway is not an approved WSS origin.", status=502) from None
 
     def _fresh(self):
         self.session_id = None
@@ -103,19 +90,17 @@ class Gateway:
     async def _connect(self):
         openapi_base(self.http.identity.robot.environment)
         response = await self.http.request(RequestSpec(self.http.identity.robot.environment, "GET", "/gateway/bot"))
-        if not isinstance(response.data, dict):
+        url = response.data.get("url") if isinstance(response.data, dict) else None
+        if not isinstance(url, str) or not url:
             raise V2Error("invalid_gateway", "QQ gateway response is incomplete.", status=502)
-        url = response.data.get("url")
-        self.validate_gateway(url)
         limits = response.data.get("session_start_limit", {})
         if isinstance(limits, dict) and limits.get("remaining") == 0 and not self.session_id:
             raise V2Error("gateway_start_limit", "QQ session start limit is exhausted.", status=429)
         self.guard()
         async with asyncio.timeout(self.hello_timeout):
+            # QQ owns gateway discovery; pass its URL directly to aiohttp.
             self.ws = await self.http.session.ws_connect(url, autoping=True, heartbeat=None,
                                                         max_msg_size=1024 * 1024, headers={"User-Agent": "AstrBot-QQ-V2"})
-            # aiohttp may redirect the unauthenticated handshake; never Identify on another origin.
-            self.validate_gateway(str(self.ws._response.url))
             hello = await self._receive()
             if hello.payload.get("op") != 10 or not isinstance(hello.payload.get("d"), dict):
                 raise V2Error("invalid_hello", "Expected QQ Hello.", status=502)

@@ -1,4 +1,4 @@
-"""Expectations transcribed from current official V2 docs, not driver constants."""
+"""Fixed OpenAPI requests and server-discovered WebSocket destinations."""
 import asyncio
 import copy
 from types import SimpleNamespace
@@ -21,7 +21,12 @@ from v2.transport.inbox import Ingress, RawInbox
 from v2.transport.websocket import Gateway
 
 
-async def test_documented_token_api_gateway_and_identify_destinations(config, tmp_path):
+@pytest.mark.parametrize("gateway_url", [
+    "wss://api.bot.qq.com/websocket/",
+    "wss://api.sgroup.qq.com/websocket",
+    "wss://edge.gateway.example:8443/events?route=one%2Ftwo",
+])
+async def test_documented_token_api_gateway_and_identify_destinations(config, tmp_path, gateway_url):
     seen = []
     async def handler(request):
         seen.append(request.path)
@@ -32,14 +37,14 @@ async def test_documented_token_api_gateway_and_identify_destinations(config, tm
         assert request.headers["Authorization"] == "QQBot endpoint-fixture-token"
         if request.path == "/gateway/bot":
             assert not request.query
-            return web.json_response({"url": "wss://api.bot.qq.com/websocket/"})
+            return web.json_response({"url": gateway_url})
         assert request.path == "/v2/items" and request.query.getall("ids") == ["a", "b"]
         assert request.query["cursor"] == "a+b"
         return web.json_response([])
     socket = FakeWS([HELLO, READY, 4014])
     class Session(MappedSession):
         async def ws_connect(self, url, **kwargs):
-            assert url == "wss://api.bot.qq.com/websocket/"
+            assert url == gateway_url
             assert "Authorization" not in kwargs["headers"]
             return socket
     inbox = RawInbox(tmp_path / "inbox")
@@ -102,32 +107,17 @@ async def test_https_rejects_legacy_guessed_and_wrong_origins_before_credentials
         await http.close()
 
 
-@pytest.mark.parametrize("url", [
-    "wss://api.sgroup.qq.com/websocket", "wss://sandbox.api.sgroup.qq.com/websocket",
-    "wss://sandbox.api.bot.qq.com/websocket", "ws://api.bot.qq.com/websocket",
-    "wss://api.bot.qq.com.evil.invalid/websocket", "wss://@api.bot.qq.com/websocket",
-    "wss://api.bot.qq.com:444/websocket", "wss://q.qq.com/websocket",
-])
-async def test_gateway_response_rejects_legacy_or_guessed_address_before_connect(config, url):
+@pytest.mark.parametrize("data", [None, [], {}, {"url": None}, {"url": ""}, {"url": 123}, {"url": {}}])
+async def test_gateway_response_requires_a_nonempty_url(config, data):
     class HTTP(FakeGatewayHTTP):
         async def request(self, spec):
             assert spec.url == "https://api.bot.qq.com/gateway/bot"
-            return SimpleNamespace(data={"url": url})
+            return SimpleNamespace(data=data)
     http = HTTP(InstanceKey.from_config(config), [])
     gateway = Gateway(http, SimpleNamespace(last_sequence=None))
     with pytest.raises(V2Error) as exc:
         await gateway.run()
     assert exc.value.code == "invalid_gateway" and http.connects == 0 and gateway.attempts == 1
-
-
-@pytest.mark.parametrize("url", ["wss://api.sgroup.qq.com/websocket", "wss://sandbox.api.bot.qq.com/websocket"])
-async def test_gateway_redirect_to_old_or_unconfirmed_domain_sends_no_identify(config, url):
-    socket = FakeWS([HELLO])
-    socket._response.url = url
-    gateway = Gateway(FakeGatewayHTTP(InstanceKey.from_config(config), [socket]), SimpleNamespace(last_sequence=None))
-    with pytest.raises(V2Error) as exc:
-        await gateway.run()
-    assert exc.value.code == "invalid_gateway" and not socket.sent and socket.closed
 
 
 @pytest.mark.parametrize("entrypoint", ["start", "token", "request", "exchange"])

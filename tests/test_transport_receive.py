@@ -179,7 +179,6 @@ class FakeWS:
         self.sent = []
         self.closed = False
         self.close_code = 1000
-        self._response = SimpleNamespace(url="wss://api.bot.qq.com/websocket")
         self.idle = asyncio.Event()
 
     async def receive(self):

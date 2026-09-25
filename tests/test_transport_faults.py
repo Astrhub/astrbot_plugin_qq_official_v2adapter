@@ -1,6 +1,5 @@
 import asyncio
 import json
-from types import SimpleNamespace
 
 import pytest
 from aiohttp import web
@@ -126,23 +125,6 @@ async def test_op9_resume_or_identify(config, tmp_path, resumable):
         inbox.close()
 
 
-async def test_gateway_origin_rejected_before_identify(config, tmp_path):
-    inbox = RawInbox(tmp_path / "inbox")
-    ingress = Ingress(inbox, "app")
-    ingress.start()
-    ws = FakeWS([HELLO])
-    ws._response.url = "wss://evil.invalid/socket"
-    gateway = Gateway(FakeGatewayHTTP(InstanceKey.from_config(config), [ws]), ingress)
-    try:
-        with pytest.raises(V2Error) as exc:
-            await gateway.run()
-        assert exc.value.code == "invalid_gateway" and not ws.sent and ws.closed
-    finally:
-        await gateway.close()
-        await ingress.close()
-        inbox.close()
-
-
 async def test_initial_connect_budget_and_backoff_cancellation(config, tmp_path):
     inbox = RawInbox(tmp_path / "inbox")
     ingress = Ingress(inbox, "app")
@@ -166,14 +148,21 @@ async def test_initial_connect_budget_and_backoff_cancellation(config, tmp_path)
         inbox.close()
 
 
-async def test_actual_aiohttp_websocket_handshake_ingress_and_heartbeat(config, tmp_path):
+@pytest.mark.parametrize("redirect", [False, True], ids=["direct", "redirect"])
+async def test_actual_aiohttp_websocket_handshake_ingress_and_heartbeat(config, tmp_path, redirect):
     heartbeat_received, release = asyncio.Event(), asyncio.Event()
-    server_frames = []
+    server_frames, handshakes = [], []
     async def handler(request):
         if request.path == "/app/getAppAccessToken":
             return web.json_response({"access_token": "fixture-token", "expires_in": 7200})
         if request.path == "/gateway/bot":
-            return web.json_response({"url": "wss://api.bot.qq.com/websocket"})
+            assert request.headers["Authorization"] == "QQBot fixture-token"
+            return web.json_response({"url": gateway_url})
+        assert "Authorization" not in request.headers
+        handshakes.append(str(request.url))
+        if request.path == "/redirect":
+            raise web.HTTPFound(target_url)
+        assert request.path == "/websocket" and request.query["route"] == "fixture"
         ws = web.WebSocketResponse()
         await ws.prepare(request)
         await ws.send_json(HELLO)
@@ -187,24 +176,22 @@ async def test_actual_aiohttp_websocket_handshake_ingress_and_heartbeat(config, 
         await release.wait()
         await ws.close()
         return ws
-    class LocalSocket:
-        def __init__(self, socket, url):
-            self.socket, self._response = socket, SimpleNamespace(url=url)
-        def __getattr__(self, name):
-            return getattr(self.socket, name)
     class LocalSession(MappedSession):
         async def ws_connect(self, url, **kwargs):
-            socket = await self.inner.ws_connect(self.base + "/websocket", **kwargs)
-            return LocalSocket(socket, url)
+            assert url == gateway_url
+            return await self.inner.ws_connect(url, **kwargs)
     inbox = RawInbox(tmp_path / "inbox")
     ingress = Ingress(inbox, "app")
     ingress.start()
-    async with upstream(handler) as base:
+    async with upstream(handler) as base, upstream(handler) as ws_base:
+        target_url = ws_base + "/websocket?route=fixture"
+        gateway_url = (base + "/redirect" if redirect else target_url).replace("http://", "ws://", 1)
         http = HTTPTransport(InstanceKey.from_config(config), config["secret"], session_factory=lambda: LocalSession(base))
         gateway = Gateway(http, ingress)
         task = asyncio.create_task(gateway.run())
         try:
             await asyncio.wait_for(heartbeat_received.wait(), 2)
+            assert handshakes == ([base + "/redirect", target_url] if redirect else [target_url])
             assert gateway.online and server_frames[0]["op"] == 2
             assert server_frames[0]["d"]["token"] == "QQBot fixture-token"
             assert server_frames[1] == {"op": 1, "d": 8}
