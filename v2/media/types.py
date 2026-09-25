@@ -9,7 +9,7 @@ class MediaInput:
     kind: str
     value: str
     name: str = "upload"
-    allow_file_fallback: bool = field(default=False, kw_only=True)
+    allow_file_fallback: bool = field(default=True, kw_only=True)
 
     def validate(self):
         if not isinstance(self.kind, str) or self.kind not in {"image", "record", "video", "file"} or type(self.allow_file_fallback) is not bool:

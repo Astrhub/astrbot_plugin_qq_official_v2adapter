@@ -5,6 +5,9 @@ import json
 from dataclasses import dataclass, field
 from uuid import uuid4
 
+from astrbot.core.platform.message_session import MessageSession
+from astrbot.core.platform.message_type import MessageType
+
 from .errors import V2Error
 
 SCENES = ("c2c", "group", "channel", "dm")
@@ -77,6 +80,16 @@ class SessionRoute:
         text_id(self.target)
         if self.user is not None:
             text_id(self.user)
+
+    @property
+    def message_type(self):
+        return MessageType.GROUP_MESSAGE if self.scene in {"group", "channel"} else MessageType.FRIEND_MESSAGE
+
+    def public_session(self, platform_id, *, sender=None):
+        session_id = text_id(sender) if self.scene == "dm" else self.target
+        if self.scene in {"group", "channel"} and self.user is not None:
+            session_id = f"{self.user}_{self.target}"
+        return MessageSession(platform_id, self.message_type, session_id)
 
     def encode(self):
         data = [self.robot.appid, self.robot.environment, self.scene, self.target, self.user]

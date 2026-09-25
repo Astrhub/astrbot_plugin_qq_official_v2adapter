@@ -5,7 +5,7 @@ import pytest
 from aiohttp import web
 from astrbot.core.message.components import Plain
 from astrbot.core.message.message_event_result import MessageChain
-from test_interactions import interaction
+from test_interactions import authorization_notice, interaction
 from test_lifecycle import plugin_module as plugin_module
 from test_messaging_delivery import accept
 from test_messaging_delivery import receiver as receiver
@@ -94,6 +94,30 @@ async def test_only_documented_types_ack_and_duplicates_never_execute(dispatch, 
     await settle(s)
     assert len(s.calls) == acks and s.instance._event_queue.empty()
     assert s.service.records()[0]["ack"] == ("succeeded" if acks else "not_required")
+
+
+async def test_authorization_notice_is_recorded_without_ack_or_chat_and_does_not_block_delivery(dispatch):
+    s = dispatch
+    key = s.instance.identity.settings_key
+    payload = authorization_notice()
+    s.owner.inbox.accept(key, RawEnvelope(payload, NOW))
+    assert s.instance.consumer.step()
+    await settle(s)
+    assert not s.owner.inbox.retained(key) and not s.owner.inbox.pending(key)
+    record = s.service.records()[0]
+    assert record["ack"] == "not_required" and record["business"] == "typed_notice"
+    assert record["metadata"]["interaction_type"] == 20 and record["metadata"]["actor"] is None
+    assert s.service.accept(payload, NOW)
+    await settle(s)
+    assert len(s.service.records()) == 1 and s.instance._event_queue.empty()
+    assert not s.calls and s.instance.http.session is None and s.instance.ack_http.session is None
+    assert s.owner.messages.db.execute("SELECT count(*) FROM identities").fetchone()[0] == 0
+    assert s.owner.messages.db.execute("SELECT count(*) FROM operations").fetchone()[0] == 0
+    accept(s.owner, s.instance, message_id="chat-after-notice")
+    assert s.instance.consumer.step()
+    chat = s.instance._event_queue.get_nowait()
+    assert chat.message_obj.message_id == "chat-after-notice"
+    chat.cleanup_temporary_local_files()
 
 
 async def test_ack_unknown_is_durable_and_not_replayed(dispatch):

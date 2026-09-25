@@ -104,7 +104,7 @@ class NativeView:
     async def send_streaming(self, scene, target, generator, *, input_mode="append", use_fallback=False, operation_id=None):
         return await self._client.stream(self._client.route_for(scene, target), generator, input_mode=input_mode, use_fallback=use_fallback, operation_id=operation_id)
 
-    async def send_file(self, scene, target, file, *, name="upload", kind="file", allow_file_fallback=False, operation_id=None):
+    async def send_file(self, scene, target, file, *, name="upload", kind="file", allow_file_fallback=True, operation_id=None):
         from .media.types import MediaInput
         return await self.send(scene, target, [MediaInput(kind, file, name, allow_file_fallback=allow_file_fallback)], operation_id=operation_id)
 
