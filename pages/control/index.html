@@ -18,10 +18,17 @@
     <p id="connection"></p>
   </header>
   <section aria-labelledby="connect-title">
-    <h2 id="connect-title">连接配置与扫码（独立接入目标）</h2>
-    <p>目标与下方目录预览可分别选择。凭据只写本体平台配置；保存不会启动连接，重载需再次确认。</p>
+    <h2 id="connect-title">连接配置</h2>
+    <p>没有 AppSecret 时，在本页生成二维码，用手机 QQ 扫完再保存。保存不会上线，勾选启用后还要再点重载。</p>
     <div class="toolbar"><label>目标 ID <input id="connect-id" maxlength="128" autocomplete="off"></label><button id="connect-read">读取 / 新建目标</button></div>
     <div id="connect-form" hidden>
+      <div class="toolbar">
+        <button id="bind-start">生成二维码</button>
+        <button id="bind-cancel" hidden>取消</button>
+        <button id="bind-save" hidden>保存扫码凭据（保持关闭）</button>
+      </div>
+      <p id="bind-status" role="status">还没有开始。不用先填 AppSecret。</p>
+      <canvas id="bind-qr" hidden></canvas>
       <div class="toolbar">
         <label>AppID <input id="connect-appid" maxlength="128" autocomplete="off"></label>
         <label>环境 <select id="connect-environment"><option value="production">生产</option><option value="sandbox">沙箱（暂不支持联网）</option></select></label>
@@ -32,7 +39,7 @@
       </div>
       <label>凭据操作 <select id="connect-secret-action"><option value="keep">保留现有凭据</option><option value="replace">替换凭据</option><option value="clear">清空凭据（先禁用）</option></select></label>
       <label>新 AppSecret <input id="connect-secret" type="password" maxlength="512" autocomplete="new-password" placeholder="未编辑时留空；服务端不返回原凭据"></label>
-      <label><input id="connect-confirm-secret" type="checkbox">明确同意替换 / 清空凭据（扫码提交也需要）</label>
+      <label><input id="connect-confirm-secret" type="checkbox">明确同意替换 / 清空凭据</label>
       <label><input id="connect-confirm-identity" type="checkbox">明确同意改绑 AppID / 环境</label>
       <fieldset><legend>OneBot HTTP / 正向 WS（默认关闭）</legend>
         <button id="network-gate">切换网络总闸</button><span id="network-gate-state"></span>
@@ -48,10 +55,8 @@
         <p>HTTP /:action；WS /api、/event、/。真实字符串OpenID子集，聊天为qq_event扩展视图；不是数字QQ号或全量OneBot。关闭总闸立即拒绝新操作并回收监听，重新开启需重载；关闭本页面不停止运行。</p>
         <details><summary>实际网络状态与能力</summary><pre id="network-capabilities"></pre></details>
       </fieldset>
-      <div class="toolbar"><button id="connect-save">保存连接配置（不重载）</button><button id="connect-reload">重载已保存连接</button><button id="bind-start">创建官方扫码任务</button><button id="bind-cancel">取消扫码</button><button id="bind-commit">确认提交扫码凭据（保持禁用）</button></div>
-      <p id="connect-status" role="status"></p><p id="bind-status" role="status">未创建扫码任务。</p>
-      <canvas id="bind-qr" aria-label="本地生成的官方绑定二维码" hidden></canvas>
-      <p>扫码任务最长180秒；页面每5秒续期30秒短租约，关闭页面会尝试取消。取到凭据不等于已连接，不会自动授予管理员权限。</p>
+      <div class="toolbar"><button id="connect-save">保存连接配置（不重载）</button><button id="connect-reload">重载已保存连接</button></div>
+      <p id="connect-status" role="status"></p>
     </div>
   </section>
   <section aria-labelledby="retained-title">

@@ -154,6 +154,7 @@ async def test_qr_concurrency_decryption_validation_and_idempotent_commit(owner,
             serialized = json.dumps(public)
             assert "new-fixture-secret" not in serialized and base64.b64encode(portal.key).decode() not in serialized
             assert "not-a-chat-observation" not in serialized and "fixture-validated-token" not in serialized
+            assert "保持关闭" in public["hint"]
             with pytest.raises(V2Error):
                 await onb.status("bob", config["id"], item.ticket)
             with pytest.raises(V2Error):

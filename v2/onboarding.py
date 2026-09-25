@@ -3,6 +3,7 @@
 import asyncio
 import base64
 import json
+import logging
 import secrets
 import time
 from dataclasses import dataclass, field
@@ -17,6 +18,8 @@ from .errors import V2Error
 from .models import InstanceKey
 from .protocol import openapi_base
 from .transport.http import HTTPTransport, retry_delay
+
+logger = logging.getLogger("astrbot")
 
 PORTAL = "https://q.qq.com"
 ACTIVE = {"creating", "pending", "ready_to_commit"}
@@ -82,13 +85,31 @@ class Onboarding:
         return binding
 
     def view(self, binding):
+        hint = {"creating": "正在向 QQ 申请二维码。不需要事先填写 AppSecret。",
+                "pending": "请用手机 QQ 扫码，并在 QQ 里确认授权。",
+                "ready_to_commit": "已拿到 AppID 和 AppSecret。保存后只写入这个接入目标，机器人保持关闭。",
+                "configured": "凭据已保存，机器人仍是关闭的。回到控制台勾选启用并重载后才会连接。",
+                "cancelled": "已取消，没有写入凭据。",
+                "expired": "二维码过期了，请重新生成。",
+                "failed": "这次扫码没有完成，没有写入凭据。"}.get(binding.state, "扫码状态已更新。")
+        note = {"binding_network_error": "连不上 QQ 扫码服务。",
+                "binding_transient_error": "QQ 扫码服务暂时不可用。",
+                "binding_decryption_failed": "凭据校验失败，请重新扫码。",
+                "config_conflict": "扫码期间接入配置变了，请重新开始。",
+                "binding_response_invalid": "QQ 返回的内容无法识别。",
+                "binding_http_error": "QQ 拒绝了这次扫码请求。",
+                "binding_api_error": "QQ 返回了无法使用的结果。",
+                "binding_failed": "扫码中断了。"}.get(binding.error or "")
+        if note:
+            hint = f"{hint} {note}"
         return {"ticket": binding.ticket, "platform_id": binding.platform_id, "state": binding.state,
-                "appid": binding.appid or None, "expires_in": max(0, int(binding.deadline - self.clock())),
+                "hint": hint, "appid": binding.appid or None, "expires_in": max(0, int(binding.deadline - self.clock())),
                 "lease_seconds": max(0, int(binding.lease - self.clock())), "qr_matrix": binding.qr,
                 "commit_handle": binding.handle if binding.state == "ready_to_commit" else None,
                 "error": binding.error, "result": binding.committed}
 
     async def start(self, user, platform_id, fingerprint, *, confirm=False):
+        logger.info("qq-v2 scan start user=%s platform_id=%s confirm=%s", user, platform_id, confirm is True)
         async with self.lock:
             if self.stopped or self.owner.stopping:
                 raise V2Error("service_stopped", "Onboarding is stopped.", status=503)
