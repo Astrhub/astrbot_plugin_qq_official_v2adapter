@@ -107,7 +107,7 @@ async def test_server_concurrency_uses_bounded_parallel_parts(media, monkeypatch
         nonlocal active, peak
         active += 1
         peak = max(peak, active)
-        timeouts.append(kwargs.get("timeout"))
+        timeouts.append(kwargs.get("request_seconds"))
         if active == expected_peak:
             reached.set()
         try:

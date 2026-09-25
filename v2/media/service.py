@@ -174,7 +174,7 @@ class MediaService:
                     bad("operation_already_attempted", "Upload parts cannot be replayed.")
                 self.state.attempt(route.robot, put_id)
                 try:
-                    await self.transfer.put(part["presigned_url"], blob=prepared.blob, offset=index * block, count=actual, timeout=remaining)
+                    await self.transfer.put(part["presigned_url"], blob=prepared.blob, offset=index * block, count=actual, request_seconds=remaining)
                     self.state.finish(route.robot, put_id, "succeeded", result={"size": actual})
                     return
                 except BaseException as exc:

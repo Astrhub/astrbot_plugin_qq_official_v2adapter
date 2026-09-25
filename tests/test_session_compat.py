@@ -9,7 +9,8 @@ from astrbot.core.message.message_event_result import MessageChain
 from astrbot.core.platform.message_session import MessageSession
 from astrbot.core.platform.message_type import MessageType
 from astrbot.core.platform.platform_metadata import PlatformMetadata
-from test_interactions import interaction, tickets as tickets
+from test_interactions import interaction
+from test_interactions import tickets as tickets
 from test_messaging_send import sending as sending
 from test_messaging_state import NOW, chat_payload
 
