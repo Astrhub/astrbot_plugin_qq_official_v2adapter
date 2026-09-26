@@ -114,7 +114,7 @@ async def media(config, tmp_path):
     async with upstream(handler) as base:
         http = HTTPTransport(identity, config["secret"], session_factory=lambda: MappedSession(base))
         transfer = UploadTransfer(pool, session_factory=lambda: AssetSession(base, transfers))
-        service = MediaService(identity, http, state, pool, transfer=transfer, settings=lambda: {"media_roots": [str(tmp_path)]}, sleep=advance)
+        service = MediaService(identity, http, state, pool, transfer=transfer, sleep=advance)
         try:
             yield SimpleNamespace(identity=identity, clock=clock, store=store, state=state, pool=pool, http=http, service=service,
                                   calls=calls, transfers=transfers, puts=puts, modes=modes, entered=entered, release=release)

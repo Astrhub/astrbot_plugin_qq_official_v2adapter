@@ -41,8 +41,7 @@ class NativeFramework(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(data), 120639)
         self.path.write_bytes(data)
         identity = InstanceKey.from_config({"id": "native-test", "appid": "synthetic", "secret": "synthetic-only"})
-        service = MediaService(identity, SimpleNamespace(check=lambda: None), None, self.pool,
-                               settings=lambda: {"media_roots": [str(self.allowed)]})
+        service = MediaService(identity, SimpleNamespace(check=lambda: None), None, self.pool)
         try:
             with patch.object(Image, "open", side_effect=AssertionError("No decoding or reencoding during preparation")):
                 for scene in ("group", "c2c", "channel"):

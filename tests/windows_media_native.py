@@ -73,7 +73,7 @@ class NativeMedia(unittest.IsolatedAsyncioTestCase):
         self.addCleanup(self.pool.close)
 
     async def load(self, value=None, *, maximum=1_000_000, roots=None):
-        return await self.pool.load(str(value or self.path), roots=roots or [str(self.allowed)], max_bytes=maximum)
+        return await self.pool.load(str(value or self.path), roots=roots, max_bytes=maximum)
 
     async def test_authorized_file(self):
         blob = await self.load()
@@ -108,16 +108,17 @@ class NativeMedia(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(all(stream.closed for stream in opened))
         self.assertTrue(self.path.exists())
 
-    async def test_unapproved_and_root_boundaries(self):
+    async def test_legacy_roots_do_not_restrict_local_files(self):
         neighbor = self.base / "Media 中文-other"
         neighbor.mkdir()
         outside = neighbor / "other.bin"
         outside.write_bytes(b"outside")
-        for value, roots in ((outside, [str(self.allowed)]), (self.path, [self.path.anchor]), (self.path, ["Z:\\Allowed"]),
-                             (self.allowed, [str(self.allowed)]), (self.allowed / ".." / neighbor.name / outside.name, [str(self.allowed)])):
+        for value, roots in ((outside, []), (self.path, [self.path.anchor]), (self.path, ["Z:\\Allowed"]),
+                             (self.allowed / ".." / neighbor.name / outside.name, [str(self.allowed)])):
             with self.subTest(value=str(value)):
-                with self.assertRaises(V2Error):
-                    await self.load(value, roots=roots)
+                blob = await self.load(value, roots=roots)
+                self.assertEqual(blob.hashes()["sha256"], hashlib.sha256(value.read_bytes()).hexdigest())
+                blob.close()
         self.assertEqual(self.pool.used, 0)
 
     async def test_network_device_and_alternate_stream_inputs(self):
@@ -138,15 +139,16 @@ class NativeMedia(unittest.IsolatedAsyncioTestCase):
             await self.load(maximum=10)
         self.assertFalse(self.pool.blobs)
 
-    async def test_hardlinks_rejected(self):
+    async def test_hardlinks_read_unchanged(self):
         alias = self.allowed / "hard.bin"
         os.link(self.path, alias)
         for value in (self.path, alias):
-            with self.assertRaises(V2Error):
-                await self.load(value)
+            blob = await self.load(value)
+            self.assertEqual(blob.hashes()["sha256"], hashlib.sha256(self.content).hexdigest())
+            blob.close()
         self.assertEqual(self.pool.used, 0)
 
-    async def test_junction_rejected(self):
+    async def test_junction_reads_local_file(self):
         other = self.base / "outside"
         other.mkdir()
         (other / "file.bin").write_bytes(b"not authorized")
@@ -155,14 +157,13 @@ class NativeMedia(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(made.returncode, 0, "Could not create own temporary junction")
         try:
             self.assertTrue(junction.is_junction())
-            with self.assertRaises(V2Error):
-                await self.load(junction / "file.bin")
-            with self.assertRaises(V2Error):
-                await self.load(junction / "file.bin", roots=[str(junction)])
+            blob = await self.load(junction / "file.bin")
+            self.assertEqual(blob.read(0, 100), b"not authorized")
+            blob.close()
         finally:
             junction.rmdir()
 
-    async def test_file_symlink_rejected(self):
+    async def test_file_symlink_reads_local_file(self):
         link = self.allowed / "link.bin"
         try:
             link.symlink_to(self.path)
@@ -170,19 +171,21 @@ class NativeMedia(unittest.IsolatedAsyncioTestCase):
             if exc.winerror == 1314:
                 self.skipTest("Windows user lacks symlink privilege; junction and Linux symlink cases remain tested")
             raise
-        with self.assertRaises(V2Error):
-            await self.load(link)
+        blob = await self.load(link)
+        self.assertEqual(blob.hashes()["sha256"], hashlib.sha256(self.content).hexdigest())
+        blob.close()
 
-    async def test_directory_symlink_rejected(self):
+    async def test_directory_symlink_reads_local_file(self):
         link = self.allowed / "linked-dir"
         try:
             link.symlink_to(self.path.parent, target_is_directory=True)
         except OSError as exc:
             if exc.winerror == 1314:
-                self.skipTest("Windows user lacks symlink privilege; actual junction covers directory reparse rejection")
+                self.skipTest("Windows user lacks symlink privilege; actual junction covers directory links")
             raise
-        with self.assertRaises(V2Error):
-            await self.load(link / self.path.name)
+        blob = await self.load(link / self.path.name)
+        self.assertEqual(blob.hashes()["sha256"], hashlib.sha256(self.content).hexdigest())
+        blob.close()
 
     async def test_content_mutation_detected_and_reader_closed(self):
         original, changed = io.Blob.append, False
@@ -245,14 +248,12 @@ class NativeMedia(unittest.IsolatedAsyncioTestCase):
                     await self.load(value)
         self.assertFalse(self.pool.blobs)
 
-    async def test_settings_accept_local_directory_not_drive_root(self):
+    async def test_settings_ignore_legacy_roots(self):
         config = copy.deepcopy(DEFAULTS)
-        config["extensions"]["media_roots"] = [str(self.allowed)]
-        self.assertEqual(validate_settings(config)["extensions"]["media_roots"], [str(self.allowed)])
-        for root in (self.path.anchor, r"\\server\share\files", str(self.allowed / "NUL")):
+        self.assertNotIn("media_roots", config["extensions"])
+        for root in (self.path.anchor, r"\\server\share\files", str(self.allowed / "NUL"), r"Z:\missing"):
             config["extensions"]["media_roots"] = [root]
-            with self.assertRaises(V2Error):
-                validate_settings(config)
+            self.assertEqual(validate_settings(config), DEFAULTS)
 
 
 if __name__ == "__main__":
