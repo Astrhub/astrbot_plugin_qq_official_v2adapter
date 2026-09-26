@@ -7,7 +7,8 @@ import time
 import aiohttp
 
 from ..errors import V2Error
-from ..protocol import RawEnvelope, RequestSpec, openapi_base
+from ..protocol import RawEnvelope, openapi_base
+from .shards import IdentifyBudget
 
 FATAL_CLOSES = {4001, 4002, 4010, 4011, 4012, 4013, 4014, 4914, 4915}
 # QQ 4009 expires the connection, not the session; the official contract allows Resume.
@@ -21,8 +22,12 @@ class GatewayClosed(V2Error):
 
 class Gateway:
     def __init__(self, http, ingress, *, guard=lambda: None, clock=time.monotonic,
-                 sleep=asyncio.sleep, jitter=random.random, attempts=6, hello_timeout=10):
+                 sleep=asyncio.sleep, jitter=random.random, attempts=6, hello_timeout=10,
+                 budget=None, shard=None, ws_session=None):
         self.http, self.ingress, self.guard = http, ingress, guard
+        self.budget = budget if budget is not None else IdentifyBudget()
+        self.shard = http.identity.shard if shard is None else shard
+        self.ws_session = ws_session
         self.clock, self.sleep, self.jitter = clock, sleep, jitter
         self.attempt_limit, self.hello_timeout = attempts, hello_timeout
         self.state = "idle"
@@ -89,34 +94,31 @@ class Gateway:
 
     async def _connect(self):
         openapi_base(self.http.identity.robot.environment)
-        response = await self.http.request(RequestSpec(self.http.identity.robot.environment, "GET", "/gateway/bot"))
-        url = response.data.get("url") if isinstance(response.data, dict) else None
-        if not isinstance(url, str) or not url:
-            raise V2Error("invalid_gateway", "QQ gateway response is incomplete.", status=502)
-        limits = response.data.get("session_start_limit", {})
-        if isinstance(limits, dict) and limits.get("remaining") == 0 and not self.session_id:
-            raise V2Error("gateway_start_limit", "QQ session start limit is exhausted.", status=429)
-        self.guard()
-        async with asyncio.timeout(self.hello_timeout):
-            # QQ owns gateway discovery; pass its URL directly to aiohttp.
-            self.ws = await self.http.session.ws_connect(url, autoping=True, heartbeat=None,
-                                                        max_msg_size=1024 * 1024, headers={"User-Agent": "AstrBot-QQ-V2"})
-            hello = await self._receive()
-            if hello.payload.get("op") != 10 or not isinstance(hello.payload.get("d"), dict):
-                raise V2Error("invalid_hello", "Expected QQ Hello.", status=502)
-            interval = hello.payload["d"].get("heartbeat_interval")
-            if type(interval) not in (int, float) or not 10 <= interval <= 300000:
-                raise V2Error("invalid_hello", "Invalid QQ heartbeat interval.", status=502)
-            self.interval = interval / 1000
-            self.ack_pending = False
-            token = await self.http.token()
+        resume = self.session_id is not None and self.ingress.last_sequence is not None
+        self.state = "connecting" if resume else "waiting_identify"
+        async with self.budget.session_start(self.http, self.guard, resume=resume) as data:
             self.guard()
-            if self.session_id is not None and self.ingress.last_sequence is not None:
-                await self.ws.send_json({"op": 6, "d": {"token": f"QQBot {token}", "session_id": self.session_id,
-                                                       "seq": self.ingress.last_sequence}})
-            else:
-                await self.ws.send_json({"op": 2, "d": {"token": f"QQBot {token}", "intents": self.http.identity.intents,
-                                                       "shard": list(self.http.identity.shard), "properties": {}}})
+            async with asyncio.timeout(self.hello_timeout):
+                # QQ owns gateway discovery; pass its URL directly to aiohttp.
+                session = self.ws_session if self.ws_session is not None else self.http.session
+                self.ws = await session.ws_connect(data["url"], autoping=True, heartbeat=None,
+                    max_msg_size=1024 * 1024, headers={"User-Agent": "AstrBot-QQ-V2"})
+                hello = await self._receive()
+                if hello.payload.get("op") != 10 or not isinstance(hello.payload.get("d"), dict):
+                    raise V2Error("invalid_hello", "Expected QQ Hello.", status=502)
+                interval = hello.payload["d"].get("heartbeat_interval")
+                if type(interval) not in (int, float) or not 10 <= interval <= 300000:
+                    raise V2Error("invalid_hello", "Invalid QQ heartbeat interval.", status=502)
+                self.interval = interval / 1000
+                self.ack_pending = False
+                token = await self.http.token()
+                self.guard()
+                if resume:
+                    await self.ws.send_json({"op": 6, "d": {"token": f"QQBot {token}", "session_id": self.session_id,
+                                                           "seq": self.ingress.last_sequence}})
+                else:
+                    await self.ws.send_json({"op": 2, "d": {"token": f"QQBot {token}", "intents": self.http.identity.intents,
+                                                           "shard": list(self.shard), "properties": {}}})
         self.state = "authenticating"
         self.tasks = {asyncio.create_task(self._read(), name="qq-v2-ws-read"),
                       asyncio.create_task(self._heartbeat(), name="qq-v2-ws-heartbeat")}

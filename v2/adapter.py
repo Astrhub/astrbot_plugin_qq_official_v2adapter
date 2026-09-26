@@ -1,14 +1,14 @@
 """Owned QQ connections; transport readiness is separate from P3 message delivery."""
 
 import asyncio
-import copy
 import uuid
 
 from astrbot.core.platform.platform import Platform, PlatformStatus
 from astrbot.core.platform.platform_metadata import PlatformMetadata
 
-from . import PLATFORM_TYPE
+from . import PLATFORM_TYPE, WEBHOOK_TYPE
 from .client import V2Client
+from .connection_config import DEFAULT_INTENTS, normalize_connection, receiver_conflict
 from .errors import V2Error
 from .extensions.interactions import ExtensionDispatcher
 from .extensions.management import Management
@@ -24,13 +24,12 @@ from .network_config import DEFAULT_NETWORK, network_config
 from .transport.http import HTTPTransport
 from .transport.inbox import Ingress
 from .transport.webhook import Webhook
-from .transport.websocket import Gateway
+from .transport.shards import GatewayGroup, IdentifyBudget
 
 DEFAULT_PLATFORM_CONFIG = {
     "id": "qq_v2", "type": PLATFORM_TYPE, "enable": False,
-    "appid": "", "secret": "", "environment": "production",
-    "transport": "websocket", "intents": 1174409216, "shard": [0, 1],
-    "unified_webhook_mode": False, "webhook_uuid": "",
+    "appid": "", "secret": "", "is_sandbox": False,
+    "intents": DEFAULT_INTENTS, "shard_mode": "auto", "webhook_uuid": "",
     "onebot": dict(DEFAULT_NETWORK),
 }
 
@@ -45,17 +44,12 @@ class V2Adapter(Platform):
         if self.owner is None or self.owner.stopping:
             raise V2Error("service_stopped", "Plugin owner is unavailable.", status=503)
         for instance in self.owner.instances:
-            if instance.identity.platform_id == identity.platform_id or instance.identity.receive_key == identity.receive_key:
-                raise V2Error("duplicate_receiver", "This platform or robot shard already has an instance.", status=409)
-            if instance.identity.robot == identity.robot and (identity.transport == "webhook" or instance.identity.transport == "webhook" or instance.identity.shard[1] != identity.shard[1]):
-                raise V2Error("duplicate_receiver", "Do not mix webhook/WS or inconsistent shard counts for one robot.", status=409)
+            if receiver_conflict(instance.identity, identity):
+                raise V2Error("duplicate_receiver", "This robot's receive mode or shard conflicts with a running instance.", status=409)
         if identity.transport == "webhook":
-            if identity.shard != (0, 1):
-                raise V2Error("invalid_shard", "Webhook does not support WS sharding.")
+            self.owner.connections.ensure_webhook(platform_config)
             try:
                 uuid.UUID(platform_config.get("webhook_uuid", ""))
-                if platform_config.get("unified_webhook_mode") is not True:
-                    raise ValueError
                 if any(c.get("webhook_uuid") == platform_config["webhook_uuid"] and c.get("id") != identity.platform_id
                        for c in self.owner.context.get_config().get("platform", [])):
                     raise ValueError
@@ -64,7 +58,7 @@ class V2Adapter(Platform):
         network = network_config(platform_config.get("onebot"))
         if network["token"] and network["token"] == platform_config["secret"]:
             raise V2Error("invalid_network_token", "OneBot must not reuse the QQ secret.")
-        super().__init__(copy.deepcopy(platform_config), event_queue)
+        super().__init__(normalize_connection(platform_config), event_queue)
         self.identity = identity
         self._terminated = False
         self._revoked = False
@@ -90,13 +84,20 @@ class V2Adapter(Platform):
         self.http = HTTPTransport(identity, platform_config["secret"], guard=self.check_generation)
         self.client._state.http = self.http
         self.ingress = Ingress(self.owner.inbox, identity.settings_key, guard=self.check_generation)
-        self.gateway = Gateway(self.http, self.ingress, guard=self.check_generation) if identity.transport == "websocket" else None
+        self.gateway = None
+        if identity.transport == "websocket":
+            budgets = self.owner.identify_budgets
+            if identity.robot not in budgets:
+                if len(budgets) >= 256:
+                    raise V2Error("identify_capacity", "At most 256 robot Identify budgets per plugin lifetime.", status=503)
+                budgets[identity.robot] = IdentifyBudget()
+            self.gateway = GatewayGroup(self.http, self.ingress, budgets[identity.robot], guard=self.check_generation)
         self.webhook = Webhook(identity.robot.appid, platform_config["secret"], self.ingress, guard=self.check_generation) if identity.transport == "webhook" else None
         self.media = MediaService(identity, self.http, self.owner.extension_state, self.owner.media_pool,
             settings=lambda: self.owner.store.get(identity.settings_key)["applied"].get("extensions", {}), guard=self.check_generation)
         self.sender = SendingCore(identity, self.http, self.owner.messages, guard=self.check_generation,
-            is_online=lambda: self.runtime_status()["online"] or self.state == "webhook_ready",
-            ws_online=lambda: bool(self.gateway and self.gateway.online), media=self.media)
+            is_online=lambda: self.runtime_status()["message_ready"],
+            ws_online=lambda: self.runtime_status()["ws_available"], media=self.media)
         self.client._state.sender = self.sender
         self.streaming = StreamingCore(self.sender, self.owner.extension_state, settings=self.media.settings)
         self.typing = TypingCore(self.sender, settings=self.media.settings)
@@ -123,13 +124,17 @@ class V2Adapter(Platform):
         current = [c for c in self.owner.context.get_config().get("platform", []) if c.get("id") == self.identity.platform_id]
         same = len(current) == 1 and self.owner.control.fingerprint(current[0]) == self.config_fingerprint
         online = valid and same and bool(self.gateway.online if self.gateway else self.webhook.online)
+        ws_available = valid and same and bool(self.gateway and self.gateway.available)
+        message_ready = ws_available or (valid and same and self.state == "webhook_ready" and bool(self.webhook and not self.webhook.stopped))
         state = self.gateway.state if self.gateway and self.state == "connecting" else self.state
         if not same or self._revoked:
             state = "reload_required"
         if self._terminated:
             state = "stopped"
         return {"online": online, "good": online and self.consumer.state != "backpressured" and not self.consumer.last_error and not self.sender.storage_failed, "state": state, "failure": self.failure,
+                "message_ready": message_ready, "ws_available": ws_available,
                 "send_storage_failed": self.sender.storage_failed,
+                "gateway_group": self.gateway.status() if self.gateway else None,
                 "network": self.network.status(),
                 "failure_details": self.failure_details,
                 "last_transport_failure": self.gateway.last_failure if self.gateway else None,
@@ -240,8 +245,10 @@ class V2Adapter(Platform):
         self.owner.instances.discard(self)
 
     def meta(self):
-        return PlatformMetadata(PLATFORM_TYPE, "QQ 官方 V2（基础消息与持久状态）", self.identity.platform_id,
-                                adapter_display_name="QQ 官方 V2",
+        kind = WEBHOOK_TYPE if self.identity.transport == "webhook" else PLATFORM_TYPE
+        title = "QQ 官方 V2（Webhook）" if kind == WEBHOOK_TYPE else "QQ 官方 V2（WebSocket）"
+        return PlatformMetadata(kind, title, self.identity.platform_id,
+                                adapter_display_name=title,
                                 support_streaming_message=True, support_proactive_message=True)
 
     def get_client(self):
@@ -272,7 +279,7 @@ class V2Adapter(Platform):
         await super().send_by_session(session, message_chain)
 
     def unified_webhook(self):
-        return self.identity.transport == "webhook" and super().unified_webhook()
+        return self.identity.transport == "webhook" and bool(self.config.get("webhook_uuid"))
 
     async def webhook_callback(self, request):
         if not self.webhook or self._terminated or self._revoked or self.state != "webhook_ready":

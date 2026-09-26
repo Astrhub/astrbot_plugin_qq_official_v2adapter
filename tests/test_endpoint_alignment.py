@@ -10,7 +10,7 @@ from test_lifecycle import context
 from test_lifecycle import plugin_module as plugin_module
 from test_onboarding import owner as owner
 from test_transport_http import MappedSession, upstream
-from test_transport_receive import HELLO, READY, FakeGatewayHTTP, FakeWS
+from test_transport_receive import HELLO, READY, FakeGatewayHTTP, FakeWS, gateway_document
 
 from v2.errors import V2Error
 from v2.models import InstanceKey, RobotKey
@@ -37,7 +37,7 @@ async def test_documented_token_api_gateway_and_identify_destinations(config, tm
         assert request.headers["Authorization"] == "QQBot endpoint-fixture-token"
         if request.path == "/gateway/bot":
             assert not request.query
-            return web.json_response({"url": gateway_url})
+            return web.json_response(gateway_document(gateway_url))
         assert request.path == "/v2/items" and request.query.getall("ids") == ["a", "b"]
         assert request.query["cursor"] == "a+b"
         return web.json_response([])
@@ -164,7 +164,7 @@ async def test_sandbox_configuration_is_retained_but_binding_does_not_start(owne
         with pytest.raises(V2Error) as exc:
             await onboarding.start("fixture-admin", config["id"], saved["fingerprint"], confirm=True)
         assert exc.value.code == "unsupported_environment"
-        assert dict(cfg) == original and cfg["platform"][0]["environment"] == "sandbox"
+        assert dict(cfg) == original and cfg["platform"][0]["is_sandbox"] is True
         assert cfg["platform"][0]["secret"] == config["secret"]
         assert not onboarding.bindings and onboarding.session is None
         assert not owner.context.platform_manager.calls
@@ -180,6 +180,7 @@ async def test_sandbox_adapter_never_registers_as_ready_or_sends_a_request(plugi
     ctx.get_config()["platform"].append(cfg)
     owner = plugin_module.QQOfficialV2(ctx, {})
     await owner.initialize()
+    cfg = ctx.get_config()["platform"][0]
     try:
         original = copy.deepcopy(cfg)
         instance = owner.adapter_class(cfg, {}, asyncio.Queue())

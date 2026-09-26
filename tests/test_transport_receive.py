@@ -197,6 +197,11 @@ class FakeWS:
         self.closed = True
 
 
+def gateway_document(url, *, shards=1, remaining=100, concurrency=100, reset=86400000):
+    return {"url": url, "shards": shards, "session_start_limit": {
+        "total": 100, "remaining": remaining, "max_concurrency": concurrency, "reset_after": reset}}
+
+
 class FakeGatewayHTTP:
     def __init__(self, identity, sockets):
         self.identity, self.sockets = identity, list(sockets)
@@ -204,7 +209,7 @@ class FakeGatewayHTTP:
         self.connects = 0
 
     async def request(self, _):
-        return SimpleNamespace(data={"url": "wss://api.bot.qq.com/websocket"})
+        return SimpleNamespace(data=gateway_document("wss://api.bot.qq.com/websocket"))
 
     async def token(self):
         return "fixture-access-token"

@@ -94,7 +94,7 @@ async def test_new_disabled_target_and_uuid_persist_without_reload(owner):
     result = await conn.save("new-v2", view["fingerprint"], {"transport": "webhook"}, confirm=True)
     assert result["exists"] and result["webhook_path"]
     target = cfg["platform"][-1]
-    assert not target["enable"] and not target["secret"] and target["unified_webhook_mode"]
+    assert not target["enable"] and not target["secret"] and target["type"] == "qq_official_v2_webhook"
     before = target["webhook_uuid"]
     conn.prepare_webhooks()
     assert cfg["platform"][-1]["webhook_uuid"] == before and not owner.context.platform_manager.calls
@@ -340,7 +340,7 @@ async def test_webhook_path_tracks_transport_without_rotating_uuid(owner, config
     websocket = await conn.save(target, webhook["fingerprint"], {"transport": "websocket"}, confirm=True)
     assert websocket["webhook_path"] is None
     assert cfg["platform"][0]["webhook_uuid"] == identifier
-    assert cfg["platform"][0]["unified_webhook_mode"] is False
+    assert cfg["platform"][0]["type"] == "qq_official_v2" and "unified_webhook_mode" not in cfg["platform"][0]
     restored = await conn.save(target, websocket["fingerprint"], {"transport": "webhook"}, confirm=True)
     assert restored["webhook_path"] == webhook["webhook_path"]
     assert not owner.context.platform_manager.calls

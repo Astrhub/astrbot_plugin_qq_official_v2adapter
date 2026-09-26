@@ -2,6 +2,7 @@ import asyncio
 import builtins
 import importlib
 import sys
+import tempfile
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
 
@@ -13,6 +14,7 @@ from astrbot.core.platform.register import (
     unregister_platform_adapters_by_module,
 )
 from astrbot.core.star.context import Context
+from test_onboarding import HostConfig
 
 from v2 import PLATFORM_TYPE, PLUGIN_NAME
 
@@ -46,7 +48,9 @@ def plugin_module(monkeypatch):
 
 
 def context():
-    value = {"platform": [], "platform_settings": {}}
+    value = HostConfig(Path(tempfile.mkdtemp(prefix="v2-host-")) / "config.json", {})
+    value.update(platform=[], platform_settings={})
+    value.save_config()
     ctx = SimpleNamespace(registered_web_apis=[], get_config=lambda unified_msg_origin=None: value)
     ctx.register_web_api = lambda *args: Context.register_web_api(ctx, *args)
     from astrbot.core.platform.manager import PlatformManager
@@ -83,6 +87,8 @@ async def test_registration_uses_bundled_qq_logo(plugin_module):
 
 async def test_platform_form_uses_chinese_labels_without_changing_config(plugin_module):
     from astrbot.dashboard.services.config_service import ConfigDisplayService
+    baseline = await ConfigDisplayService(SimpleNamespace(astrbot_config={})).get_astrbot_config()
+    sandbox_metadata = dict(baseline["metadata"]["platform_group"]["metadata"]["platform"]["items"]["is_sandbox"])
     owner = plugin_module.QQOfficialV2(context(), {})
     await owner.initialize()
     try:
@@ -91,15 +97,12 @@ async def test_platform_form_uses_chinese_labels_without_changing_config(plugin_
         ).get_astrbot_config()
         platform_meta = data["metadata"]["platform_group"]["metadata"]["platform"]
         items = platform_meta["items"]
-        for key, label in {
-            "environment": "运行环境", "transport": "连接方式",
-            "intents": "事件意图位掩码", "shard": "WS 分片 [序号, 总数]",
-            "onebot": "OneBot 网络设置",
-        }.items():
-            assert items[key]["description"] == label
-        assert items["onebot"]["invisible"] is True
+        assert items["is_sandbox"] == sandbox_metadata and items["is_sandbox"]["type"] == "bool"
+        for key in ("environment", "transport", "intents", "shard", "shard_mode", "onebot", "logo_token"):
+            assert items[key]["invisible"] is True
         assert platform_meta["config_template"][PLATFORM_TYPE]["onebot"]["enable"] is False
-        assert platform_meta["config_template"][PLATFORM_TYPE]["shard"] == [0, 1]
+        assert platform_meta["config_template"][PLATFORM_TYPE]["shard_mode"] == "auto"
+        assert "shard" not in platform_meta["config_template"][PLATFORM_TYPE]
     finally:
         await owner.terminate()
 
@@ -235,7 +238,7 @@ async def test_instance_shutdown_survives_reload_cancellation(plugin_module, con
     ctx.get_config()["platform"].append(dict(config))
     owner = plugin_module.QQOfficialV2(ctx, {})
     await owner.initialize()
-    instance = owner.adapter_class(config, {}, asyncio.Queue())
+    instance = owner.adapter_class(ctx.get_config()["platform"][0], {}, asyncio.Queue())
     entered, release = asyncio.Event(), asyncio.Event()
     class Session:
         closed = False

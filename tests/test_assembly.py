@@ -108,10 +108,13 @@ async def test_real_astrbot_assembly(config, monkeypatch, qq_reject_server, qq_p
             assert config_response.status_code == 200
             platform_form = config_response.json()["data"]["metadata"]["platform_group"]["metadata"]["platform"]
             logo_token = platform_form["config_template"][PLATFORM_TYPE]["logo_token"]
-            assert platform_form["items"]["environment"]["description"] == "运行环境"
-            assert platform_form["items"]["onebot"]["description"] == "OneBot 网络设置"
+            assert platform_form["items"]["is_sandbox"]["type"] == "bool"
+            assert platform_form["items"]["onebot"]["invisible"] is True
+            assert platform_form["items"]["logo_token"]["invisible"] is True
             icon = await client.get(f"/api/v1/files/tokens/{logo_token}")
             assert icon.status_code == 200 and icon.content == (plugin_dir / "assets" / "qq.png").read_bytes()
+            webhook_logo = platform_form["config_template"]["qq_official_v2_webhook"]["logo_token"]
+            assert (await client.get(f"/api/v1/files/tokens/{webhook_logo}")).content == icon.content
             boot = (await client.get(prefix + "/bootstrap", headers=headers)).json()
             assert boot["instances"][0]["id"] == config["id"]
             view = (await client.get(prefix + "/config", params={"platform_id": config["id"]}, headers=headers)).json()
@@ -220,6 +223,31 @@ async def test_real_astrbot_assembly(config, monkeypatch, qq_reject_server, qq_p
             http_module = importlib.import_module(f"data.plugins.{PLUGIN_NAME}.v2.transport.http")
             monkeypatch.setattr(http_module.HTTPTransport, "_make_session", lambda self: MappedSession(qq_portal_server[0]))
             new_owner.onboarding.factory = lambda: MappedSession(qq_portal_server[0])
+            from astrbot.dashboard.services.config_service import BotConfigService
+            bot_service = BotConfigService(lifecycle)
+            template_hook = dict(platform_form["config_template"]["qq_official_v2_webhook"])
+            template_hook.update(id="template-hook", appid="new-fixture-app", secret="new-fixture-secret", intents=7)
+            await bot_service.create_bot(template_hook)
+            assert not any(i.identity.platform_id == "template-hook" for i in new_owner.instances)
+            await bot_service.set_bot_enabled("template-hook", True)
+            template_instance = next(i for i in new_owner.instances if i.identity.platform_id == "template-hook")
+            await asyncio.wait_for(template_instance.ready.wait(), 2)
+            template_saved = bot_service.get_bot("template-hook")["bot"]
+            assert template_saved["webhook_uuid"] and "unified_webhook_mode" not in template_saved
+            assert template_saved["intents"] == 7 and template_saved["shard_mode"] == "auto"
+            assert template_saved["onebot"]["enable"] is False and template_instance.meta().name == "qq_official_v2_webhook"
+            template_saved["intents"] = 9
+            await bot_service.update_bot("template-hook", template_saved)
+            reloaded_template = next(i for i in new_owner.instances if i.identity.platform_id == "template-hook")
+            await asyncio.wait_for(reloaded_template.ready.wait(), 2)
+            assert reloaded_template.config["webhook_uuid"] == template_instance.config["webhook_uuid"]
+            assert reloaded_template.identity.intents == 9 and template_instance.http.closed
+            template_challenge = await client.post(f"/api/platform/webhook/{template_saved['webhook_uuid']}",
+                json={"op": 13, "d": {"plain_token": "template-fixture", "event_ts": str(int(time.time()))}},
+                headers={"X-Bot-Appid": "new-fixture-app"})
+            assert template_challenge.status_code == 200 and template_challenge.json()["plain_token"] == "template-fixture"
+            await bot_service.delete_bot("template-hook")
+            assert not any(i.identity.platform_id == "template-hook" for i in new_owner.instances)
             new_owner.onboarding.clock = lambda: clock.now
             new_owner.onboarding.sleep = clock.sleep
             boot2 = (await client.get(prefix + "/bootstrap", headers=headers)).json()
@@ -267,6 +295,8 @@ async def test_real_astrbot_assembly(config, monkeypatch, qq_reject_server, qq_p
             hook_instance = next(i for i in new_owner.instances if i.identity.platform_id == target)
             await asyncio.wait_for(hook_instance.ready.wait(), 2)
             assert hook_instance.state == "webhook_ready" and not hook_instance.runtime_status()["online"]
+            assert hook_instance.meta().name == "qq_official_v2_webhook"
+            assert saved_target["type"] == "qq_official_v2_webhook"
             assert hook_instance.network.listening and TOKEN not in json.dumps(connection)
             callback = connection["webhook_path"]
             challenge = {"op": 13, "d": {"plain_token": "fixture", "event_ts": str(int(time.time()))}}

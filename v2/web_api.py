@@ -11,7 +11,8 @@ from types import SimpleNamespace
 
 from astrbot.api.web import json_response, request
 
-from . import PLATFORM_TYPE, PLUGIN_NAME
+from . import PLATFORM_TYPES, PLUGIN_NAME
+from .connection_config import normalize_connection
 from .commands import collect_catalog, layout_preview, panel_preview
 from .errors import V2Error, unsupported
 from .host_auth import require_admin
@@ -79,7 +80,7 @@ class ControlAPI:
 
     def platform(self, platform_id):
         matches = [c for c in self.owner.context.get_config().get("platform", []) if c.get("id") == platform_id]
-        if len(matches) != 1 or matches[0].get("type") != PLATFORM_TYPE:
+        if len(matches) != 1 or matches[0].get("type") not in PLATFORM_TYPES:
             raise V2Error("instance_not_owned", "Target is not a unique V2 platform configuration.", status=404)
         config = matches[0]
         identity = InstanceKey.from_config(config)
@@ -224,7 +225,7 @@ class ControlAPI:
             configs = self.owner.context.get_config().get("platform", [])
             return {"csrf": self.csrf(username), "flags": self.flags(), "flags_revision": self.fingerprint(self.flags()),
                     "instances": [{"id": c.get("id"), "appid": c.get("appid"), "environment": c.get("environment", "production")}
-                                  for c in configs if c.get("type") == PLATFORM_TYPE],
+                                  for c in (normalize_connection(c) for c in configs if c.get("type") in PLATFORM_TYPES)],
                     "defaults": DEFAULTS, "phase": "P5", "remote_state": "opt_in_managed_panels"}
         if operation == "flags":
             if body.get("confirm") is not True:

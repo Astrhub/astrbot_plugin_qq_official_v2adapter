@@ -9,11 +9,11 @@ from astrbot.api.star import Context, Star, StarTools
 from astrbot.core.platform.register import (
     platform_cls_map,
     register_platform_adapter,
-    unregister_platform_adapters_by_module,
+    platform_registry,
 )
 from astrbot.core.star.filter.command import GreedyStr
 
-from .v2 import PLATFORM_TYPE, PLUGIN_NAME
+from .v2 import PLATFORM_TYPE, PLATFORM_TYPES, PLUGIN_NAME, WEBHOOK_TYPE
 from .v2.adapter import DEFAULT_PLATFORM_CONFIG, V2Adapter
 from .v2.connections import Connections
 from .v2.extensions.state import ExtensionStore
@@ -30,12 +30,12 @@ from .v2.web_api import ControlAPI
 
 class V2Only(filter.CustomFilter):
     def filter(self, event, cfg):
-        return event.get_platform_name() == PLATFORM_TYPE
+        return event.get_platform_name() in PLATFORM_TYPES
 
 
 class V2Addressed(filter.CustomFilter):
     def filter(self, event, cfg):
-        return event.get_platform_name() == PLATFORM_TYPE and event.raw_data.get("t") in {"GROUP_AT_MESSAGE_CREATE", "AT_MESSAGE_CREATE"}
+        return event.get_platform_name() in PLATFORM_TYPES and event.raw_data.get("t") in {"GROUP_AT_MESSAGE_CREATE", "AT_MESSAGE_CREATE"}
 
 class QQOfficialV2(Star):
     def __init__(self, context: Context, config):
@@ -46,6 +46,8 @@ class QQOfficialV2(Star):
         self.store = None
         self.control = None
         self.adapter_class = None
+        self.adapter_classes = {}
+        self.identify_budgets = {}
         self.inbox = None
         self.messages = None
         self.extension_state = None
@@ -65,30 +67,23 @@ class QQOfficialV2(Star):
             self.messages = MessageStore(StarTools.get_data_dir(PLUGIN_NAME) / "messaging.sqlite3")
             self.extension_state = ExtensionStore(self.messages)
             self.media_pool = BlobPool(StarTools.get_data_dir(PLUGIN_NAME) / "media-spool")
-            owner = self
-
-            class OwnedAdapter(V2Adapter):
-                pass
-
-            OwnedAdapter.owner = owner
-            self.adapter_class = OwnedAdapter
-            register_platform_adapter(
-                PLATFORM_TYPE, "QQ 官方 V2（收发与受控扩展）",
-                default_config_tmpl=copy.deepcopy(DEFAULT_PLATFORM_CONFIG),
-                adapter_display_name="QQ 官方 V2 · 原型",
-                logo_path="assets/qq.png",
-                config_metadata={
-                    "secret": {"description": "QQ AppSecret", "type": "string", "secret": True,
-                               "hint": "仅保存在本体平台配置；启用平台将连接 QQ。"},
-                    "appid": {"description": "QQ AppID", "type": "string"},
-                    "environment": {"description": "运行环境", "hint": "当前仅支持 production。"},
-                    "transport": {"description": "连接方式", "hint": "websocket 或 webhook；保存后重载生效。"},
-                    "intents": {"description": "事件意图位掩码"},
-                    "shard": {"description": "WS 分片 [序号, 总数]"},
-                    "onebot": {"description": "OneBot 网络设置", "invisible": True},
-                },
-                support_streaming_message=True,
-            )(OwnedAdapter)
+            for kind in PLATFORM_TYPES:
+                adapter = type("OwnedWebhookAdapter" if kind == WEBHOOK_TYPE else "OwnedAdapter", (V2Adapter,),
+                               {"owner": self, "__module__": __name__})
+                title = "QQ 官方 V2（Webhook）" if kind == WEBHOOK_TYPE else "QQ 官方 V2（WebSocket）"
+                template = {**copy.deepcopy(DEFAULT_PLATFORM_CONFIG), "type": kind, "id": kind}
+                register_platform_adapter(
+                    kind, title, default_config_tmpl=template, adapter_display_name=title,
+                    logo_path="assets/qq.png", support_streaming_message=True,
+                    config_metadata={
+                        "secret": {"description": "QQ AppSecret", "type": "string", "secret": True},
+                        "appid": {"description": "QQ AppID", "type": "string"},
+                        **{key: {"invisible": True} for key in
+                           ("environment", "transport", "intents", "shard", "shard_mode", "onebot", "logo_token")},
+                    },
+                )(adapter)
+                self.adapter_classes[kind] = adapter
+            self.adapter_class = self.adapter_classes[PLATFORM_TYPE]
             self.control = ControlAPI(self)
             self.control.register()
             self.connections = Connections(self)
@@ -122,7 +117,7 @@ class QQOfficialV2(Star):
         if plugin is not self.context.get_registered_star(PLUGIN_NAME):
             return
         for item in self.context.get_config().get("platform", []):
-            if item.get("type") != PLATFORM_TYPE or item.get("enable") is not True:
+            if item.get("type") not in PLATFORM_TYPES or item.get("enable") is not True:
                 continue
             if any(instance.identity.platform_id == item.get("id") for instance in self.instances):
                 continue
@@ -165,8 +160,11 @@ class QQOfficialV2(Star):
                     await instance.terminate()
             except Exception as exc:
                 errors.append(exc)
-        if self.adapter_class is not None and platform_cls_map.get(PLATFORM_TYPE) is self.adapter_class:
-            unregister_platform_adapters_by_module(self.adapter_class.__module__)
+        for kind, adapter in self.adapter_classes.items():
+            if platform_cls_map.get(kind) is adapter:
+                del platform_cls_map[kind]
+                platform_registry[:] = [m for m in platform_registry if not (m.name == kind and m.module_path == adapter.__module__)]
+        self.identify_budgets.clear()
         if self.store:
             self.store.close()
         if self.inbox:
