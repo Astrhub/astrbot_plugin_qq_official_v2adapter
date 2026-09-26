@@ -60,7 +60,7 @@ class MediaService:
 
     def binding(self, route):
         policy = self.settings()
-        return self.identity.platform_id, self.identity.generation, route.robot, route.scene, route.target, digest([policy.get("media_roots", []), policy.get("media_max_bytes", 32_000_000)])
+        return self.identity.platform_id, self.identity.generation, route.robot, route.scene, route.target, digest([policy.get("media_max_bytes", 32_000_000)])
 
     async def prepare(self, route, value):
         self.check(route)
@@ -82,7 +82,7 @@ class MediaService:
             policy = self.settings()
             binding = self.binding(route)
             maximum = min(MAX_BYTES, policy.get("media_max_bytes", 32_000_000))
-            blob = await asyncio.wait_for(self.pool.load(value.value, roots=policy.get("media_roots", []), max_bytes=maximum), timeout=30)
+            blob = await asyncio.wait_for(self.pool.load(value.value, max_bytes=maximum), timeout=30)
             kind = value.kind
             if blob.size > SOFT_LIMITS[kind]:
                 if not value.allow_file_fallback or route.scene not in {"group", "c2c"}:

@@ -34,13 +34,12 @@ async function run(action) {
 }
 function renderExtensions() {
   const value = draft.extensions;
-  $("ext-media-roots").value = value.media_roots.join("\n");
   for (const [id, key] of [["ext-media-max", "media_max_bytes"], ["ext-stream-chars", "stream_max_chars"], ["ext-stream-timeout", "stream_timeout"], ["ext-ticket-ttl", "ticket_ttl"], ["ext-stream-fallback", "stream_fallback"]]) $(id).value = String(value[key]);
   for (const [id, key] of [["ext-typing", "typing_enabled"], ["ext-keyboard", "keyboard_enabled"], ["ext-execute", "keyboard_execute"], ["ext-management", "management_writes"]]) $(id).checked = value[key];
   $("ext-status").textContent = JSON.stringify(current.extension_state || {state: "not_loaded"}, null, 2);
 }
 function readExtensions() {
-  return Object.assign(clone(draft.extensions), {media_roots: $("ext-media-roots").value.split("\n").map(v => v.trim()).filter(Boolean), media_max_bytes: Number($("ext-media-max").value),
+  return Object.assign(clone(draft.extensions), {media_max_bytes: Number($("ext-media-max").value),
     stream_fallback: $("ext-stream-fallback").value, stream_max_chars: Number($("ext-stream-chars").value), stream_timeout: Number($("ext-stream-timeout").value),
     ticket_ttl: Number($("ext-ticket-ttl").value), typing_enabled: $("ext-typing").checked, keyboard_enabled: $("ext-keyboard").checked,
     keyboard_execute: $("ext-execute").checked, management_writes: $("ext-management").checked});

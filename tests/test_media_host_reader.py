@@ -12,8 +12,9 @@ from v2.errors import V2Error
 from v2.media import io
 
 
-@pytest.mark.parametrize("uri", [False, True])
-async def test_host_file_context_reads_bounded_chunks_and_keeps_source(tmp_path, monkeypatch, uri):
+@pytest.mark.parametrize("reference", ["absolute", "relative", "uri"])
+@pytest.mark.parametrize("legacy_roots", ["absent", "empty", "unrelated", "windows"])
+async def test_host_file_context_reads_bounded_chunks_and_keeps_source(tmp_path, monkeypatch, reference, legacy_roots):
     path = tmp_path / "中文 空格.bin"
     content = b"byte sample" * 15000
     path.write_bytes(content)
@@ -35,7 +36,11 @@ async def test_host_file_context_reads_bounded_chunks_and_keeps_source(tmp_path,
             yield reader
     monkeypatch.setattr(host.MediaResolver, "open", recording)
     try:
-        blob = await pool.load(path.as_uri() if uri else str(path), roots=[str(tmp_path)], max_bytes=1_000_000)
+        monkeypatch.chdir(tmp_path)
+        value = {"absolute": str(path), "relative": path.name, "uri": path.as_uri()}[reference]
+        options = {} if legacy_roots == "absent" else {"roots": {"empty": [], "unrelated": [str(tmp_path / "missing")], "windows": [r"Z:\old\media"]}[legacy_roots]}
+        blob = await pool.load(value, max_bytes=1_000_000, **options)
+        assert b"".join([chunk async for chunk in blob.chunks()]) == content
         assert refs == [(path.as_uri(), "file", "rb")]
         assert len(sizes) >= 3 and all(f.closed for f in opened)
         assert blob.hashes()["sha256"] == hashlib.sha256(content).hexdigest()
@@ -74,24 +79,42 @@ async def test_base64_is_not_guessed_or_decoded_by_host(tmp_path, monkeypatch):
         pool.close()
 
 
-async def test_hardlink_nonregular_root_and_parent_escape_rejected(tmp_path):
-    allowed = tmp_path / "allowed"
-    allowed.mkdir()
-    path = allowed / "sample"
+async def test_hardlinks_and_parent_paths_read_regular_targets(tmp_path):
+    directory = tmp_path / "files"
+    directory.mkdir()
+    path = directory / "sample"
     path.write_bytes(b"file")
-    alias = allowed / "alias"
+    alias = directory / "alias"
     os.link(path, alias)
-    fifo = allowed / "pipe"
-    os.mkfifo(fifo)
-    outside = tmp_path / "outside"
-    outside.write_bytes(b"outside")
     pool = io.BlobPool(tmp_path / "spool")
     try:
-        for value, roots in [(path, [str(allowed)]), (alias, [str(allowed)]), (fifo, [str(allowed)]),
-                             (allowed, [str(allowed)]), (outside, ["/"]), (allowed / ".." / "outside", [str(allowed)])]:
+        for value in (path, alias, directory / ".." / "files" / "sample"):
+            blob = await pool.load(str(value), max_bytes=100)
+            assert blob.read(0, 100) == b"file"
+            blob.close()
+        assert path.read_bytes() == alias.read_bytes() == b"file"
+        assert not pool.blobs and pool.used == 0
+    finally:
+        pool.close()
+
+
+async def test_nonregular_missing_empty_and_oversize_never_enter_host(tmp_path, monkeypatch):
+    fifo = tmp_path / "pipe"
+    os.mkfifo(fifo)
+    alias = tmp_path / "alias"
+    alias.symlink_to(fifo)
+    empty, large = tmp_path / "empty", tmp_path / "large"
+    empty.touch()
+    large.write_bytes(b"x" * 101)
+    def forbidden(*args, **kwargs):
+        raise AssertionError("Special or invalid files must be rejected before synchronous host open")
+    monkeypatch.setattr(io, "MediaResolver", forbidden)
+    pool = io.BlobPool(tmp_path / "spool")
+    try:
+        for value in (tmp_path, fifo, alias, tmp_path / "missing", empty, large, "/dev/null"):
             with pytest.raises(V2Error):
-                await pool.load(str(value), roots=roots, max_bytes=100)
-        assert not pool.blobs
+                await pool.load(str(value), max_bytes=100)
+            assert not pool.blobs and pool.used == 0
     finally:
         pool.close()
 
@@ -170,17 +193,70 @@ async def test_missing_unrelated_root_does_not_block_authorized_input(tmp_path):
         pool.close()
 
 
-async def test_resolved_root_must_match_actual_ancestor_identity(tmp_path, monkeypatch):
-    path = tmp_path / "file"
-    path.write_bytes(b"allowed")
-    monkeypatch.setattr(io.os.path, "samefile", lambda *args: False)
-    def forbidden(*args, **kwargs):
-        raise AssertionError("Directory identity mismatch must reject before opening")
-    monkeypatch.setattr(io, "MediaResolver", forbidden)
+@pytest.mark.parametrize("linked", [False, True])
+async def test_path_identity_change_during_copy_releases_bytes(tmp_path, monkeypatch, linked):
+    source, replacement = tmp_path / "source", tmp_path / "replacement"
+    source.write_bytes(b"a" * (io.CHUNK + 1))
+    replacement.write_bytes(b"b" * (io.CHUNK + 1))
+    path = tmp_path / "link" if linked else source
+    if linked:
+        path.symlink_to(source)
+    original, changed = io.Blob.append, False
+    def swapped(blob, chunk):
+        nonlocal changed
+        original(blob, chunk)
+        if not changed:
+            changed = True
+            if linked:
+                path.unlink()
+                path.symlink_to(replacement)
+            else:
+                replacement.replace(path)
+    monkeypatch.setattr(io.Blob, "append", swapped)
     pool = io.BlobPool(tmp_path / "spool")
     try:
         with pytest.raises(V2Error) as error:
-            await pool.load(str(path), roots=[str(tmp_path)], max_bytes=100)
-        assert error.value.code == "media_path_not_authorized" and not pool.blobs
+            await pool.load(str(path), max_bytes=1_000_000)
+        assert error.value.code == "media_changed"
+        assert pool.used == 0 and not pool.blobs
+        assert path.read_bytes() == b"b" * (io.CHUNK + 1)
+    finally:
+        pool.close()
+
+
+async def test_local_files_share_total_pool_budget(tmp_path):
+    path = tmp_path / "sample"
+    path.write_bytes(b"bytes")
+    pool = io.BlobPool(tmp_path / "spool", total_bytes=9)
+    try:
+        first = await pool.load(str(path), max_bytes=10)
+        with pytest.raises(V2Error) as error:
+            await pool.load(str(path), max_bytes=10)
+        assert error.value.code == "media_too_large"
+        assert pool.used == 5 and list(pool.blobs.values()) == [first]
+        first.close()
+        assert pool.used == 0 and not pool.blobs and path.read_bytes() == b"bytes"
+    finally:
+        pool.close()
+
+
+async def test_link_count_change_during_copy_does_not_change_file_content(tmp_path, monkeypatch):
+    path = tmp_path / "file"
+    content = b"x" * (io.CHUNK + 1)
+    path.write_bytes(content)
+    alias = tmp_path / "alias"
+    original = io.Blob.append
+    def linked(blob, chunk):
+        original(blob, chunk)
+        if not alias.exists():
+            os.link(path, alias)
+    monkeypatch.setattr(io.Blob, "append", linked)
+    pool = io.BlobPool(tmp_path / "spool")
+    try:
+        blob = await pool.load(str(path), max_bytes=len(content))
+        assert blob.hashes()["sha256"] == hashlib.sha256(content).hexdigest()
+        blob.close()
+        assert path.read_bytes() == alias.read_bytes() == content
+        assert pool.used == 0 and not pool.blobs
     finally:
         pool.close()
