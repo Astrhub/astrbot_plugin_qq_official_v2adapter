@@ -22,8 +22,8 @@ def digest(value):
 
 
 def retry_time(error, now):
-    transient = error.business_code is None and (
-        error.code in {"connect_failed", "network_failure", "request_deadline", "request_capacity", "panel_rate_limited"}
+    transient = (error.business_code is None or error.code == "qq_rate_limited") and (
+        error.code in {"connect_failed", "network_failure", "request_deadline", "request_capacity", "qq_rate_limited"}
         or error.code == "qq_api_error" and error.http_status in {408, 429, 500, 502, 503, 504}
         or error.code == "token_refresh_failed" and (error.http_status or error.status) in {408, 429, 500, 502, 503, 504})
     if not transient:
@@ -267,22 +267,11 @@ class PanelService:
         self._save(robot_key(instance.identity.robot), scene, value, control=True)
         return value
 
-    def _wire_gate(self, instance, kind):
-        self.gate(instance)
-        robot = robot_key(instance.identity.robot)
-        with self.store.transaction():
-            now = self.store.now()
-            self.db.execute("DELETE FROM panel_rates WHERE stamp<=?", (now - 60,))
-            count = self.db.execute("SELECT count(*) FROM panel_rates WHERE robot=? AND kind=?", (robot, kind)).fetchone()[0]
-            if count >= (30 if kind == "read" else 10):
-                raise V2Error("panel_rate_limited", "Conservative robot-wide panel rate limit reached.", status=429)
-            self.db.execute("INSERT INTO panel_rates VALUES(?,?,?)", (robot, kind, now))
-
     async def _request(self, instance, method, path, *, params=None, body=None, check=None):
         def before_send():
             if check:
                 check()
-            self._wire_gate(instance, "read" if method == "GET" else "write")
+            self.gate(instance)
         return await instance.http.request(RequestSpec(instance.identity.robot.environment, method, path, params=params, json_body=body), before_send=before_send)
 
     async def _list(self, instance):

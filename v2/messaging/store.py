@@ -176,7 +176,7 @@ class MessageStore:
         if not excess:
             return
         rows = self.db.execute("SELECT rowid,state FROM operations WHERE state IN ('sent','rejected','not_sent') ORDER BY updated,rowid LIMIT ?", (excess,)).fetchall()
-        # Success loses result details, not its replay fence or quota charges.
+        # Success loses result details, not its replay fence or legacy charges.
         self.db.executemany("UPDATE operations SET state='history_evicted',result=NULL,error=NULL WHERE rowid=?", ((r[0],) for r in rows if r[1] == "sent"))
         self.db.executemany("DELETE FROM operations WHERE rowid=?", ((r[0],) for r in rows if r[1] != "sent"))
 
@@ -198,7 +198,7 @@ class MessageStore:
 
     def _capacity(self, table, limit):
         if self.db.execute(f"SELECT count(*) FROM {table}").fetchone()[0] >= limit:
-            failure("message_state_full", "Message-state capacity reached; retained quotas and unknown operations were not evicted.", 503)
+            failure("message_state_full", "Message-state capacity reached; retained history and unknown operations were not evicted.", 503)
 
     def observe(self, chat):
         key, source = route_key(chat.route), chat.source
@@ -360,27 +360,6 @@ class MessageStore:
         result["error"] = json.loads(result["error"]) if result["error"] else None
         return result
 
-    def _budgets(self, route, source, now):
-        target = self.target(route) if source is None or source.message_id is not None else None
-        scene, recipient = route.scene, route.target
-        budgets = [("message_qps", "bot", 1, 100)] if scene in {"c2c", "group"} else [("channel_qps", f"{scene}:{recipient}", 1, 5)]
-        if source is not None:
-            return budgets
-        if scene in {"c2c", "group"}:
-            budgets += [("active_bot", "bot", 60, 30), ("active_qps", "bot", 1, 5),
-                        ("active_target", f"{scene}:{recipient}", 60, 20), ("active_day", f"{scene}:{recipient}", 86400, 1000)]
-        elif scene == "channel":
-            if not target["guild"]:
-                failure("target_context_missing", "Active channel sending requires an observed guild ID.")
-            rows = self.db.execute("SELECT DISTINCT subject FROM charges WHERE robot=? AND bucket=? AND until>?",
-                                   (robot_key(route.robot), "guild:" + target["guild"], now)).fetchall()
-            if recipient not in {r[0] for r in rows} and len(rows) >= 2:
-                failure("active_quota_exhausted", "Conservative two-channel active limit reached.", 429)
-            budgets += [("active_day", "channel:" + recipient, 86400, 20), ("guild:" + target["guild"], recipient, 86400, 20)]
-        else:
-            budgets += [("dm_user_day", target["sender"], 86400, 2), ("dm_bot_day", "bot", 86400, 200)]
-        return budgets
-
     def reserve(self, route, source, digest, op_id):
         text_id(op_id)
         key = route_key(route)
@@ -404,21 +383,11 @@ class MessageStore:
             seq = None
             if source:
                 row = self._source(route, source, now)
-                limit = {"group": 5, "c2c": 4}.get(route.scene)
-                if limit is not None and row["used"] >= limit:
-                    failure("passive_quota_exhausted", "Passive reply reservation limit reached.", 429)
                 seq = row["seq"] + 1
-            budgets = self._budgets(route, source, now)
-            for bucket, subject, window, limit in budgets:
-                count = self.db.execute("SELECT count(*) FROM charges WHERE robot=? AND bucket=? AND subject=? AND until>?", (key[0], bucket, subject, now)).fetchone()[0]
-                if count >= limit:
-                    failure("local_rate_limited", "Conservative local rate limit reached; no message was sent.", 429)
             if source:
                 self.db.execute("UPDATE sources SET seq=?,used=used+1 WHERE robot=? AND scene=? AND target=? AND message_id=?", (seq, *key, source_key(source)))
             self.db.execute("INSERT INTO operations VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
                             (key[0], op_id, route.scene, route.target, source_key(source) if source else None, digest, seq, "reserved", now, now, None, None))
-            for bucket, subject, window, _ in budgets:
-                self.db.execute("INSERT INTO charges VALUES(?,?,?,?,?)", (key[0], op_id, bucket, subject, now + window))
             return self.operation(route.robot, op_id)
 
     def prepare_attempt(self, route, source, op_id, *, continuation=False):
@@ -428,20 +397,6 @@ class MessageStore:
                 self._source(route, source, now)
             self.db.execute("DELETE FROM attempts WHERE stamp<=?", (now - 60,))
             self._capacity("attempts", self.operation_capacity * 2)
-            clauses, limit = ("", 100) if route.scene in {"group", "c2c"} else (" AND scene=? AND target=?", 5)
-            args = (robot, now - 1) + (() if not clauses else (route.scene, route.target))
-            count = self.db.execute("SELECT count(*) FROM attempts WHERE robot=? AND stamp>?" + clauses, args).fetchone()[0]
-            if count >= limit:
-                failure("local_rate_limited", "Wire-attempt rate limit reached; retry later explicitly.", 429)
-            if source is None and not continuation and route.scene in {"group", "c2c"}:
-                count = self.db.execute("SELECT count(*) FROM attempts WHERE robot=? AND active=1 AND stamp>?", (robot, now - 1)).fetchone()[0]
-                if count >= 5:
-                    failure("local_rate_limited", "Conservative active wire-attempt rate reached.", 429)
-            for bucket, subject, window, limit in ([] if continuation else self._budgets(route, source, now)):
-                count = self.db.execute("SELECT count(*) FROM charges WHERE robot=? AND bucket=? AND subject=? AND until>? AND op_id!=?", (robot, bucket, subject, now, op_id)).fetchone()[0]
-                if count >= limit:
-                    failure("local_rate_limited", "Quota changed while waiting to send.", 429)
-                self.db.execute("INSERT INTO charges VALUES(?,?,?,?,?) ON CONFLICT(robot,op_id,bucket,subject) DO UPDATE SET until=max(until,excluded.until)", (robot, op_id, bucket, subject, now + window))
             number = self.db.execute("SELECT coalesce(max(number),0)+1 FROM attempts WHERE robot=? AND op_id=?", (robot, op_id)).fetchone()[0]
             self.db.execute("INSERT INTO attempts VALUES(?,?,?,?,?,?,?)", (robot, op_id, number, route.scene, route.target, int(source is None and not continuation), now))
             self.db.execute("UPDATE operations SET state='in_flight',updated=? WHERE robot=? AND op_id=?", (now, robot, op_id))

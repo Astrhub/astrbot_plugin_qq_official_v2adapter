@@ -10,6 +10,7 @@ from test_media_upload import sending_core
 from v2.errors import V2Error
 from v2.media.types import MediaInput
 from v2.messaging.outbound import parse_message
+from v2.messaging.store import robot_key
 from v2.models import SessionRoute
 
 
@@ -51,6 +52,22 @@ async def test_receipt_keeps_server_lifetime_without_a_one_year_ceiling(media, m
         receipt = await m.service.upload(route, prepared, operation_id="server-lifetime")
         assert receipt["ttl"] == ttl and receipt["file_info"] == "actual-file-receipt"
         assert receipt["expires_at"] == (None if ttl == 0 else m.clock[0] + ttl)
+    finally:
+        prepared.close()
+
+
+async def test_legacy_upload_rate_rows_do_not_delay_server_requests(media):
+    m = media
+    robot = robot_key(m.identity.robot)
+    with m.store.transaction():
+        m.store.db.executemany("INSERT INTO extension_rates VALUES(?,?,?)",
+            [(robot, "upload_files", m.clock[0])] * 50)
+    route = SessionRoute(m.identity.robot, "group", "g")
+    prepared = await m.service.prepare(route, MediaInput("image", "https://assets.test/image"))
+    try:
+        receipt = await m.service.upload(route, prepared, operation_id="unthrottled-upload")
+        assert receipt["file_info"] == "actual-file-receipt" and m.clock[0] == m.store.now()
+        assert sum(path.endswith("/files") for path, _ in m.calls) == 1
     finally:
         prepared.close()
 

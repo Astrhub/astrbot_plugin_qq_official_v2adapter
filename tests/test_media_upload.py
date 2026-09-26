@@ -81,7 +81,7 @@ async def media(config, tmp_path):
             modes.pop(0)
             return web.json_response({"code": 40093001})
         if modes and modes[0] == "daily" and request.path.endswith("upload_part_finish"):
-            return web.json_response({"code": 40093002})
+            return web.json_response({"code": 40093002}, headers={"Retry-After": "60"})
         if request.path.endswith("upload_prepare"):
             size = int(body["file_size"])
             block = modes[0].get("block_size", 40) if modes and isinstance(modes[0], dict) else 40
@@ -179,6 +179,9 @@ async def test_upload_codes_and_unknown_not_replayed(media, mode, expected):
             with pytest.raises(V2Error) as error:
                 await m.service.upload(route, prepared, operation_id="bound")
             assert error.value.code == expected
+            if mode == "daily":
+                assert error.value.business_code == 40093002 and error.value.retry_after == "60"
+                assert error.value.phase == "rejected"
             if mode == "unknown":
                 assert m.state.operation(route.robot, error.value.operation_id)["state"] == "unknown"
                 before = len(m.calls)

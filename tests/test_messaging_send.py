@@ -42,12 +42,16 @@ async def sending(config, tmp_path, monkeypatch):
             await release.wait()
         elif mode == "401":
             return web.json_response({"code": 11244}, status=401)
+        elif mode == "ambiguous_429":
+            return web.json_response({"code": 50055001}, status=429, headers={"Retry-After": "7"})
+        elif mode == "429":
+            return web.Response(status=429, headers={"Retry-After": "7", "X-Tps-Trace-Id": "wire-rate-trace"})
         elif mode == "no-id":
             return web.json_response({"code": 0})
         elif mode == "500":
             return web.json_response({"code": 50055001}, status=500)
         elif isinstance(mode, int):
-            return web.json_response({"code": mode}, headers={"X-Tps-Trace-Id": "fixture-trace"})
+            return web.json_response({"code": mode}, headers={"X-Tps-Trace-Id": "fixture-trace", "Retry-After": "7"})
         return web.json_response({"id": f"real-format-{len(calls)}", "timestamp": "2027-01-15T08:00:00+08:00", "ext_info": {"ref_idx": f"REFIDX_sent{len(calls)}"}})
     async with upstream(handle) as base:
         http = HTTPTransport(identity, config["secret"], session_factory=lambda: MappedSession(base))
@@ -92,9 +96,67 @@ async def test_onebot_three_entries_and_native_use_exact_source_and_sequence(sen
     s.observe(message_id="newer")
     await client.send_group_msg(group_id="group-one", message="still original")
     assert s.calls[-1][1]["msg_id"] == "msg-one"
+    s.modes.append(40034128)
     with pytest.raises(V2Error) as exc:
-        await client.send_group_msg(group_id="group-one", message="over quota")
-    assert exc.value.code == "passive_quota_exhausted" and len(s.calls) == 5
+        await client.send_group_msg(group_id="group-one", message="server rejects sixth")
+    assert exc.value.code == "passive_quota_exhausted" and exc.value.business_code == 40034128
+    assert exc.value.http_status == 200 and exc.value.phase == "rejected"
+    assert len(s.calls) == 6 and s.calls[-1][1]["msg_seq"] == 6
+    assert s.store.operation(chat.route.robot, exc.value.operation_id)["state"] == "rejected"
+    with pytest.raises(V2Error) as blocked:
+        await client.send_group_msg(group_id="group-one", message="same rejected source")
+    assert blocked.value.code == "reply_source_rejected" and len(s.calls) == 6
+
+
+async def test_server_rate_responses_are_rejected_without_automatic_replay(sending):
+    s = sending
+    chat, client = s.observe()
+    s.modes.append("429")
+    with pytest.raises(V2Error) as error:
+        await client.send_group_msg(group_id="group-one", message="rate")
+    assert error.value.code == "qq_rate_limited" and error.value.http_status == 429
+    assert error.value.retry_after == "7" and error.value.phase == "rejected"
+    assert s.store.operation(chat.route.robot, error.value.operation_id)["state"] == "rejected"
+    assert len(s.calls) == 1 and s.store.db.execute("SELECT used FROM sources").fetchone()[0] == 0
+    await client.send_group_msg(group_id="group-one", message="new operation")
+    assert len(s.calls) == 2 and s.calls[-1][1]["msg_seq"] == 2
+
+
+async def test_active_rate_business_code_is_reported_from_qq(sending):
+    s = sending
+    chat, _ = s.observe()
+    s.modes.append(40034100)
+    with pytest.raises(V2Error) as error:
+        await s.client.send_group_msg(group_id="group-one", message="active")
+    assert error.value.code == "qq_rate_limited" and error.value.business_code == 40034100
+    assert error.value.http_status == 200 and error.value.retry_after == "7"
+    assert error.value.phase == "rejected" and len(s.calls) == 1
+    assert "msg_id" not in s.calls[0][1]
+    assert s.store.operation(chat.route.robot, error.value.operation_id)["state"] == "rejected"
+    await s.client.send_group_msg(group_id="group-one", message="fresh active send")
+    assert len(s.calls) == 2
+
+
+async def test_active_sends_do_not_apply_local_per_second_budget(sending):
+    s = sending
+    s.observe()
+    results = await asyncio.gather(
+        *(s.client.send_group_msg(group_id="group-one", message=f"active-{index}") for index in range(10)),
+        return_exceptions=True,
+    )
+    assert all(isinstance(result, dict) for result in results) and len(s.calls) == 10
+    assert all("msg_id" not in body and "msg_seq" not in body for _, body in s.calls)
+
+
+@pytest.mark.parametrize("event", ["AT_MESSAGE_CREATE", "DIRECT_MESSAGE_CREATE"])
+async def test_channel_and_dm_do_not_apply_local_per_second_budget(sending, event):
+    s = sending
+    chat, client = s.observe(event)
+    results = await asyncio.gather(
+        *(client.send(chat.route, f"reply-{index}") for index in range(6)),
+        return_exceptions=True,
+    )
+    assert all(isinstance(result, dict) for result in results) and len(s.calls) == 6
 
 
 async def test_instance_and_cross_target_are_active_not_borrowed(sending):
@@ -160,7 +222,7 @@ async def test_auth_retry_keeps_sequence_and_rechecks_original_deadline(sending)
     assert s.store.db.execute("SELECT used FROM sources").fetchone()[0] == 1
 
 
-@pytest.mark.parametrize("mode", ["no-id", "500", 40054005, 304023])
+@pytest.mark.parametrize("mode", ["no-id", "500", "ambiguous_429", 40054005, 304023])
 async def test_unknown_write_never_refunds_or_replays(sending, mode):
     s = sending
     chat, client = s.observe()
@@ -218,18 +280,17 @@ async def test_success_marks_host_send_only_after_true_id_and_keeps_permission_u
     assert s.client.capabilities()["actions"]["send_group_msg"]["permission"] == "unknown"
 
 
-async def test_concurrent_quota_and_explicit_success_idempotency(sending):
+async def test_concurrent_sends_have_no_local_quota_and_keep_idempotency(sending):
     s = sending
     chat, client = s.observe()
     results = await asyncio.gather(*(client.send_group_msg(group_id="group-one", message=f"reply{i}") for i in range(10)), return_exceptions=True)
-    assert sum(isinstance(r, dict) for r in results) == 5 and len(s.calls) == 5
-    assert all(isinstance(r, dict) or r.code == "passive_quota_exhausted" for r in results)
-    assert sorted(body["msg_seq"] for _, body in s.calls) == [1, 2, 3, 4, 5]
+    assert all(isinstance(r, dict) for r in results) and len(s.calls) == 10
+    assert sorted(body["msg_seq"] for _, body in s.calls) == list(range(1, 11))
     s.clock[0] += 2
     chat, client = s.observe(message_id="idempotent", timestamp=s.clock[0])
     first = await client.qq.send("group", "group-one", "same", operation_id="stable")
     second = await client.qq.send("group", "group-one", "same", operation_id="stable")
-    assert first == second and len(s.calls) == 6
+    assert first == second and len(s.calls) == 11
     with pytest.raises(V2Error) as exc:
         await client.qq.send("group", "group-one", "changed", operation_id="stable")
     assert exc.value.code == "operation_conflict"

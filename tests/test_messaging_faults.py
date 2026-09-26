@@ -70,21 +70,21 @@ async def test_storage_failure_after_real_id_blocks_new_writes_and_preserves_inf
     assert exc.value.code == "send_storage_unavailable" and len(s.calls) == 1
 
 
-async def test_c2c_quota_four_channel_ws_requirement_and_chain_preflight(sending):
+async def test_c2c_uses_server_quota_and_preserves_channel_ws_gate(sending):
     s = sending
     chat, client = s.observe("C2C_MESSAGE_CREATE")
     results = await asyncio.gather(*(client.send_private_msg(user_id="user-one", message=str(n)) for n in range(6)), return_exceptions=True)
-    assert sum(isinstance(r, dict) for r in results) == len(s.calls) == 4
+    assert all(isinstance(result, dict) for result in results) and len(s.calls) == 6
     chat, client = s.observe("AT_MESSAGE_CREATE")
     s.core.ws_online = lambda: False
     with pytest.raises(V2Error) as exc:
         await client.send(chat.route, "needs WS")
-    assert exc.value.code == "channel_ws_required" and len(s.calls) == 4
+    assert exc.value.code == "channel_ws_required" and len(s.calls) == 6
     chat, client = s.observe()
     for message in ('<qqbot-cmd-input text="a">', '<qqbot-cmd-input text="a" text="b" />'):
         with pytest.raises(V2Error):
             await client.qq.send("group", "group-one", message, markdown=True)
-    assert len(s.calls) == 4
+    assert len(s.calls) == 6
 
 
 async def test_panel_unknown_missing_resource_stays_unknown_across_service_restart(panel_env):

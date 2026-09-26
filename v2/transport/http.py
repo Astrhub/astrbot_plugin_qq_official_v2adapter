@@ -233,7 +233,7 @@ class HTTPTransport:
                                     retry_after=exc.retry_after, phase="rejected", http_status=exc.http_status) from None
                             continue
                         phase = "result_unknown" if status >= 500 or status == 408 or 200 <= status < 300 else "rejected"
-                        data = decode_response(status, body, safe, phase=phase)
+                        data = decode_response(status, body, safe, phase=phase, path=spec.path)
                         self.last_outcome = "response_received"
                         return HTTPResult(data, status, safe.get("x-tps-trace-id"))
                     except V2Error as exc:

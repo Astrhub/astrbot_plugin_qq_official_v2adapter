@@ -35,7 +35,7 @@ def test_terminal_history_does_not_fill_pending_budget(ledger, config, outcome):
         clock[0] += 61
     assert store.db.execute("SELECT count(*) FROM operations WHERE state IN ('sent','rejected','not_sent')").fetchone()[0] == 2
     assert store.operation(chat.route.robot, "op-11")["state"] == outcome
-    assert store.db.execute("SELECT count(*) FROM charges WHERE bucket='active_day'").fetchone()[0] == (12 if outcome == "sent" else 0)
+    assert store.db.execute("SELECT count(*) FROM charges").fetchone()[0] == 0
     with pytest.raises(V2Error) as exc:
         store.operation(chat.route.robot, "op-0")
     assert exc.value.code == ("operation_history_evicted" if outcome == "sent" else "operation_not_found")
@@ -76,7 +76,7 @@ async def test_compacted_success_cannot_replay_or_change_binding(sending):
     assert tuple(s.store.db.execute("SELECT seq,used FROM sources").fetchone()) == (2, 2)
 
 
-def test_history_compaction_preserves_live_quota_and_robot_isolation(ledger, config):
+def test_history_compaction_keeps_replay_fences_without_local_quota(ledger, config):
     store, clock = ledger
     chat = observed(config)
     other = observed({**config, "appid": "second-app"})
@@ -85,10 +85,13 @@ def test_history_compaction_preserves_live_quota_and_robot_isolation(ledger, con
     for index in range(20):
         finish_send(store, chat, f"op-{index}")
         clock[0] += 2
-    assert store.db.execute("SELECT count(*) FROM charges WHERE bucket='active_target'").fetchone()[0] == 20
-    with pytest.raises(V2Error) as exc:
-        store.reserve(chat.route, None, "digest", "over-quota")
-    assert exc.value.code == "local_rate_limited"
+    assert store.db.execute("SELECT count(*) FROM charges").fetchone()[0] == 0
+    robot = robot_key(chat.route.robot)
+    with store.transaction():
+        store.db.executemany("INSERT INTO charges VALUES(?,?,?,?,?)",
+            ((robot, f"op-{index}", "active_target", "group:group-one", clock[0] + 60) for index in range(20)))
+    assert store.db.execute("SELECT count(*) FROM charges").fetchone()[0] == 20
+    finish_send(store, chat, "over-quota")
     finish_send(store, other, "op-0")
     assert store.operation(other.route.robot, "op-0")["state"] == "sent"
     with pytest.raises(V2Error) as exc:
