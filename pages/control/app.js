@@ -375,7 +375,7 @@ function showConnection(value) {
   $("connect-shard-index").value = String(value.fields.shard[0]); $("connect-shard-count").value = String(value.fields.shard[1]);
   $("connect-enable").checked = value.fields.enable; shardControls();
   const group = value.runtime?.gateway_group;
-  $("shard-status").textContent = group ? `QQ 建议 ${group.recommended ?? "未知"} / 已计划 ${group.planned} / 已连接 ${group.connected} · ${group.state}\n${group.shards.map(s => `[${s.index},${s.count}] ${s.state}${s.failure ? " / " + s.failure.code : ""}`).join("\n")}` : "分片尚未运行；保存和读取均不连接 QQ。";
+  $("shard-status").textContent = group ? `QQ 建议 ${group.recommended ?? "未知"} / 已计划 ${group.planned} / 已连接 ${group.connected} · ${group.state}\n${group.shards.map(s => `[${s.index},${s.count}] ${s.state}${s.failure ? " / " + s.failure.code : ""}${s.recovery === "reload_required" ? " · 请重载实例后重试" : ""}`).join("\n")}` : "分片尚未运行；保存和读取均不连接 QQ。";
   $("connect-secret").value = ""; $("connect-secret-action").value = "keep";
   $("connect-confirm-secret").checked = false; $("connect-confirm-identity").checked = false;
   const network = value.fields.onebot;

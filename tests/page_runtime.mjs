@@ -204,6 +204,11 @@ connection.runtime.gateway_group = {mode: 'auto', recommended: 3, planned: 3, co
 await nodes.get('connect-read').onclick();
 assert(nodes.get('shard-status').textContent.includes('QQ 建议 3 / 已计划 3 / 已连接 2 · degraded'));
 assert(nodes.get('shard-status').textContent.includes('[1,3] backoff / gateway_closed'));
+connection.runtime.gateway_group.connected = 1;
+connection.runtime.gateway_group.shards.push({index: 2, count: 3, state: 'failed', failure: {code: 'reconnect_exhausted'}, recovery: 'reload_required'});
+await nodes.get('connect-read').onclick();
+assert(nodes.get('shard-status').textContent.includes('QQ 建议 3 / 已计划 3 / 已连接 1 · degraded'));
+assert(nodes.get('shard-status').textContent.includes('[2,3] failed / reconnect_exhausted · 请重载实例后重试'));
 const beforeCleanReload = calls.length; await nodes.get('connect-reload').onclick();
 assert.equal(calls.at(-1)[1], 'connection/reload'); assert.equal(calls.length, beforeCleanReload + 1);
 console.log('PAGE: bridge-ready, real endpoint wiring, save/preview split, partial patches, safe text and parameter assistant passed');

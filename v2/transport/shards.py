@@ -105,6 +105,7 @@ class GatewayGroup:
         self.http, self.ingress, self.budget, self.guard = http, ingress, budget, guard
         self.gateways = []
         self.tasks = set()
+        self.terminal_failures = {}
         self.session = None
         self.recommended = None
         self.planned = 0
@@ -130,24 +131,30 @@ class GatewayGroup:
             return self._state
         if self.online:
             return "online"
-        if any(g.online or g.state == "backoff" for g in self.gateways):
+        if self.terminal_failures or any(g.online or g.state == "backoff" for g in self.gateways):
             return "degraded"
         return self._state
 
     @property
     def last_failure(self):
+        if self.terminal_failures:
+            return next(reversed(self.terminal_failures.values()))
         return next((g.last_failure for g in self.gateways if g.last_failure), None)
 
     @property
     def last_error(self):
-        return next((g.last_error for g in self.gateways if g.last_error), None)
+        failure = self.last_failure
+        return failure["code"] if failure else None
 
     def status(self):
         return {"mode": self.http.identity.shard_mode, "recommended": self.recommended,
                 "planned": self.planned, "connected": sum(g.online for g in self.gateways), "state": self.state,
                 "available": self.available,
-                "shards": [{"index": g.shard[0], "count": g.shard[1], "state": g.state,
-                            "online": g.online, "failure": g.last_failure} for g in self.gateways]}
+                "shards": [{"index": g.shard[0], "count": g.shard[1],
+                            "state": "failed" if g.shard[0] in self.terminal_failures else g.state,
+                            "online": g.online, "failure": self.terminal_failures.get(g.shard[0], g.last_failure),
+                            "recovery": "reload_required" if g.shard[0] in self.terminal_failures else None}
+                           for g in self.gateways]}
 
     async def run(self):
         from .websocket import Gateway
@@ -166,10 +173,24 @@ class GatewayGroup:
             self.session = self._make_session()
             self.gateways = [Gateway(self.http, ShardIngress(self.ingress), guard=self.guard,
                 budget=self.budget, shard=shard, ws_session=self.session) for shard in shards]
-            self.tasks = {asyncio.create_task(g.run(), name=f"qq-v2-shard-{g.shard[0]}") for g in self.gateways}
-            done, _ = await asyncio.wait(self.tasks, return_when=asyncio.FIRST_COMPLETED)
-            for task in done:
-                await task
+            by_task = {asyncio.create_task(g.run(), name=f"qq-v2-shard-{g.shard[0]}"): g for g in self.gateways}
+            self.tasks = set(by_task)
+            pending = set(self.tasks)
+            while pending:
+                done, pending = await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED)
+                for task in done:
+                    try:
+                        await task
+                    except V2Error as exc:
+                        if exc.code != "reconnect_exhausted":
+                            raise
+                        gateway = by_task[task]
+                        # Exhaustion is terminal for this shard; only an explicit reload retries it.
+                        self.terminal_failures[gateway.shard[0]] = {**exc.as_dict(), "details": {
+                            "attempts": gateway.attempts, "last_transport_failure": gateway.last_failure}}
+                    else:
+                        return
+            raise V2Error("reconnect_exhausted", "All QQ shards exhausted their retry budgets; reload to retry.", status=503)
         except asyncio.CancelledError:
             self._state = "stopped"
             raise
