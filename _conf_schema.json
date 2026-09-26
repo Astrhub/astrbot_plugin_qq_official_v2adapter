@@ -1,5 +1,5 @@
 {
-  "webui_enabled": {"description": "启用 V2 管理页面 API", "type": "bool", "default": true},
-  "remote_menu_sync": {"description": "托管面板总闸（还须在Pages确认应用与范围）", "type": "bool", "default": false},
-  "onebot_network_enabled": {"description": "OneBot HTTP/正向WS总闸（默认关闭；还需实例启用、专用token及重载）", "type": "bool", "default": false}
+  "webui_enabled": {"description": "启用V2管理页面 API", "type": "bool", "default": true},
+  "remote_menu_sync": {"description": "托管面板开关", "type": "bool", "default": false},
+  "onebot_network_enabled": {"description": "OneBot HTTP/正向开关", "type": "bool", "default": false}
 }

@@ -18,7 +18,7 @@ from .messaging.outbound import SendingCore
 from .messaging.store import IdentityView
 from .messaging.streaming import StreamingCore
 from .messaging.typing import TypingCore
-from .models import InstanceKey, SessionRoute
+from .models import InstanceKey
 from .network import OneBotServer
 from .network_config import DEFAULT_NETWORK, network_config
 from .transport.http import HTTPTransport
@@ -249,13 +249,26 @@ class V2Adapter(Platform):
 
     def create_event(self, message):
         from .event import V2MessageEvent
-        route = SessionRoute.decode(message.session_id)
+        source = getattr(message, "v2_source", None)
+        route = source.route if source is not None else self.owner.messages.resolve_session(self.identity.robot, message.type, message.session_id)
         return V2MessageEvent(message, self.meta(), self.client, route)
 
     async def send_by_session(self, session, message_chain):
         if session.platform_id != self.identity.platform_id:
             raise V2Error("identity_mismatch", "Session belongs to another platform.", status=409)
-        await self.client.send(SessionRoute.decode(session.session_id), message_chain)
+        self.client.check()
+        binding = getattr(session, "_qq_v2_route", None)
+        if binding is not None:
+            identity, route, public_id = binding
+            if identity.platform_id != self.identity.platform_id or route.robot != self.identity.robot:
+                raise V2Error("identity_mismatch", "Session belongs to another instance or robot.", status=409)
+            if identity != self.identity:
+                raise V2Error("stale_generation", "The event session belongs to a previous generation.", status=409)
+            if session.session_id != public_id or session.message_type != route.message_type:
+                raise V2Error("invalid_session", "The bound event session was changed.")
+        else:
+            route = self.owner.messages.resolve_session(self.identity.robot, session.message_type, session.session_id)
+        await self.client.send(route, message_chain)
         await super().send_by_session(session, message_chain)
 
     def unified_webhook(self):

@@ -5,9 +5,6 @@ import json
 import secrets
 from dataclasses import dataclass
 
-from astrbot.core.platform.message_session import MessageSession
-from astrbot.core.platform.message_type import MessageType
-
 from ..commands import collect_catalog
 from ..errors import V2Error, unsupported
 from ..messaging.store import robot_key
@@ -22,8 +19,8 @@ class TicketStore:
         self.store.db.commit()
 
     def config(self, route):
-        message_type = MessageType.GROUP_MESSAGE if route.scene == "group" else MessageType.FRIEND_MESSAGE
-        return self.adapter.owner.context.get_config(str(MessageSession(self.adapter.identity.platform_id, message_type, route.encode())))
+        sender = self.store.target(route)["sender"] if route.scene == "dm" else None
+        return self.adapter.owner.context.get_config(str(route.public_session(self.adapter.identity.platform_id, sender=sender)))
 
     def catalog(self, route):
         return self.catalog_provider(route) if self.catalog_provider else collect_catalog(self.config(route), route.scene, context=self.adapter.owner.context)

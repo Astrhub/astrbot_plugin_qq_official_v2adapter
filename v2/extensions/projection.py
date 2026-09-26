@@ -19,7 +19,7 @@ class CommandProjection(V2MessageEvent):
         source = EventReplySource(route, adapter.identity.generation, event.event_id, event.interaction_id, event.sent_at, event.received_at)
         message = AstrBotMessage()
         message.type = MessageType.GROUP_MESSAGE if route.scene == "group" else MessageType.FRIEND_MESSAGE
-        message.session_id, message.self_id, message.message_id = route.encode(), adapter.bot_id, ""
+        message.session_id, message.self_id, message.message_id = route.public_session(adapter.identity.platform_id, sender=event.actor).session_id, adapter.bot_id, ""
         message.sender = MessageMember(event.actor, None)
         message.group_id = route.target if route.scene == "group" else ""
         message.message, message.message_str = [Plain(ticket["command"])], ticket["command"]

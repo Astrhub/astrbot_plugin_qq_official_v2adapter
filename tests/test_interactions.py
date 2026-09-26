@@ -16,6 +16,33 @@ def interaction(config, *, kind=11, actor="user-one", target="group-one", token=
         "data": {"type": kind, "resolved": {"button_data": token, "message_id": "real-operated-message"}}}}
 
 
+def authorization_notice():
+    return {"op": 0, "s": 4, "t": "INTERACTION_CREATE", "id": "INTERACTION_CREATE:notice", "d": {
+        "data": {"resolved": {}, "type": 2001}, "group_openid": "group-one",
+        "id": "authorization-notice", "scene": "group", "timestamp": "2027-01-15T08:00:00+00:00",
+        "type": 20, "version": 1}}
+
+
+def test_authorization_notice_accepts_its_data_subtype_without_a_chat_actor(config):
+    payload = authorization_notice()
+    event = ExtensionEvent.parse(InstanceKey.from_config(config), payload, NOW)
+    assert event.interaction_type == 20 and event.payload["d"]["data"]["type"] == 2001
+    assert event.scene == "group" and event.target == "group-one"
+    assert event.actor is None and event.message_id is None and event.payload == payload
+    with pytest.raises(V2Error) as exc:
+        event.route(InstanceKey.from_config(config))
+    assert exc.value.code == "interaction_projection_unsupported"
+
+
+@pytest.mark.parametrize("kind", [11, 12])
+def test_executable_callback_rejects_a_conflicting_data_type(config, kind):
+    payload = interaction(config, kind=kind)
+    payload["d"]["data"]["type"] = 2001
+    with pytest.raises(V2Error) as exc:
+        ExtensionEvent.parse(InstanceKey.from_config(config), payload, NOW)
+    assert exc.value.code == "invalid_extension_event"
+
+
 def test_interaction_ids_and_typed_source_are_not_chat_ids(config):
     identity = InstanceKey.from_config(config)
     event = ExtensionEvent.parse(identity, interaction(config), NOW)

@@ -4,7 +4,7 @@ import copy
 
 from astrbot.core.platform.astr_message_event import AstrMessageEvent
 
-from .errors import unsupported
+from .errors import V2Error, unsupported
 
 
 class V2MessageEvent(AstrMessageEvent):
@@ -14,7 +14,13 @@ class V2MessageEvent(AstrMessageEvent):
         self.qq = self.bot.qq
         self.route = route
         self.raw_data = copy.deepcopy(message.raw_message)
-        super().__init__(message.message_str, message, meta, route.encode())
+        if message.type != route.message_type:
+            raise V2Error("invalid_session", "Message type does not match its QQ route.")
+        session = route.public_session(meta.id, sender=message.sender.user_id)
+        message.session_id = session.session_id
+        super().__init__(message.message_str, message, meta, session.session_id)
+        # A public ID alone may match several QQ scenes; this binding stays event-local.
+        self.session._qq_v2_route = (client.identity, route, session.session_id)
         self.is_at_or_wake_command = self.raw_data.get("t") in {"GROUP_AT_MESSAGE_CREATE", "AT_MESSAGE_CREATE"} and not self.raw_data.get("derived_from_interaction")
 
     def cleanup_temporary_local_files(self):

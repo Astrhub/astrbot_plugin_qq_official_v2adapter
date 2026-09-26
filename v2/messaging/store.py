@@ -6,8 +6,10 @@ import time
 from contextlib import contextmanager
 from pathlib import Path
 
+from astrbot.core.platform.message_type import MessageType
+
 from ..errors import V2Error
-from ..models import text_id
+from ..models import SessionRoute, text_id
 
 
 def robot_key(robot):
@@ -256,6 +258,43 @@ class MessageStore:
         if row is None:
             failure("identity_not_observed", "Active sends require a real, unexpired target observation.", 404)
         return dict(row)
+
+    def resolve_session(self, robot, message_type, session_id):
+        if message_type not in {MessageType.GROUP_MESSAGE, MessageType.FRIEND_MESSAGE}:
+            failure("invalid_session", "Unsupported host message type.")
+        if not isinstance(session_id, str) or not session_id or len(session_id) > 4096:
+            failure("invalid_session", "Invalid public session identifier.")
+        if session_id.startswith("v2."):
+            route = SessionRoute.decode(session_id)
+            if route.robot != robot:
+                failure("identity_mismatch", "Session belongs to another robot or environment.")
+            if route.message_type != message_type:
+                failure("invalid_session", "Message type does not match the encoded QQ route.")
+            return route
+        key, cutoff = robot_key(robot), self.now() - 86400
+        if message_type == MessageType.GROUP_MESSAGE:
+            # Match whole observed IDs, including isolated members; never split or guess an ID kind.
+            rows = self.db.execute("""
+                SELECT scene,target,NULL AS actor FROM targets
+                    WHERE robot=? AND last>? AND scene IN ('group','channel') AND target=?
+                UNION SELECT scene,target,sender FROM targets
+                    WHERE robot=? AND last>? AND scene IN ('group','channel') AND sender || '_' || target=?
+                UNION SELECT t.scene,t.target,i.subject FROM targets t JOIN identities i
+                    ON i.robot=t.robot AND i.scope=t.scene || ':' || t.target
+                    AND i.kind=CASE t.scene WHEN 'group' THEN 'member_openid' ELSE 'channel_user_id' END
+                    WHERE t.robot=? AND t.last>? AND i.last>? AND t.scene IN ('group','channel')
+                    AND i.subject || '_' || t.target=?
+                """, (key, cutoff, session_id, key, cutoff, session_id, key, cutoff, cutoff, session_id)).fetchall()
+        else:
+            rows = self.db.execute("""SELECT scene,target,NULL AS actor FROM targets
+                WHERE robot=? AND last>? AND ((scene='c2c' AND target=?) OR (scene='dm' AND sender=?))
+                """, (key, cutoff, session_id, session_id)).fetchall()
+        routes = {SessionRoute(robot, row["scene"], row["target"], row["actor"]) for row in rows}
+        if not routes:
+            failure("identity_not_observed", "No current chat observation matches this session.", 404)
+        if len(routes) != 1:
+            failure("ambiguous_session", "Multiple QQ routes match; use a bound event session or an explicit legacy route.")
+        return routes.pop()
 
     def reference(self, route, message_id):
         row = self.db.execute("SELECT ref_idx FROM refs WHERE robot=? AND scene=? AND target=? AND message_id=? AND expires>?",

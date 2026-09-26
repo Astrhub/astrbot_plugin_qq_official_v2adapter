@@ -95,7 +95,7 @@ def parse_message(message, *, onebot=False, auto_escape=False, markdown=None):
                 if not isinstance(data, dict) or "file" not in data or data.keys() - {"file", "name", "allow_file_fallback"}:
                     invalid("Unsupported media segment fields.")
                 atoms.append(("media", MediaInput("file" if kind == "_qq_file" else kind, data["file"], data.get("name", "upload"),
-                    allow_file_fallback=data.get("allow_file_fallback", False)).validate()))
+                    allow_file_fallback=data.get("allow_file_fallback", True)).validate()))
                 continue
             name = {"text": "text", "at": "qq", "reply": "id", "markdown": "content"}.get(kind)
             if name is None:
@@ -316,7 +316,7 @@ class SendingCore:
                 def before_send():
                     nonlocal attempted, wire_started
                     check_source()
-                    if upload and upload["expires_at"] <= self.store.now():
+                    if upload and upload["expires_at"] is not None and upload["expires_at"] <= self.store.now():
                         raise V2Error("upload_ticket_expired", "The upload receipt expired before the message request.", status=409)
                     if keyboard is not None:
                         keyboard.validate(route)
@@ -343,6 +343,8 @@ class SendingCore:
                 if isinstance(ext, dict) and isinstance(ext.get("ref_idx"), str) and ext["ref_idx"]:
                     result["ref_idx"] = text_id(ext["ref_idx"])
                 self.store.finish(robot, op_id, "sent", result=result)
+                if upload and "raw_url" in upload:
+                    return {**result, "media": {**result["media"], "raw_url": upload["raw_url"]}}
                 return result
             except asyncio.CancelledError as exc:
                 phase = "not_sent" if prepared and not attempted else getattr(exc, "phase", "result_unknown" if attempted else "not_sent")

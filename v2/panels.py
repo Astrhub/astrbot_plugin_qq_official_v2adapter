@@ -10,9 +10,6 @@ from email.utils import parsedate_to_datetime
 from urllib.parse import quote
 from uuid import uuid4
 
-from astrbot.core.platform.message_session import MessageSession
-from astrbot.core.platform.message_type import MessageType
-
 from .commands import collect_catalog, panel_preview, validate_panel_payload
 from .errors import V2Error
 from .messaging.store import robot_key
@@ -135,10 +132,9 @@ class PanelService:
         context = self.owner.context
         if target_type == "specific" and scene in {"group", "c2c"}:
             configs = []
-            message_type = MessageType.GROUP_MESSAGE if scene == "group" else MessageType.FRIEND_MESSAGE
             for target in targets:
                 route = SessionRoute(instance.identity.robot, scene, target)
-                umo = str(MessageSession(instance.identity.platform_id, message_type, route.encode()))
+                umo = str(route.public_session(instance.identity.platform_id))
                 configs.append(context.get_config(umo))
         else:
             manager = getattr(context, "astrbot_config_mgr", None)
