@@ -31,16 +31,24 @@
       <canvas id="bind-qr" hidden></canvas>
       <div class="toolbar">
         <label>AppID <input id="connect-appid" maxlength="128" autocomplete="off"></label>
-        <label>环境 <select id="connect-environment"><option value="production">生产</option><option value="sandbox">沙箱（暂不支持联网）</option></select></label>
-        <label>传输 <select id="connect-transport"><option value="websocket">WebSocket</option><option value="webhook">统一 Webhook</option></select></label>
-        <label>intents <input id="connect-intents" type="number" min="0" max="4294967295"></label>
-        <label>分片 [index,count] <input id="connect-shard" maxlength="20"></label>
+        <label><input id="connect-sandbox" type="checkbox">沙箱模式（当前不可联网）</label>
+        <label>适配器 <select id="connect-type"><option value="qq_official_v2">WebSocket</option><option value="qq_official_v2_webhook">Webhook</option></select></label>
         <label><input id="connect-enable" type="checkbox">启用平台（重载后连接）</label>
       </div>
       <label>凭据操作 <select id="connect-secret-action"><option value="keep">保留现有凭据</option><option value="replace">替换凭据</option><option value="clear">清空凭据（先禁用）</option></select></label>
       <label>新 AppSecret <input id="connect-secret" type="password" maxlength="512" autocomplete="new-password" placeholder="未编辑时留空；服务端不返回原凭据"></label>
       <label><input id="connect-confirm-secret" type="checkbox">明确同意替换 / 清空凭据</label>
       <label><input id="connect-confirm-identity" type="checkbox">明确同意改绑 AppID / 环境</label>
+      <fieldset><legend>QQ 高级连接设置（保存后重载生效）</legend>
+        <label>事件意图 <input id="connect-intents" type="number" min="0" max="4294967295"></label>
+        <p>uint32 位掩码；保留现有值，不代表 QQ 已授予订阅权限。</p>
+        <div id="ws-settings">
+          <label>WS 分片 <select id="connect-shard-mode"><option value="auto">自动（默认）</option><option value="manual">手动</option></select></label>
+          <div id="manual-shard"><label>片号 <input id="connect-shard-index" type="number" min="0" max="1023"></label><label>总片数 <input id="connect-shard-count" type="number" min="1" max="1024"></label></div>
+          <p>自动按 QQ 建议启动完整组，最多 32 片；手动仅运行指定片，需自行覆盖完整组。</p>
+          <pre id="shard-status"></pre>
+        </div>
+      </fieldset>
       <fieldset><legend>OneBot HTTP / 正向 WS（默认关闭）</legend>
         <button id="network-gate">切换网络总闸</button><span id="network-gate-state"></span>
         <label><input id="network-enable" type="checkbox">为此实例启用监听（保存后重载生效）</label>

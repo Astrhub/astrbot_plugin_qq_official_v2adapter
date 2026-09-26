@@ -348,10 +348,19 @@ function scheduleScan() {
     scheduleScan();
   }, delay);
 }
+function shardControls() {
+  const ws = $("connect-type").value === "qq_official_v2";
+  $("ws-settings").hidden = !ws;
+  $("manual-shard").hidden = !ws || $("connect-shard-mode").value !== "manual";
+}
+$("connect-type").onchange = shardControls;
+$("connect-shard-mode").onchange = shardControls;
 function connectionFields() {
-  return {appid: $("connect-appid").value.trim(), environment: $("connect-environment").value,
-    transport: $("connect-transport").value, intents: Number($("connect-intents").value),
-    shard: JSON.parse($("connect-shard").value), enable: $("connect-enable").checked,
+  const manual = $("connect-type").value === "qq_official_v2" && $("connect-shard-mode").value === "manual";
+  return {appid: $("connect-appid").value.trim(), is_sandbox: $("connect-sandbox").checked,
+    type: $("connect-type").value, intents: Number($("connect-intents").value),
+    shard_mode: $("connect-shard-mode").value,
+    shard: manual ? [Number($("connect-shard-index").value), Number($("connect-shard-count").value)] : [0, 1], enable: $("connect-enable").checked,
     onebot: {enable: $("network-enable").checked, host: $("network-host").value.trim(), port: Number($("network-port").value), writes: $("network-writes").checked}};
 }
 function connectionPayload(extra = {}) {
@@ -361,8 +370,12 @@ function connectionPayload(extra = {}) {
 function showConnection(value) {
   connectionView = value;
   $("connect-id").value = value.platform_id;
-  for (const key of ["appid", "environment", "transport", "intents"]) $("connect-" + key).value = value.fields[key];
-  $("connect-shard").value = JSON.stringify(value.fields.shard); $("connect-enable").checked = value.fields.enable;
+  for (const key of ["appid", "type", "intents", "shard-mode"]) $("connect-" + key).value = String(value.fields[key.replace("-", "_")]);
+  $("connect-sandbox").checked = value.fields.is_sandbox;
+  $("connect-shard-index").value = String(value.fields.shard[0]); $("connect-shard-count").value = String(value.fields.shard[1]);
+  $("connect-enable").checked = value.fields.enable; shardControls();
+  const group = value.runtime?.gateway_group;
+  $("shard-status").textContent = group ? `QQ 建议 ${group.recommended ?? "未知"} / 已计划 ${group.planned} / 已连接 ${group.connected} · ${group.state}\n${group.shards.map(s => `[${s.index},${s.count}] ${s.state}${s.failure ? " / " + s.failure.code : ""}${s.recovery === "reload_required" ? " · 请重载实例后重试" : ""}`).join("\n")}` : "分片尚未运行；保存和读取均不连接 QQ。";
   $("connect-secret").value = ""; $("connect-secret-action").value = "keep";
   $("connect-confirm-secret").checked = false; $("connect-confirm-identity").checked = false;
   const network = value.fields.onebot;

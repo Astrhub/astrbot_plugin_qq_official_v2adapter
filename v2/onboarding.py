@@ -116,7 +116,8 @@ class Onboarding:
             if confirm is not True:
                 raise V2Error("confirmation_required", "Confirm creating a QQ binding task.")
             current = self.owner.connections.checked(platform_id, fingerprint)
-            openapi_base((current or {}).get("environment", "production"))
+            from .connection_config import normalize_connection
+            openapi_base(normalize_connection(current or {})["environment"])
             for key, item in list(self.bindings.items()):
                 if item.state in ACTIVE and self.clock() >= min(item.deadline, item.lease):
                     item.state = "expired"

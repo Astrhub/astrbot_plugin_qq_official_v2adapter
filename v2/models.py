@@ -8,6 +8,7 @@ from uuid import uuid4
 from astrbot.core.platform.message_session import MessageSession
 from astrbot.core.platform.message_type import MessageType
 
+from .connection_config import normalize_connection
 from .errors import V2Error
 
 SCENES = ("c2c", "group", "channel", "dm")
@@ -38,24 +39,16 @@ class InstanceKey:
     shard: tuple[int, int] = (0, 1)
     intents: int = 0
     generation: str = field(default_factory=lambda: uuid4().hex)
+    shard_mode: str = "manual"
 
     @classmethod
     def from_config(cls, config):
         platform_id = text_id(config.get("id"))
         if any(c in platform_id for c in ":!"):
             raise V2Error("invalid_id", "Platform ID cannot contain ':' or '!'.")
-        transport = config.get("transport", "websocket")
-        shard = config.get("shard", [0, 1])
-        intents = config.get("intents", 0)
-        if transport not in ("websocket", "webhook"):
-            raise V2Error("invalid_transport", "Unknown transport.")
-        if (not isinstance(shard, (list, tuple)) or len(shard) != 2
-                or any(type(n) is not int for n in shard) or not 0 <= shard[0] < shard[1] <= 1024):
-            raise V2Error("invalid_shard", "Expected [index, count].")
-        if type(intents) is not int or not 0 <= intents < 2**32:
-            raise V2Error("invalid_intents", "Expected a uint32 intents mask.")
-        return cls(platform_id, RobotKey(config.get("appid"), config.get("environment", "production")),
-                   transport, tuple(shard), intents)
+        value = normalize_connection(config)
+        return cls(platform_id, RobotKey(value.get("appid"), value["environment"]),
+                   value["transport"], tuple(value["shard"]), value["intents"], shard_mode=value["shard_mode"])
 
     @property
     def settings_key(self):

@@ -137,7 +137,7 @@ class ChatConsumer:
         while not self.closed:
             try:
                 self.adapter.check_generation()
-                if self.adapter.runtime_status()["online"] or self.adapter.state == "webhook_ready":
+                if self.adapter.runtime_status()["message_ready"]:
                     if self.step():
                         await self.sleep(0)
                         continue

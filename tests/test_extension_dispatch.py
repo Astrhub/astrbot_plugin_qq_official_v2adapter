@@ -48,7 +48,7 @@ async def dispatch(receiver, config, monkeypatch):
     async with upstream(handler) as base:
         instance.http._factory = lambda: MappedSession(base)
         instance.ack_http._factory = lambda: MappedSession(base)
-        instance.state = "webhook_ready"
+        monkeypatch.setattr(instance.sender, "is_online", lambda: True)
         try:
             yield SimpleNamespace(owner=owner, instance=instance, service=instance.extensions, config=config,
                                   calls=calls, modes=modes, entered=entered, release=release)

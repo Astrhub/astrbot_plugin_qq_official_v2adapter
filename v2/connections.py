@@ -7,14 +7,21 @@ import secrets
 import uuid
 from pathlib import Path
 
-from . import PLATFORM_TYPE
+from . import PLATFORM_TYPE, PLATFORM_TYPES, WEBHOOK_TYPE
+from .connection_config import (
+    DEFAULT_INTENTS,
+    normalize_connection,
+    receiver_conflict,
+    saved_connection,
+)
 from .errors import V2Error
 from .models import InstanceKey, text_id
 from .network_config import DEFAULT_NETWORK, NETWORK_FIELDS, network_config
 
-EDITABLE = {"appid", "environment", "transport", "intents", "shard", "enable"}
+EDITABLE = {"appid", "is_sandbox", "type", "intents", "shard_mode", "shard", "enable"}
+LEGACY_FIELDS = {"environment", "transport"}
 DEFAULT_CONNECTION = {"type": PLATFORM_TYPE, "enable": False, "appid": "", "secret": "",
-                       "environment": "production", "transport": "websocket", "intents": 1174409216, "shard": [0, 1]}
+                      "is_sandbox": False, "intents": DEFAULT_INTENTS, "shard_mode": "auto"}
 EDITABLE |= {"onebot"}
 DEFAULT_CONNECTION["onebot"] = dict(DEFAULT_NETWORK)
 
@@ -34,7 +41,7 @@ class Connections:
         if any(c in platform_id for c in ":!"):
             raise V2Error("invalid_id", "Platform ID cannot contain ':' or '!'.")
         rows = [p for p in self._config().get("platform", []) if p.get("id") == platform_id]
-        if len(rows) > 1 or rows and rows[0].get("type") != PLATFORM_TYPE:
+        if len(rows) > 1 or rows and rows[0].get("type") not in PLATFORM_TYPES:
             raise V2Error("instance_not_owned", "Target is not a unique V2 configuration.", status=404)
         return copy.deepcopy(rows[0]) if rows else None
 
@@ -45,7 +52,7 @@ class Connections:
         config = self.current(platform_id)
         existing_ids = {p.get("id") for p in self._config().get("platform", [])}
         self.reload_results = {k: v for k, v in self.reload_results.items() if k in existing_ids}
-        value = {**DEFAULT_CONNECTION, "id": platform_id, **(config or {})}
+        value = normalize_connection(config if config is not None else {**DEFAULT_CONNECTION, "id": platform_id})
         network = network_config(value.get("onebot"))
         instance = next((i for i in self.owner.instances if i.identity.platform_id == platform_id), None)
         runtime = instance.runtime_status() if instance else {"state": "configured" if config else "not_configured", "online": False}
@@ -100,7 +107,7 @@ class Connections:
             raise V2Error("invalid_config", "enable must be boolean.")
         # Disabled, unbound entries are useful onboarding targets; they must not be started.
         check = {**candidate, "appid": candidate.get("appid") or "unbound-config-validation"}
-        InstanceKey.from_config(check)
+        identity = InstanceKey.from_config(check)
         appid, secret = candidate.get("appid"), candidate.get("secret")
         if not isinstance(appid, str) or len(appid) > 128 or not isinstance(secret, str) or len(secret) > 512 or any(ord(c) < 33 for c in secret):
             raise V2Error("invalid_credentials", "Credentials have an invalid shape.")
@@ -111,7 +118,7 @@ class Connections:
             raise V2Error("invalid_network_token", "OneBot must not reuse the QQ secret.")
         if candidate["enable"] and (not appid or not secret):
             raise V2Error("missing_credentials", "An enabled platform requires AppID and secret.")
-        if candidate["transport"] == "webhook":
+        if identity.transport == "webhook":
             if list(candidate.get("shard", [0, 1])) != [0, 1]:
                 raise V2Error("invalid_shard", "Webhook does not support WS sharding.")
             candidate["webhook_uuid"] = (old or {}).get("webhook_uuid") or uuid.uuid4().hex
@@ -119,22 +126,17 @@ class Connections:
                 uuid.UUID(candidate["webhook_uuid"])
             except (ValueError, AttributeError):
                 raise V2Error("invalid_webhook_uuid", "Restore a valid webhook UUID in the host configuration.") from None
-            candidate["unified_webhook_mode"] = True
-        else:
-            candidate["unified_webhook_mode"] = False
         for other in self._config().get("platform", []):
             if other.get("id") == candidate["id"]:
                 continue
             if candidate.get("webhook_uuid") and candidate.get("webhook_uuid") == other.get("webhook_uuid"):
                 raise V2Error("webhook_uuid_conflict", "Webhook UUID already belongs to another platform.", status=409)
-            if other.get("type") == PLATFORM_TYPE and candidate["enable"] and other.get("enable"):
+            if other.get("type") in PLATFORM_TYPES and candidate["enable"] and other.get("enable"):
                 try:
                     other_identity = InstanceKey.from_config(other)
                 except V2Error:
                     continue  # An invalid unrelated configuration cannot own an active receiver.
-                identity = InstanceKey.from_config(candidate)
-                if other_identity.robot == identity.robot and (other_identity.shard == identity.shard or
-                        other_identity.shard[1] != identity.shard[1] or "webhook" in (identity.transport, other_identity.transport)):
+                if receiver_conflict(other_identity, identity):
                     raise V2Error("duplicate_receiver", "Another enabled V2 configuration conflicts with this robot's receiving mode or shard.", status=409)
 
     async def save(self, platform_id, fingerprint, patch, *, secret_action="keep", secret=None, confirm=False,
@@ -145,13 +147,26 @@ class Connections:
                 raise V2Error("service_stopped", "Plugin is stopped.", status=503)
             guard()
             old = self.checked(platform_id, fingerprint)
-            if old is None and sum(p.get("type") == PLATFORM_TYPE for p in self._config().get("platform", [])) >= 256:
+            if old is None and sum(p.get("type") in PLATFORM_TYPES for p in self._config().get("platform", [])) >= 256:
                 raise V2Error("instance_capacity", "At most 256 V2 configurations can be managed.", status=409)
             if confirm is not True:
                 raise V2Error("confirmation_required", "Confirm saving connection settings; this does not reload.")
-            if not isinstance(patch, dict) or patch.keys() - EDITABLE:
+            if not isinstance(patch, dict) or patch.keys() - EDITABLE - LEGACY_FIELDS:
                 raise V2Error("invalid_config", "Only documented connection fields may be edited.")
-            candidate = {**copy.deepcopy(DEFAULT_CONNECTION), **copy.deepcopy(old or {}), "id": platform_id, **copy.deepcopy(patch)}
+            candidate = normalize_connection(old if old is not None else DEFAULT_CONNECTION)
+            if "is_sandbox" in patch and "environment" not in patch:
+                candidate.pop("environment", None)
+            if "environment" in patch and "is_sandbox" not in patch:
+                candidate.pop("is_sandbox", None)
+            if "type" in patch and "transport" not in patch:
+                candidate.pop("transport", None)
+            if "transport" in patch and "type" not in patch:
+                candidate["type"] = WEBHOOK_TYPE if patch["transport"] == "webhook" else PLATFORM_TYPE
+            if "shard" in patch and "shard_mode" not in patch and (old is None or "shard_mode" not in old):
+                candidate["shard_mode"] = "manual"
+            candidate.update(copy.deepcopy(patch))
+            candidate["id"] = platform_id
+            candidate = saved_connection(candidate)
             previous_network = network_config((old or {}).get("onebot"))
             network_patch = patch.get("onebot", {})
             if not isinstance(network_patch, dict) or network_patch.keys() - NETWORK_FIELDS:
@@ -170,7 +185,7 @@ class Connections:
                 candidate["onebot"]["token"] = network_token if network_token_action == "replace" else ""
             if candidate["onebot"]["writes"] is True and previous_network["writes"] is not True and confirm_network_writes is not True:
                 raise V2Error("network_write_confirmation_required", "Confirm granting this dedicated token network write access.")
-            if old and old.get("appid") and any(candidate.get(k) != old.get(k, DEFAULT_CONNECTION[k]) for k in ("appid", "environment")) and confirm_identity is not True:
+            if old and old.get("appid") and any(normalize_connection(candidate).get(k) != normalize_connection(old).get(k) for k in ("appid", "environment")) and confirm_identity is not True:
                 raise V2Error("identity_confirmation_required", "Confirm rebinding the robot identity.")
             if secret_action not in {"keep", "replace", "clear"}:
                 raise V2Error("invalid_config", "Unknown credential edit action.")
@@ -217,7 +232,7 @@ class Connections:
                 raise V2Error("reload_in_progress", "This instance is already reloading.", status=409)
             if len(self.reload_tasks) >= 8:
                 raise V2Error("reload_capacity", "Too many platform reloads are in progress.", status=429)
-            self._validate(config, {**DEFAULT_CONNECTION, **copy.deepcopy(config)})
+            self._validate(config, copy.deepcopy(config))
             self.reload_tasks[platform_id] = asyncio.current_task()
         try:
             async with asyncio.timeout(10):
@@ -239,29 +254,47 @@ class Connections:
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
 
-    def prepare_webhooks(self):
+    def ensure_webhook(self, platform_config):
+        if platform_config.get("webhook_uuid"):
+            return
         config = self._config()
-        before = copy.deepcopy(config.get("platform", []))
-        updated = copy.deepcopy(before)
-        changed = False
-        seen = {}
-        for p in updated:
-            if p.get("type") == PLATFORM_TYPE and p.get("transport") == "webhook":
+        matches = [p for p in config.get("platform", []) if p.get("id") == platform_config["id"]]
+        if len(matches) != 1 or matches[0].get("type") not in PLATFORM_TYPES:
+            raise V2Error("instance_not_owned", "Persist the Webhook platform before loading.", status=409)
+        previous = copy.deepcopy(matches[0])
+        matches[0]["webhook_uuid"] = uuid.uuid4().hex
+        try:
+            config.save_config()
+        except Exception:
+            matches[0].clear()
+            matches[0].update(previous)
+            raise V2Error("config_save_failed", "Unable to persist V2 webhook UUID.", status=503) from None
+        platform_config["webhook_uuid"] = matches[0]["webhook_uuid"]
+
+    def prepare_webhooks(self):
+        """Normalize owned records before the host editor merges new template defaults."""
+        config = self._config()
+        before = list(config.get("platform", []))
+        updated, seen = [], {}
+        for original in before:
+            p = saved_connection(original) if original.get("type") in PLATFORM_TYPES else original
+            if p.get("type") == WEBHOOK_TYPE:
                 if not p.get("webhook_uuid"):
                     p["webhook_uuid"] = uuid.uuid4().hex
-                    changed = True
-                if p.get("unified_webhook_mode") is not True:
-                    p["unified_webhook_mode"] = True
-                    changed = True
+                try:
+                    uuid.UUID(p["webhook_uuid"])
+                except (ValueError, AttributeError):
+                    raise V2Error("invalid_webhook_uuid", "Restore a valid webhook UUID before loading V2.") from None
             identifier = p.get("webhook_uuid")
             if identifier:
-                if identifier in seen and (p.get("type") == PLATFORM_TYPE or seen[identifier].get("type") == PLATFORM_TYPE):
+                if identifier in seen and (p.get("type") in PLATFORM_TYPES or seen[identifier].get("type") in PLATFORM_TYPES):
                     raise V2Error("webhook_uuid_conflict", "Resolve duplicate V2 webhook UUIDs before enabling V2.", status=409)
                 seen[identifier] = p
-        if changed:
+            updated.append(original if p == original else p)
+        if updated != before:
             config["platform"][:] = updated
             try:
                 config.save_config()
             except Exception:
                 config["platform"][:] = before
-                raise V2Error("config_save_failed", "Unable to persist V2 webhook UUIDs.", status=503) from None
+                raise V2Error("config_save_failed", "Unable to persist normalized V2 connection settings.", status=503) from None

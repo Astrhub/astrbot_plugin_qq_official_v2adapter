@@ -108,6 +108,7 @@ async def test_layered_multi_instance_state_and_loopback_cleanup(plugin_module, 
     ctx.get_config()["platform"] = copy.deepcopy(configs)
     owner = plugin_module.QQOfficialV2(ctx, {"onebot_network_enabled": True})
     await owner.initialize()
+    configs = ctx.get_config()["platform"]
     baseline = set(asyncio.all_tasks())
     descriptors = len(list(Path("/proc/self/fd").iterdir()))
     threads = threading.active_count()
@@ -153,6 +154,7 @@ async def test_ten_network_generation_reloads_return_to_resource_baseline(plugin
     ctx.get_config()["platform"] = [cfg]
     owner = plugin_module.QQOfficialV2(ctx, {"onebot_network_enabled": True})
     await owner.initialize()
+    cfg = ctx.get_config()["platform"][0]
     baseline = set(asyncio.all_tasks())
     descriptors = len(list(Path("/proc/self/fd").iterdir()))
     generations = set()

@@ -28,7 +28,7 @@ const events = new Map(), timers = new Map(); let failSave = false, timerId = 0,
 const binding = {ticket: 'fixture-ticket', platform_id: 'fixture', state: 'pending', hint: '请用手机 QQ 扫码，并在 QQ 里确认授权。',
   expires_in: 180, lease_seconds: 30, qr_matrix: [[true, false], [false, true]], appid: null, commit_handle: null};
 const connection = {platform_id: 'fixture', fingerprint: 'connection-fingerprint', exists: true,
-  fields: {appid: 'fixture-app', environment: 'production', transport: 'websocket', intents: 33554432, shard: [0, 1], enable: false, onebot: {host: '127.0.0.1', port: 5700, writes: false, enable: false}},
+  fields: {appid: 'fixture-app', is_sandbox: false, type: 'qq_official_v2', intents: 33554432, shard_mode: 'auto', shard: [0, 1], enable: false, onebot: {host: '127.0.0.1', port: 5700, writes: false, enable: false}},
   credentials_configured: true, runtime: {state: 'configured', online: false}, reload: 'not_requested'};
 let retainedRows = [{receipt: 7, version: 'a'.repeat(64), confirmation: 'fixture-confirmation', event_type: '<script>plain text</script>', state: 'extension', reason: 'unsupported', received_at: 1800000000, size: 100}];
 const bridge = {
@@ -179,4 +179,36 @@ deferQr = true; await nodes.get('bind-start').onclick();
 assert.equal(nodes.get('bind-qr').hidden, true); assert.equal(lastDelay, 400);
 await [...timers.values()][0]();
 assert.equal(nodes.get('bind-qr').hidden, false); assert.equal(lastDelay, 5000);
+await nodes.get('bind-cancel').onclick();
+assert.equal(nodes.get('manual-shard').hidden, true);
+assert.equal(nodes.get('ws-settings').hidden, false);
+nodes.get('connect-shard-mode').value = 'manual'; nodes.get('connect-shard-mode').onchange();
+assert.equal(nodes.get('manual-shard').hidden, false);
+nodes.get('connect-shard-index').value = '1'; nodes.get('connect-shard-count').value = '3';
+await nodes.get('connect-save').onclick();
+assert.deepEqual(calls.at(-1)[2].patch, {shard_mode: 'manual', shard: [1, 3]});
+nodes.get('connect-type').value = 'qq_official_v2_webhook'; nodes.get('connect-type').onchange();
+assert.equal(nodes.get('ws-settings').hidden, true);
+nodes.get('connect-sandbox').checked = true; nodes.get('connect-confirm-identity').checked = true;
+await nodes.get('connect-save').onclick();
+assert.deepEqual(calls.at(-1)[2].patch, {type: 'qq_official_v2_webhook', is_sandbox: true, shard: [0, 1]});
+assert.equal(nodes.get('connect-intents').value, '1');
+assert.equal(nodes.get('connect-secret').value, '');
+nodes.get('connect-type').value = 'qq_official_v2'; nodes.get('connect-type').onchange();
+nodes.get('connect-shard-mode').value = 'auto'; nodes.get('connect-shard-mode').onchange();
+assert.equal(nodes.get('manual-shard').hidden, true);
+await nodes.get('connect-save').onclick();
+assert.deepEqual(calls.at(-1)[2].patch, {type: 'qq_official_v2', shard_mode: 'auto'});
+connection.runtime.gateway_group = {mode: 'auto', recommended: 3, planned: 3, connected: 2, state: 'degraded', shards: [
+  {index: 0, count: 3, state: 'online'}, {index: 1, count: 3, state: 'backoff', failure: {code: 'gateway_closed'}}]};
+await nodes.get('connect-read').onclick();
+assert(nodes.get('shard-status').textContent.includes('QQ 建议 3 / 已计划 3 / 已连接 2 · degraded'));
+assert(nodes.get('shard-status').textContent.includes('[1,3] backoff / gateway_closed'));
+connection.runtime.gateway_group.connected = 1;
+connection.runtime.gateway_group.shards.push({index: 2, count: 3, state: 'failed', failure: {code: 'reconnect_exhausted'}, recovery: 'reload_required'});
+await nodes.get('connect-read').onclick();
+assert(nodes.get('shard-status').textContent.includes('QQ 建议 3 / 已计划 3 / 已连接 1 · degraded'));
+assert(nodes.get('shard-status').textContent.includes('[2,3] failed / reconnect_exhausted · 请重载实例后重试'));
+const beforeCleanReload = calls.length; await nodes.get('connect-reload').onclick();
+assert.equal(calls.at(-1)[1], 'connection/reload'); assert.equal(calls.length, beforeCleanReload + 1);
 console.log('PAGE: bridge-ready, real endpoint wiring, save/preview split, partial patches, safe text and parameter assistant passed');

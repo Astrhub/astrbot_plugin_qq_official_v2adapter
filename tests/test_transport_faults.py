@@ -12,6 +12,7 @@ from test_transport_receive import (
     FakeWS,
     StepClock,
     event,
+    gateway_document,
 )
 
 from v2.errors import V2Error
@@ -157,7 +158,7 @@ async def test_actual_aiohttp_websocket_handshake_ingress_and_heartbeat(config, 
             return web.json_response({"access_token": "fixture-token", "expires_in": 7200})
         if request.path == "/gateway/bot":
             assert request.headers["Authorization"] == "QQBot fixture-token"
-            return web.json_response({"url": gateway_url})
+            return web.json_response(gateway_document(gateway_url))
         assert "Authorization" not in request.headers
         handshakes.append(str(request.url))
         if request.path == "/redirect":

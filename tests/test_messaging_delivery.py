@@ -18,7 +18,7 @@ async def receiver(plugin_module, config, monkeypatch, tmp_path):
     owner = plugin_module.QQOfficialV2(ctx, {})
     await owner.initialize()
     owner.messages.clock = lambda: NOW
-    instance = owner.adapter_class(config, {"unique_session": True}, asyncio.Queue())
+    instance = owner.adapter_class(ctx.get_config()["platform"][0], {"unique_session": True}, asyncio.Queue())
     try:
         yield owner, instance
     finally:
