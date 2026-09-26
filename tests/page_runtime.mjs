@@ -14,6 +14,8 @@ class Element {
 }
 const ids = [...fs.readFileSync('/plugin/pages/control/index.html', 'utf8').matchAll(/<([\w-]+)[^>]*\bid="([^"]+)"/g)];
 const nodes = new Map(ids.map(([, tag, id]) => [id, new Element(tag)]));
+assert(!nodes.has('ext-media-roots'));
+assert(!('media_roots' in defaults.extensions));
 nodes.get('scene').value = 'group'; nodes.get('layer').value = 'home';
 const document = {getElementById: (id) => { assert(nodes.has(id), id); return nodes.get(id); },
   createElement: (tag) => new Element(tag), querySelectorAll: () => [...nodes.values()]};
@@ -90,6 +92,10 @@ await nodes.get('save').onclick();
 assert.equal(state.draft.extensions.keyboard_enabled, true);
 assert.equal(nodes.get('ext-media-max').value, '1000000');
 assert.equal(state.draft.extensions.management_writes, false);
+assert(!('media_roots' in state.draft.extensions));
+await nodes.get('apply').onclick();
+assert.equal(calls.filter(c => c[1] === 'config/mutate').at(-1)[2].operation, 'apply');
+assert.equal(state.applied_revision, state.revision);
 // Description is plain text; metadata does not run as HTML.
 const group = nodes.get('catalog').children[0];
 const row = group.children[1]; row.children[1].onclick();

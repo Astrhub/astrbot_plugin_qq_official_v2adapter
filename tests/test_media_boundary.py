@@ -1,4 +1,4 @@
-"""Untrusted media inputs never acquire QQ authentication or filesystem authority."""
+"""Media input protocols and byte budgets remain bounded."""
 import base64
 import hashlib
 
@@ -23,7 +23,7 @@ def test_media_urls_have_no_public_ip_or_port_gate(url):
     assert media_url(url) == url
 
 
-async def test_local_paths_require_explicit_roots_and_no_symlinks(tmp_path):
+async def test_local_paths_and_symlinks_ignore_legacy_roots(tmp_path):
     from v2.media.io import BlobPool
     allowed = tmp_path / "allowed"
     allowed.mkdir()
@@ -35,13 +35,12 @@ async def test_local_paths_require_explicit_roots_and_no_symlinks(tmp_path):
     (allowed / "dir").symlink_to(tmp_path, target_is_directory=True)
     pool = BlobPool(tmp_path / "spool", total_bytes=1024)
     try:
-        good = await pool.load(str(original), roots=[str(allowed)], max_bytes=1024)
-        assert good.size == len(PNG) and good.read(0, 8) == b"\x89PNG\r\n\x1a\n"
-        assert good.hashes()["md5"] == hashlib.md5(PNG).hexdigest()
-        for value in (outside, allowed / "alias.png", allowed / "dir" / "secret.png"):
-            with pytest.raises(V2Error):
-                await pool.load(str(value), roots=[str(allowed)], max_bytes=1024)
-        good.close()
+        for value in (original, outside, allowed / "alias.png", allowed / "dir" / "secret.png"):
+            good = await pool.load(str(value), roots=[str(allowed)], max_bytes=1024)
+            assert good.size == len(PNG) and good.read(0, 1024) == PNG
+            assert good.hashes()["md5"] == hashlib.md5(PNG).hexdigest()
+            good.close()
+            assert value.read_bytes() == PNG
         assert pool.used == 0 and not pool.blobs
     finally:
         pool.close()

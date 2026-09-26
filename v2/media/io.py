@@ -97,7 +97,7 @@ class Blob:
             self.pool.blobs.pop(self.handle, None)
 
 
-def local_path(value, roots):
+def local_path(value):
     if not isinstance(value, str) or len(value) > 4096 or "\x00" in value:
         bad("unsafe_media_path", "Invalid local media path.")
     uri = urlsplit(value)
@@ -108,36 +108,19 @@ def local_path(value, roots):
     path = Path(file_uri_to_path(value)).absolute()
     if path.drive.startswith("\\\\") or path.is_reserved() or path.drive and any(":" in p for p in path.parts[1:]):
         bad("unsafe_media_path", "Network, device and alternate-stream paths are not local media inputs.")
-    allowed = [Path(root) for root in roots if Path(root).is_absolute() and Path(root) != Path(Path(root).anchor) and ".." not in Path(root).parts]
-    allowed = [root for root in allowed if path.is_relative_to(root) and path != root]
-    if not allowed:
-        bad("media_path_not_authorized", "Local media requires an explicitly authorized directory.", status=403)
-    # These are ordinary path checks, not an atomic sandbox against local writers.
-    for part in (*reversed(path.parents), path):
-        info = part.lstat()
-        if stat.S_ISLNK(info.st_mode) or getattr(info, "st_file_attributes", 0) & stat.FILE_ATTRIBUTE_REPARSE_POINT:
-            bad("unsafe_media_path", "Media paths cannot traverse links or reparse points.", status=403)
-    path = path.resolve(strict=True)
-    for root in allowed:
-        try:
-            root = root.resolve(strict=True)
-            relative = path.relative_to(root)
-            if relative.parts and os.path.samefile(root, path.parents[len(relative.parts) - 1]):
-                return path
-        except (OSError, ValueError):
-            continue
-    bad("media_path_not_authorized", "The resolved file is outside its authorized directory.", status=403)
+    return path
 
 
 def check_file(info, maximum):
-    if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or not 0 < info.st_size <= maximum:
-        bad("unsafe_media_file", "Media must be one regular, nonempty, size-bounded file without hard links.")
+    if not stat.S_ISREG(info.st_mode) or not 0 < info.st_size <= maximum:
+        bad("unsafe_media_file", "Media must be a regular, nonempty, size-bounded file.")
 
 
 @asynccontextmanager
-async def local_reader(value, roots, maximum):
+async def local_reader(value, maximum):
     try:
-        path = local_path(value, roots)
+        path = local_path(value)
+        # Follow local links, but reject special targets before the host's synchronous open.
         original = path.stat()
         check_file(original, maximum)
         async with MediaResolver(path.as_uri(), media_type="file").open("rb") as reader:
@@ -146,12 +129,12 @@ async def local_reader(value, roots, maximum):
             if not os.path.samestat(original, before):
                 bad("media_changed", "The local file changed before the host opened it.")
             yield reader, before
-            current = local_path(value, roots).stat()
+            current = path.stat()
             check_file(current, maximum)
             if not os.path.samestat(before, current):
                 bad("media_changed", "The local path changed while being copied.")
     except (OSError, ValueError):
-        bad("unsafe_media_path", "The authorized local file could not be read through the host.", status=403)
+        bad("unsafe_media_path", "The local file could not be read through the host.", status=403)
 
 
 class BlobPool:
@@ -172,7 +155,8 @@ class BlobPool:
         self.blobs[blob.handle] = blob
         return blob
 
-    async def load(self, value, *, roots, max_bytes):
+    async def load(self, value, *, max_bytes, roots=None):
+        """Copy bounded bytes; the deprecated roots argument is ignored."""
         blob = self.create(max_bytes)
         try:
             if not isinstance(value, str):
@@ -193,12 +177,12 @@ class BlobPool:
                         bad("media_too_large", "Decoded media exceeds the base64 budget.", status=413)
                     await asyncio.sleep(0)
             else:
-                async with local_reader(value, roots, max_bytes) as (reader, before):
+                async with local_reader(value, max_bytes) as (reader, before):
                     while chunk := reader.read(CHUNK):
                         blob.append(chunk)
                         await asyncio.sleep(0)
                     after = os.fstat(reader.fileno())
-                    if (before.st_size, before.st_mtime_ns, before.st_ino, before.st_nlink) != (after.st_size, after.st_mtime_ns, after.st_ino, after.st_nlink) or blob.size != before.st_size:
+                    if (before.st_size, before.st_mtime_ns, before.st_ino, before.st_dev) != (after.st_size, after.st_mtime_ns, after.st_ino, after.st_dev) or blob.size != before.st_size:
                         bad("media_changed", "Local media changed while being copied.")
             if not blob.size:
                 bad("empty_media", "Empty media is not uploaded.")
