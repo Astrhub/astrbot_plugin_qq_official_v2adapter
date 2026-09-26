@@ -186,9 +186,11 @@ async def test_multi_instance_and_event_cleanup(plugin_module, config, count, mo
         assert instance.sender.closed and instance.consumer.task.done()
         assert instance.streaming.closed and instance.typing.closed and not instance.typing.jobs
         assert instance.media.closed and not instance.media.tasks
+        assert await event.send_typing() is None
+        await event.stop_typing()
         for operation, expected in ((lambda: event.send(message_chain), "service_stopped"),
                                     (lambda: event.send_streaming(None), "service_stopped"),
-                                    (lambda: event.send_typing(), "service_stopped"),
+                                    (lambda: event.bot.qq.typing(event.route.scene, event.route.target), "service_stopped"),
                                     (lambda: instance.send_by_session(event.session, message_chain), "service_stopped")):
             with pytest.raises(RuntimeError) as exc:
                 await operation()
