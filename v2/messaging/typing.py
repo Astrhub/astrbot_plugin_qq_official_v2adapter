@@ -6,6 +6,7 @@ from ..errors import V2Error, unsupported
 from ..extensions.state import digest
 from ..protocol import RequestSpec
 from .outbound import AMBIGUOUS_CODES, EXPIRED_CODES
+from .reply import ACTIVE_FALLBACK_CODES, definite_source_rejection
 
 
 class TypingCore:
@@ -72,10 +73,10 @@ class TypingCore:
             return result
         except BaseException as exc:
             phase = getattr(exc, "phase", "result_unknown" if attempted else "not_sent")
-            if attempted and (getattr(exc, "business_code", None) in AMBIGUOUS_CODES or (getattr(exc, "http_status", None) or 0) >= 500):
+            if attempted and (getattr(exc, "business_code", None) in AMBIGUOUS_CODES or getattr(exc, "http_status", None) == 408 or (getattr(exc, "http_status", None) or 0) >= 500):
                 phase = "result_unknown"
-            if getattr(exc, "business_code", None) in EXPIRED_CODES:
-                store.block_source(route, source, exc.business_code)
+            if isinstance(exc, V2Error) and phase == "rejected" and definite_source_rejection(exc, attempted) and exc.business_code in EXPIRED_CODES:
+                store.block_source(route, source, exc.business_code, allow_active=exc.business_code in ACTIVE_FALLBACK_CODES)
             store.finish(route.robot, op_id, {"not_sent": "not_sent", "rejected": "rejected"}.get(phase, "unknown"), error={"code": "typing_failed", "phase": phase})
             if isinstance(exc, V2Error):
                 raise V2Error(exc.code, str(exc), retcode=exc.retcode, status=exc.status, business_code=exc.business_code,

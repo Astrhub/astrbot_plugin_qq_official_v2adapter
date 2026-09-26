@@ -81,7 +81,7 @@ class LiveEvents:
         target = params.get("group_id" if scene == "group" else "user_id")
         if (scene, target) != (source.route.scene, source.route.target):
             raise V2Error("identity_mismatch", "The reply context cannot be used for a different target.")
-        self.server.adapter.owner.messages.check_source(source.route, source)
+        self.server.adapter.owner.messages.reply_mode(source.route, source)
         return self.server.adapter.client.bind(source.route, source=source)
 
     def meta(self, kind):

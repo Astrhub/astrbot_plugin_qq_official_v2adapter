@@ -50,6 +50,8 @@ async def sending(config, tmp_path, monkeypatch):
             return web.json_response({"code": 0})
         elif mode == "500":
             return web.json_response({"code": 50055001}, status=500)
+        elif isinstance(mode, tuple):
+            return web.json_response({"code": mode[1]}, status=mode[0])
         elif isinstance(mode, int):
             return web.json_response({"code": mode}, headers={"X-Tps-Trace-Id": "fixture-trace", "Retry-After": "7"})
         return web.json_response({"id": f"real-format-{len(calls)}", "timestamp": "2027-01-15T08:00:00+08:00", "ext_info": {"ref_idx": f"REFIDX_sent{len(calls)}"}})
@@ -97,15 +99,13 @@ async def test_onebot_three_entries_and_native_use_exact_source_and_sequence(sen
     await client.send_group_msg(group_id="group-one", message="still original")
     assert s.calls[-1][1]["msg_id"] == "msg-one"
     s.modes.append(40034128)
-    with pytest.raises(V2Error) as exc:
-        await client.send_group_msg(group_id="group-one", message="server rejects sixth")
-    assert exc.value.code == "passive_quota_exhausted" and exc.value.business_code == 40034128
-    assert exc.value.http_status == 200 and exc.value.phase == "rejected"
-    assert len(s.calls) == 6 and s.calls[-1][1]["msg_seq"] == 6
-    assert s.store.operation(chat.route.robot, exc.value.operation_id)["state"] == "rejected"
-    with pytest.raises(V2Error) as blocked:
-        await client.send_group_msg(group_id="group-one", message="same rejected source")
-    assert blocked.value.code == "reply_source_rejected" and len(s.calls) == 6
+    result = await client.send_group_msg(group_id="group-one", message="server rejects sixth")
+    assert result["delivery"]["reason"]["business_code"] == 40034128
+    assert result["delivery"]["attempts"][0]["state"] == "rejected"
+    assert len(s.calls) == 7 and s.calls[-2][1]["msg_seq"] == 6 and "msg_id" not in s.calls[-1][1]
+    assert s.store.operation(chat.route.robot, result["operation_id"])["state"] == "sent"
+    await client.send_group_msg(group_id="group-one", message="same rejected source")
+    assert len(s.calls) == 8 and "msg_id" not in s.calls[-1][1]
 
 
 async def test_server_rate_responses_are_rejected_without_automatic_replay(sending):
@@ -216,9 +216,9 @@ async def test_auth_retry_keeps_sequence_and_rechecks_original_deadline(sending)
         s.clock[0] += 301
         return token
     s.http.token = delayed
-    with pytest.raises(V2Error) as exc:
-        await client.send(chat.route, "too late")
-    assert exc.value.code == "reply_expired" and exc.value.phase == "not_sent" and len(s.calls) == 2
+    result = await client.send(chat.route, "too late")
+    assert result["delivery"]["reason"]["code"] == "reply_window_expired" and len(s.calls) == 3
+    assert "msg_id" not in s.calls[-1][1]
     assert s.store.db.execute("SELECT used FROM sources").fetchone()[0] == 1
 
 
@@ -260,12 +260,11 @@ async def test_c2c_60minute_conflict_respects_server_rejection(sending):
     chat, client = s.observe("C2C_MESSAGE_CREATE")
     s.clock[0] += 301
     s.modes.append(40034005)
-    with pytest.raises(V2Error) as exc:
-        await client.send_private_msg(user_id="user-one", message="within overview but server refused")
-    assert exc.value.business_code == 40034005 and exc.value.trace_id == "fixture-trace"
-    with pytest.raises(V2Error) as exc:
-        await client.send_private_msg(user_id="user-one", message="not active fallback")
-    assert exc.value.code == "reply_source_rejected" and len(s.calls) == 1
+    result = await client.send_private_msg(user_id="user-one", message="within overview but server refused")
+    assert result["delivery"]["reason"]["business_code"] == 40034005
+    assert s.calls[0][1]["msg_id"] == "msg-one" and "msg_id" not in s.calls[1][1]
+    await client.send_private_msg(user_id="user-one", message="next active reply")
+    assert len(s.calls) == 3 and "msg_id" not in s.calls[-1][1]
 
 
 async def test_success_marks_host_send_only_after_true_id_and_keeps_permission_unknown(sending):

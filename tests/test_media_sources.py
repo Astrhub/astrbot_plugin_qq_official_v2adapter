@@ -91,17 +91,26 @@ async def test_url_operations_bind_source_not_assumed_remote_content(media, no_l
     await core.close()
 
 
-@pytest.mark.parametrize("mode,code", [("unknown", "invalid_upload_response"), ("expired", "reply_expired")])
-async def test_url_failures_never_download_or_replay(media, no_local_media_io, mode, code):
+@pytest.mark.parametrize("mode", ["unknown", "expired"])
+async def test_url_receipt_unknown_never_replays_and_source_expiry_uses_active(media, no_local_media_io, mode):
     core, chat = sending_core(media)
     media.modes[:] = [mode]
-    with pytest.raises(V2Error) as error:
-        await core.send(chat.route, [MediaInput("image", "https://assets.test/a")], source=chat.source, operation_id="url-failed")
-    assert error.value.code == code and error.value.phase == "not_sent"
-    before = len(media.calls)
-    with pytest.raises(V2Error):
-        await core.send(chat.route, [MediaInput("image", "https://assets.test/a")], source=chat.source, operation_id="url-failed")
-    assert len(media.calls) == before == 1 and not media.transfers
+    value = [MediaInput("image", "https://assets.test/a")]
+    if mode == "unknown":
+        with pytest.raises(V2Error) as error:
+            await core.send(chat.route, value, source=chat.source, operation_id="url-failed")
+        assert error.value.code == "invalid_upload_response" and error.value.phase == "not_sent"
+        with pytest.raises(V2Error):
+            await core.send(chat.route, value, source=chat.source, operation_id="url-failed")
+        assert len(media.calls) == 1
+    else:
+        result = await core.send(chat.route, value, source=chat.source, operation_id="url-late")
+        assert result["state"] == "sent" and result["delivery"]["reason"]["code"] == "reply_window_expired"
+        assert len(media.calls) == 2 and media.calls[0][0].endswith("/files") and media.calls[1][0].endswith("/messages")
+        assert "msg_id" not in media.calls[1][1] and media.calls[1][1]["media"] == {"file_info": "actual-file-receipt"}
+        cached = await core.send(chat.route, value, source=chat.source, operation_id="url-late")
+        assert cached["message_id"] == result["message_id"] and len(media.calls) == 2
+    assert not media.transfers and media.pool.used == 0
     await core.close()
 
 

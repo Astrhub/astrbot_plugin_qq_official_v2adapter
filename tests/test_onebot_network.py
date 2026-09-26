@@ -169,11 +169,11 @@ async def test_read_only_and_business_failure_do_not_become_http_transport_error
     async with listener(sending) as n:
         chat, _ = sending.observe(message_id="reject")
         key = n.server.events.context(chat.source)
-        sending.modes.append(40034005)
+        sending.modes.append(40034024)
         async with n.http.post(n.base + "/send_group_msg", json={"group_id": "group-one", "message": "x", "_qq_reply_context": key, "_qq_operation_id": "rejected"}, headers=n.headers) as r:
             result = await r.json()
             assert r.status == 200 and result["status"] == "failed"
-            assert result["business_code"] == 40034005 and result["trace_id"] == "fixture-trace" and result["http_status"] == 200
+            assert result["business_code"] == 40034024 and result["trace_id"] == "fixture-trace" and result["http_status"] == 200
             assert result["phase"] == "rejected" and result["operation_id"] == "rejected"
 
 
@@ -203,16 +203,18 @@ async def test_server_passive_quota_and_context_expiry_target_binding(sending):
         for _ in range(4):
             await internal.send_group_msg(group_id="group-one", message="internal")
         async with n.http.ws_connect(n.base + "/api", headers=n.headers) as ws:
-            for expected in ["ok", "failed"]:
-                if expected == "failed":
+            for expected in ["passive", "active"]:
+                if expected == "active":
                     sending.modes.append(40034128)
                 await ws.send_json({"action": "send_group_msg", "params": {"group_id": "group-one", "message": "network", "_qq_reply_context": key}, "echo": "not-idempotency"})
                 result = await ws.receive_json(timeout=2)
-                assert result["status"] == expected
-            assert result["code"] == "passive_quota_exhausted" and result["business_code"] == 40034128 and len(sending.calls) == 6
+                assert result["status"] == "ok" and result["data"]["delivery"]["mode"] == expected
+            assert result["data"]["delivery"]["reason"]["business_code"] == 40034128 and len(sending.calls) == 7
+            assert sending.calls[-2][1]["msg_seq"] == 6 and "msg_id" not in sending.calls[-1][1]
         sending.clock[0] += 301
         async with n.http.post(n.base + "/send_group_msg", json={"group_id": "group-one", "message": "expired", "_qq_reply_context": key}, headers=n.headers) as r:
             assert (await r.json())["code"] == "reply_context_unavailable"
+        assert len(sending.calls) == 7
 
 
 async def test_frame_limits(sending):

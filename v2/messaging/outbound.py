@@ -16,6 +16,7 @@ from ..errors import V2Error, unsupported
 from ..media.types import FilePart, MediaInput
 from ..models import text_id
 from ..protocol import RequestSpec, openapi_base
+from .reply import ACTIVE_FALLBACK_CODES, ReplyDelivery, ReplyModeChanged, definite_source_rejection
 
 AMBIGUOUS_CODES = {304023, 304024, 40054005, 50055001, 50055002, 50055006}
 EXPIRED_CODES = {304103, 40034005, 40034024, 40034025, 40034026, 40034027, 40034128}
@@ -277,20 +278,18 @@ class SendingCore:
                 if prepared.binding != self.media.binding(route):
                     raise V2Error("media_policy_changed", "Media authorization changed before message delivery.", status=409)
             self.connected(route)
-            if source:
-                self.store.check_source(route, source)
-            else:
-                self.store.target(route)
+            self.store.reply_mode(route, source)
         try:
             if media:
                 check_source()
                 prepared = await self.media.prepare(route, media[0])
             binding = {"body": body, "media": prepared.descriptor()} if prepared else body
             fingerprint = hashlib.sha256(json.dumps(binding, sort_keys=True).encode()).hexdigest()
-            operation = self.store.reserve(route, source, fingerprint, op_id)
+            operation = self.store.reserve(route, source, fingerprint, op_id, allow_active=True)
             if operation["state"] == "sent":
                 return operation["result"]
             robot = route.robot
+            delivery = ReplyDelivery(self.store, route, source, operation)
             response_received = False
             try:
                 self.connected(route)
@@ -300,36 +299,46 @@ class SendingCore:
                         body.update({"msg_type": 7, "media": {"file_info": upload["file_info"]}})
                     elif prepared.blob is None:
                         body["image"] = prepared.input.value
-                if source:
-                    body["msg_id" if source.message_id is not None else "event_id"] = source.message_id if source.message_id is not None else source.event_id
-                    if route.scene in {"c2c", "group"}:
-                        body["msg_seq"] = operation["seq"]
                 path = {"group": "/v2/groups/", "c2c": "/v2/users/", "channel": "/channels/", "dm": "/dms/"}[route.scene]
                 path += quote(route.target, safe="") + "/messages"
-                if prepared and route.scene == "channel" and prepared.blob is not None:
-                    form = {key: json.dumps(value) if isinstance(value, dict) else str(value) for key, value in body.items()}
-                    # file_image needs file bytes, not a locally inferred image format.
-                    form["file_image"] = FilePart(prepared.blob, prepared.input.name, "application/octet-stream", check_source)
-                    spec = RequestSpec(robot.environment, "POST", path, multipart=form)
-                else:
-                    spec = RequestSpec(robot.environment, "POST", path, json_body=body)
-                def before_send():
-                    nonlocal attempted, wire_started
-                    check_source()
-                    if upload and upload["expires_at"] is not None and upload["expires_at"] <= self.store.now():
-                        raise V2Error("upload_ticket_expired", "The upload receipt expired before the message request.", status=409)
-                    if keyboard is not None:
-                        keyboard.validate(route)
-                    self.store.prepare_attempt(route, source, op_id)
-                    attempted = True
-                    wire_started = self.store.now()
-                response = await self.http.request(spec, before_send=before_send)
-                response_received = True
-                data = response.data
-                if not isinstance(data, dict) or not isinstance(data.get("id"), str) or not data["id"] or len(data["id"]) > 512:
-                    raise V2Error("invalid_send_response", "QQ did not return a real message ID; the write is unknown.",
-                                  status=502, phase="result_unknown", http_status=response.status, trace_id=response.trace_id)
-                result = {"message_id": data["id"], "operation_id": op_id, "msg_seq": operation["seq"], "state": "sent"}
+                for _ in range(2):
+                    attempted, response_received = False, False
+                    wire_body = delivery.apply(dict(body))
+                    if prepared and route.scene == "channel" and prepared.blob is not None:
+                        form = {key: json.dumps(value) if isinstance(value, dict) else str(value) for key, value in wire_body.items()}
+                        form["file_image"] = FilePart(prepared.blob, prepared.input.name, "application/octet-stream", check_source)
+                        spec = RequestSpec(robot.environment, "POST", path, multipart=form)
+                    else:
+                        spec = RequestSpec(robot.environment, "POST", path, json_body=wire_body)
+                    def before_send():
+                        nonlocal attempted, wire_started
+                        check_source()
+                        if upload and upload["expires_at"] is not None and upload["expires_at"] <= self.store.now():
+                            raise V2Error("upload_ticket_expired", "The upload receipt expired before the message request.", status=409)
+                        if keyboard is not None:
+                            keyboard.validate(route)
+                        delivery.before_send(retried_auth=attempted)
+                        attempted = True
+                        wire_started = self.store.now()
+                    try:
+                        response = await self.http.request(spec, before_send=before_send)
+                        response_received = True
+                        data = response.data
+                        if not isinstance(data, dict) or not isinstance(data.get("id"), str) or not data["id"] or len(data["id"]) > 512:
+                            raise V2Error("invalid_send_response", "QQ did not return a real message ID; the write is unknown.",
+                                          status=502, phase="result_unknown", http_status=response.status, trace_id=response.trace_id)
+                        break
+                    except ReplyModeChanged:
+                        attempted = False
+                    except V2Error as exc:
+                        if delivery.wire_source and definite_source_rejection(exc, attempted) and exc.business_code in ACTIVE_FALLBACK_CODES:
+                            self.store.block_source(route, source, exc.business_code, allow_active=True)
+                            attempted = False
+                            delivery.switch({"code": "passive_source_rejected", "business_code": exc.business_code}, outcome="rejected", error=exc)
+                        else:
+                            raise
+                result = {"message_id": data["id"], "operation_id": op_id, "msg_seq": delivery.seq, "state": "sent",
+                          "delivery": delivery.finish_attempt("sent")}
                 result["wire_started"] = wire_started
                 if prepared:
                     result["media"] = {"kind": prepared.kind, "requested_kind": prepared.input.kind,
@@ -355,13 +364,14 @@ class SendingCore:
                 if prepared and not attempted:
                     details = {"message_sent": False, "media_operation_id": exc.operation_id, "media_phase": exc.phase}
                     phase = "not_sent"
-                if attempted and exc.code != "token_refresh_failed" and (exc.business_code in AMBIGUOUS_CODES or exc.http_status is not None and exc.http_status >= 500):
+                if attempted and exc.code != "token_refresh_failed" and (exc.business_code in AMBIGUOUS_CODES or exc.http_status == 408 or exc.http_status is not None and exc.http_status >= 500):
                     phase = "result_unknown"
                 if response_received:
                     phase = "result_unknown"
-                if exc.business_code in EXPIRED_CODES:
-                    self.store.block_source(route, source, exc.business_code)
+                if delivery.wire_source and definite_source_rejection(exc, attempted) and phase == "rejected" and exc.business_code in EXPIRED_CODES:
+                    self.store.block_source(route, source, exc.business_code, allow_active=exc.business_code in ACTIVE_FALLBACK_CODES)
                 outcome = {"not_sent": "not_sent", "rejected": "rejected"}.get(phase, "unknown")
+                details = {**(details or {}), "delivery": delivery.finish_attempt(outcome, exc)}
                 error = V2Error(exc.code, str(exc), retcode=exc.retcode, status=exc.status, business_code=exc.business_code,
                                 trace_id=exc.trace_id, retry_after=exc.retry_after, phase=phase, http_status=exc.http_status, operation_id=op_id, details=details)
                 self.store.finish(robot, op_id, outcome, error=error.as_dict())

@@ -37,6 +37,7 @@ class Gateway:
         self.session_id = None
         self.last_error = None
         self.last_failure = None
+        self.cleanup_failure = None
         self.attempts = 0
         self.interval = 30
         self.ack_pending = False
@@ -53,6 +54,7 @@ class Gateway:
         self.ingress.last_sequence = None
 
     async def run(self):
+        failed = False
         try:
             for attempt in range(self.attempt_limit):
                 self.guard()
@@ -60,37 +62,45 @@ class Gateway:
                     return
                 self.attempts = attempt + 1
                 self.state = "connecting"
+                fatal = False
                 try:
                     await self._connect()
                 except asyncio.CancelledError:
+                    fatal = True
                     raise
                 except V2Error as exc:
                     self.last_error = exc.code
                     self.last_failure = exc.as_dict()
                     code = exc.business_code
                     if code in FATAL_CLOSES | {100007, 100016, 10004} or exc.code in {"invalid_gateway", "stale_generation", "unsupported_environment"}:
+                        fatal = True
                         raise
                     if code in FRESH_CLOSES:
                         self._fresh()
                 except (aiohttp.ClientError, OSError, TimeoutError):
                     self.last_error = "gateway_io_failure"
                     self.last_failure = {"code": self.last_error}
+                except Exception:
+                    fatal = True
+                    raise
                 finally:
                     self.connected = False
-                    await self._disconnect()
+                    await self._disconnect(preserve_error=fatal)
                 if attempt + 1 < self.attempt_limit:
                     self.state = "backoff"
                     await self.sleep(min(15, 0.5 * 2**attempt) + self.jitter() * 0.25)
             raise V2Error("reconnect_exhausted", "QQ reconnect budget exhausted; inspect configuration before reloading.", status=503)
         except asyncio.CancelledError:
+            failed = True
             self.state = "stopped"
             raise
         except Exception:
+            failed = True
             self.state = "failed"
             raise
         finally:
             self.connected = False
-            await self._disconnect()
+            await self._disconnect(preserve_error=failed)
 
     async def _connect(self):
         openapi_base(self.http.identity.robot.environment)
@@ -198,7 +208,7 @@ class Gateway:
             await self._send_heartbeat()
             next_tick = self.clock() + self.interval
 
-    async def _disconnect(self):
+    async def _disconnect(self, *, preserve_error=False):
         tasks, self.tasks = self.tasks, set()
         for task in tasks:
             task.cancel()
@@ -209,8 +219,17 @@ class Gateway:
             try:
                 async with asyncio.timeout(2):
                     await ws.close()
-            except TimeoutError:
-                raise V2Error("ws_close_timeout", "QQ socket close deadline exceeded.", status=503) from None
+            except (TimeoutError, asyncio.CancelledError) as exc:
+                # aiohttp can be cancelled before its writer/read cleanup closes this response.
+                if isinstance(ws, aiohttp.ClientWebSocketResponse):
+                    ws._response.close()
+                    ws._set_closed()
+                if isinstance(exc, asyncio.CancelledError):
+                    raise
+                error = V2Error("ws_close_timeout", "QQ socket close deadline exceeded; its response was closed.", status=503)
+                self.cleanup_failure = error.as_dict()
+                if not preserve_error:
+                    raise error from None
 
     async def close(self):
         self.stopped = True

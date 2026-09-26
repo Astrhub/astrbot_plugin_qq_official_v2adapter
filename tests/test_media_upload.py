@@ -69,6 +69,8 @@ async def media(config, tmp_path):
             if modes and modes[0] == "send401":
                 modes.pop(0)
                 return web.json_response({"code": 11244}, status=401)
+            if modes and type(modes[0]) is int:
+                return web.json_response({"code": modes.pop(0)}, status=400)
             return web.json_response({"id": "actual-channel-message"})
         if request.method == "DELETE":
             calls.append((request.path, None))
@@ -76,6 +78,8 @@ async def media(config, tmp_path):
         body = await request.json()
         calls.append((request.path, body))
         if request.path.endswith("/messages"):
+            if modes and type(modes[0]) is int:
+                return web.json_response({"code": modes.pop(0)}, status=400)
             return web.json_response({"id": "actual-media-message"})
         if modes and modes[0] == "prepare_retry" and request.path.endswith("upload_prepare"):
             modes.pop(0)
@@ -94,6 +98,8 @@ async def media(config, tmp_path):
         if request.path.endswith("upload_part_finish"):
             return web.json_response({})
         if request.path.endswith("files"):
+            if modes and modes[0] == "files_http_500":
+                return web.json_response({"code": 40034128}, status=500)
             if modes and modes[0] == "files_rejected":
                 return web.json_response({"code": 850026, "message": "private-url-must-not-leak"}, status=400, headers={"X-Tps-Trace-Id": "fixture-files", "Retry-After": "3"})
             if modes and modes[0] == "wait_files":
@@ -241,21 +247,29 @@ async def test_channel_multipart_auth_retry_rewinds_owned_bytes(media):
     assert not media.puts and media.pool.used == 0
 
 
-@pytest.mark.parametrize("mode,code", [("expired", "reply_expired"), ("unknown", "invalid_upload_response")])
-async def test_upload_finish_does_not_mean_message_sent_and_rechecks_window(media, mode, code):
+@pytest.mark.parametrize("mode", ["expired", "unknown"])
+async def test_upload_finish_rechecks_source_without_replaying_unknown_media(media, mode):
     core, chat = sending_core(media)
     media.modes[:] = [mode]
-    with pytest.raises(V2Error) as error:
-        await core.send(chat.route, [MediaInput("image", "base64://" + base64.b64encode(PNG).decode())], source=chat.source, operation_id="media-failure")
-    assert error.value.code == code and error.value.phase == "not_sent"
-    assert not any(p.endswith("/messages") for p, _ in media.calls)
-    assert media.store.db.execute("SELECT used FROM sources").fetchone()[0] == 0
-    assert media.store.operation(media.identity.robot, "media-failure")["state"] == "not_sent"
-    assert media.pool.used == 0
-    if mode == "unknown":
+    value = [MediaInput("image", "base64://" + base64.b64encode(PNG).decode())]
+    if mode == "expired":
+        result = await core.send(chat.route, value, source=chat.source, operation_id="media-late")
+        assert result["state"] == "sent" and result["delivery"]["reason"]["code"] == "reply_window_expired"
+        messages = [b for p, b in media.calls if p.endswith("/messages")]
+        assert len(messages) == 1 and "msg_id" not in messages[0]
+        assert len([p for p, _ in media.calls if p.endswith("/files")]) == 1
+        assert b"".join(media.puts) == PNG
+    else:
+        with pytest.raises(V2Error) as error:
+            await core.send(chat.route, value, source=chat.source, operation_id="media-failure")
+        assert error.value.code == "invalid_upload_response" and error.value.phase == "not_sent"
+        assert not any(p.endswith("/messages") for p, _ in media.calls)
+        assert media.store.operation(media.identity.robot, "media-failure")["state"] == "not_sent"
         details = error.value.as_dict()["details"]
         assert details["message_sent"] is False and details["media_phase"] == "result_unknown"
         assert media.state.operation(media.identity.robot, details["media_operation_id"])["state"] == "unknown"
+    assert media.store.db.execute("SELECT used FROM sources").fetchone()[0] == 0
+    assert media.pool.used == 0
 
 
 async def test_entire_media_chain_and_cross_target_preflight(media):
