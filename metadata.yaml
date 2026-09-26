@@ -1,7 +1,7 @@
 name: astrbot_plugin_qq_official_v2adapter
 display_name: QQ 官方 V2 适配器
 desc: 基于 QQ 官方 V2 API 实现的消息平台适配器。
-version: v0.6.0
+version: v0.6.1
 author: Astrhub
 repo: https://github.com/Astrhub/astrbot_plugin_qq_official_v2adapter
 astrbot_version: ">=4.28.1"
