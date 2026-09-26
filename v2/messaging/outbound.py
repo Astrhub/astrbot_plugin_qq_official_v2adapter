@@ -16,7 +16,12 @@ from ..errors import V2Error, unsupported
 from ..media.types import FilePart, MediaInput
 from ..models import text_id
 from ..protocol import RequestSpec, openapi_base
-from .reply import ACTIVE_FALLBACK_CODES, ReplyDelivery, ReplyModeChanged, definite_source_rejection
+from .reply import (
+    ACTIVE_FALLBACK_CODES,
+    ReplyDelivery,
+    ReplyModeChanged,
+    definite_source_rejection,
+)
 
 AMBIGUOUS_CODES = {304023, 304024, 40054005, 50055001, 50055002, 50055006}
 EXPIRED_CODES = {304103, 40034005, 40034024, 40034025, 40034026, 40034027, 40034128}
