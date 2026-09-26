@@ -12,6 +12,7 @@ from ..models import text_id
 from ..protocol import RequestSpec
 from ..transport.http import retry_delay
 from .outbound import AMBIGUOUS_CODES, EXPIRED_CODES, build_body, parse_message
+from .reply import ACTIVE_FALLBACK_CODES, ReplyDelivery, definite_source_rejection
 
 
 class StreamingCore:
@@ -29,15 +30,15 @@ class StreamingCore:
             return "aggregate"
         raise unsupported("This scene has no native stream; explicitly enable bounded aggregation.")
 
-    def check(self, route, source):
+    def check(self, route, source, *, allow_active=True):
         if self.closed:
             raise V2Error("service_stopped", "Streaming is stopped.", status=503)
         self.sender.check(route, source)
         self.sender.connected(route)
-        if source:
+        if source and not allow_active:
             self.sender.store.check_source(route, source)
         else:
-            self.sender.store.target(route)
+            self.sender.store.reply_mode(route, source)
 
     async def send(self, route, generator, *, source=None, use_fallback=False, input_mode="append", operation_id=None):
         self.check(route, source)
@@ -57,6 +58,7 @@ class StreamingCore:
         self.tasks.add(task)
         total, format_md = "", None
         operation, last_id, last_result = None, None, None
+        delivery = None
         first_wire_started = None
         index, attempted, complete = 0, False, False
         self.last_mode = mode
@@ -64,50 +66,60 @@ class StreamingCore:
 
         async def fragment(raw, final=False):
             nonlocal index, last_id, last_result, attempted
-            self.check(route, source)
-            body = {"input_mode": input_mode, "input_state": 10 if final else 1, "index": index,
-                    "content_type": "markdown" if format_md else "text", "content_raw": raw}
-            if source:
-                body["msg_id" if source.message_id is not None else "event_id"] = source.message_id if source.message_id is not None else source.event_id
-                body["msg_seq"] = operation["seq"]
-            if last_id:
-                body["stream_msg_id"] = last_id
-            path = "/v2/users/" + quote(route.target, safe="") + "/stream_messages"
-            def before_send():
-                nonlocal attempted, first_wire_started
-                self.check(route, source)
-                store.prepare_attempt(route, source, op_id, continuation=index > 0)
-                attempted = True
-                if index == 0:
-                    first_wire_started = store.now()
-            def validate(data):
-                if not isinstance(data, dict) or not isinstance(data.get("id"), str) or not 1 <= len(data["id"]) <= 512 or last_id and data["id"] != last_id:
-                    raise V2Error("invalid_stream_response", "Stream response lacks its real stable message ID.", status=502, phase="result_unknown")
-                remain = data.get("remain_msg_len")
-                if remain is not None and (type(remain) is not int or not 0 <= remain <= 2147483647):
-                    raise V2Error("invalid_stream_response", "Stream remaining-length metadata is invalid.", status=502, phase="result_unknown")
-                result = {"message_id": data["id"], "operation_id": op_id, "msg_seq": operation["seq"], "mode": "native", "index": index, "remain_msg_len": remain}
-                if isinstance(data.get("timestamp"), str) and len(data["timestamp"]) <= 80:
-                    result["timestamp"] = data["timestamp"]
-                ext = data.get("ext_info")
-                if isinstance(ext, dict) and isinstance(ext.get("ref_idx"), str) and ext["ref_idx"]:
-                    result["ref_idx"] = text_id(ext["ref_idx"])
-                return result
-            for retry in range(2):
-                try:
-                    last_result = await self.state.execute(self.sender.http, RequestSpec(route.robot.environment, "POST", path, json_body=body),
-                        op_id="stream-" + digest([op_id, index, retry]), kind="stream_frame", validate=validate, before_send=before_send, ambiguous_codes=AMBIGUOUS_CODES | {50001},
-                        context={"parent_operation_id": op_id, "index": index, "final": final, "stream_msg_id": last_id})
-                    last_id = last_result["message_id"]
-                    index += 1
-                    return
-                except V2Error as exc:
-                    if retry or exc.phase != "rejected" or not (exc.http_status == 429 or exc.business_code == 50002):
-                        raise
-                    delay = retry_delay(exc.retry_after, retry)
-                    if delay is None:
-                        raise
-                    await self.sleep(delay)
+            for _ in range(2):
+                self.check(route, source, allow_active=last_id is None or delivery.wire_source is None)
+                body = delivery.apply({"input_mode": input_mode, "input_state": 10 if final else 1, "index": index,
+                    "content_type": "markdown" if format_md else "text", "content_raw": raw})
+                if last_id:
+                    body["stream_msg_id"] = last_id
+                path = "/v2/users/" + quote(route.target, safe="") + "/stream_messages"
+                frame_attempted = False
+                def before_send():
+                    nonlocal attempted, first_wire_started, frame_attempted
+                    self.check(route, source, allow_active=last_id is None or delivery.wire_source is None)
+                    delivery.before_send(continuation=index > 0, retried_auth=frame_attempted)
+                    attempted = frame_attempted = True
+                    if index == 0:
+                        first_wire_started = store.now()
+                def validate(data):
+                    if not isinstance(data, dict) or not isinstance(data.get("id"), str) or not 1 <= len(data["id"]) <= 512 or last_id and data["id"] != last_id:
+                        raise V2Error("invalid_stream_response", "Stream response lacks its real stable message ID.", status=502, phase="result_unknown")
+                    remain = data.get("remain_msg_len")
+                    if remain is not None and (type(remain) is not int or not 0 <= remain <= 2147483647):
+                        raise V2Error("invalid_stream_response", "Stream remaining-length metadata is invalid.", status=502, phase="result_unknown")
+                    result = {"message_id": data["id"], "operation_id": op_id, "msg_seq": delivery.seq, "mode": "native", "index": index, "remain_msg_len": remain}
+                    if isinstance(data.get("timestamp"), str) and len(data["timestamp"]) <= 80:
+                        result["timestamp"] = data["timestamp"]
+                    ext = data.get("ext_info")
+                    if isinstance(ext, dict) and isinstance(ext.get("ref_idx"), str) and ext["ref_idx"]:
+                        result["ref_idx"] = text_id(ext["ref_idx"])
+                    return result
+                for retry in range(2):
+                    frame_attempted = False
+                    try:
+                        last_result = await self.state.execute(self.sender.http, RequestSpec(route.robot.environment, "POST", path, json_body=body),
+                            op_id="stream-" + digest([op_id, index, retry, delivery.data["mode"]]), kind="stream_frame", validate=validate, before_send=before_send, ambiguous_codes=AMBIGUOUS_CODES | {50001},
+                            context={"parent_operation_id": op_id, "index": index, "final": final, "stream_msg_id": last_id, "delivery_mode": delivery.data["mode"]})
+                        last_id = last_result["message_id"]
+                        index += 1
+                        return
+                    except V2Error as exc:
+                        if exc.code == "reply_mode_changed" and exc.phase == "not_sent" and last_id is None and delivery.wire_source is None:
+                            attempted = False
+                            break
+                        rejected_source = delivery.wire_source and definite_source_rejection(exc, frame_attempted) and exc.business_code in EXPIRED_CODES
+                        if rejected_source:
+                            store.block_source(route, source, exc.business_code, allow_active=exc.business_code in ACTIVE_FALLBACK_CODES)
+                            if last_id is None and exc.business_code in ACTIVE_FALLBACK_CODES:
+                                attempted = False
+                                delivery.switch({"code": "passive_source_rejected", "business_code": exc.business_code}, outcome="rejected", error=exc)
+                                break
+                        if retry or exc.phase != "rejected" or not (exc.http_status == 429 or exc.business_code == 50002):
+                            raise
+                        delay = retry_delay(exc.retry_after, retry)
+                        if delay is None:
+                            raise
+                        await self.sleep(delay)
 
         try:
             async with self.timeout_factory(timeout):
@@ -116,7 +128,7 @@ class StreamingCore:
                     count += 1
                     if count > 4096:
                         raise V2Error("stream_too_large", "Stream fragment count exceeded its bound.")
-                    self.check(route, source)
+                    self.check(route, source, allow_active=last_id is None or delivery.wire_source is None)
                     if not isinstance(chain, MessageChain):
                         raise V2Error("invalid_stream", "AstrBot streaming must yield MessageChain values.")
                     if chain.type not in (None, "plain", "break"):
@@ -146,7 +158,8 @@ class StreamingCore:
                     compiled = build_body(route, [("text", candidate)], markdown, store)
                     if mode == "native":
                         if operation is None:
-                            operation = store.reserve(route, source, digest(["stream", input_mode, markdown, candidate]), op_id)
+                            operation = store.reserve(route, source, digest(["stream", input_mode, markdown, candidate]), op_id, allow_active=True)
+                            delivery = ReplyDelivery(store, route, source, operation)
                             if operation["state"] == "sent":
                                 raise V2Error("operation_already_attempted", "Query the retained stream result; finished streams are not regenerated.", status=409)
                         wire_total = compiled["markdown"]["content"] if markdown else compiled["content"]
@@ -164,13 +177,11 @@ class StreamingCore:
                 compiled = build_body(route, [("text", total)], format_md, store)
                 final = compiled["markdown"]["content"] if format_md else compiled["content"]
                 await fragment(final if input_mode == "replace" else "", final=True)
-                result = {**last_result, "state": "sent", "wire_started": first_wire_started}
+                result = {**last_result, "state": "sent", "wire_started": first_wire_started, "delivery": delivery.finish_attempt("sent")}
                 store.finish(route.robot, op_id, "sent", result=result)
                 complete = True
                 return result
         except BaseException as exc:
-            if getattr(exc, "business_code", None) in EXPIRED_CODES:
-                store.block_source(route, source, exc.business_code)
             phase = getattr(exc, "phase", "result_unknown" if attempted else "not_sent")
             if last_id or getattr(exc, "business_code", None) == 50001:
                 phase = "result_unknown"
@@ -179,11 +190,13 @@ class StreamingCore:
                 if last_id or getattr(exc, "business_code", None) == 50001:
                     phase = "result_unknown"
                 outcome = {"not_sent": "not_sent", "rejected": "rejected"}.get(phase, "unknown")
-                store.finish(route.robot, op_id, outcome, error={"code": "stream_interrupted", "phase": phase, "partial_message_id": last_id, "next_index": index})
+                store.finish(route.robot, op_id, outcome, error={"code": "stream_interrupted", "phase": phase, "partial_message_id": last_id, "next_index": index,
+                    "details": {"delivery": delivery.finish_attempt(outcome, exc if isinstance(exc, V2Error) else None)}})
             if isinstance(exc, V2Error):
                 raise V2Error(exc.code, str(exc), retcode=exc.retcode, status=exc.status, business_code=exc.business_code,
                     trace_id=exc.trace_id, retry_after=exc.retry_after, http_status=exc.http_status, phase=phase, operation_id=op_id,
-                    details={"partial_message_id": last_id, "next_index": index, "frame_operation_id": exc.operation_id}) from None
+                    details={"partial_message_id": last_id, "next_index": index, "frame_operation_id": exc.operation_id,
+                             **({"delivery": delivery.finish_attempt(outcome, exc)} if delivery is not None and operation["state"] != "sent" and not complete else {})}) from None
             if isinstance(exc, asyncio.CancelledError):
                 exc.phase = phase
                 raise

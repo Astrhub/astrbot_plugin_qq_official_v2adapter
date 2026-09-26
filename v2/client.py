@@ -3,6 +3,7 @@
 from . import PLATFORM_TYPE, VERSION
 from .errors import V2Error, not_ready, unsupported
 from .extensions.management import MANAGEMENT_ACTIONS, NATIVE_ACTIONS
+from .messaging.reply import ACTIVE_FALLBACK_CODES
 from .models import SessionRoute, text_id
 from .protocol import avatar_url
 
@@ -39,7 +40,7 @@ ACTION_PARAMS = {
     "_qq_get_send_status": {"operation_id": "id"}, "_qq_get_extension_status": {"operation_id": "id"},
 }
 ACTION_RETURNS = {
-    **{name: ["message_id", "operation_id", "msg_seq", "state", "wire_started", "timestamp?", "ref_idx?", "media?"] for name in SEND_ACTIONS},
+    **{name: ["message_id", "operation_id", "msg_seq", "state", "wire_started", "delivery?", "timestamp?", "ref_idx?", "media?"] for name in SEND_ACTIONS},
     "get_status": ["online", "good", "state", "platform_id", "generation", "network"],
     "get_version_info": ["app_name", "app_version", "protocol_version"],
     "get_login_info": ["user_id", "nickname", "id_kind", "source"],
@@ -193,6 +194,11 @@ class V2Client:
             "network_api": self._state.network.capabilities() if self._state.network else {"support": "conditional", "state": "not_attached"},
             "basic_scenes": ["group", "c2c", "channel", "dm"] if self._state.sender else [],
             "sending": {"source": "exact event or conservative active policy", "permission": "unknown",
+                        "active_fallback": {"default": True, "rejected_codes": sorted(ACTIVE_FALLBACK_CODES),
+                                            "local_expiry": "retained_source_evidence_and_current_target_required", "unknown": "never_replay"},
+                        "delivery_fields": {"mode": "passive|active", "reason": "null or code/business_code",
+                                            "attempts": "at most two mode attempts: mode/state/wire_attempts/wire_started?/code?/business_code?/http_status?/trace_id?"},
+                        "legacy_results": "delivery may be absent in pre-upgrade receipts",
                         "markdown_segment": "nonstandard extension", "max_characters": 4096,
                         "channel_dm": "online WebSocket required",
                         "media": {"support": "conditional", "group_c2c": ["image", "record", "video", "file"], "channel": ["image_http_url", "image_multipart"], "dm": ["image_http_url"]} if self._state.sender and self._state.sender.media else "not_implemented"},

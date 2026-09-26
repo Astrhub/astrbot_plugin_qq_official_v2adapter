@@ -10,6 +10,7 @@ from astrbot.core.platform.message_type import MessageType
 
 from ..errors import V2Error
 from ..models import SessionRoute, text_id
+from .reply import ACTIVE_FALLBACK_CODES
 
 
 def robot_key(robot):
@@ -106,7 +107,8 @@ class MessageStore:
             self._water = self.db.execute("SELECT value FROM clock_guard WHERE id=1").fetchone()[0]
             with self.transaction():
                 now = self.now()
-                self.db.execute("UPDATE operations SET state='unknown',updated=? WHERE state='in_flight'", (now,))
+                for row in self.db.execute("SELECT robot,op_id FROM operations WHERE state='in_flight'").fetchall():
+                    self._finish(*row, "unknown", now)
                 pending = self.db.execute("SELECT robot,op_id FROM operations WHERE state='reserved'").fetchall()
                 for row in pending:
                     self._finish(*row, "not_sent", now)
@@ -180,13 +182,21 @@ class MessageStore:
         self.db.executemany("UPDATE operations SET state='history_evicted',result=NULL,error=NULL WHERE rowid=?", ((r[0],) for r in rows if r[1] == "sent"))
         self.db.executemany("DELETE FROM operations WHERE rowid=?", ((r[0],) for r in rows if r[1] != "sent"))
 
-    def _prune(self, now):
+    def _prune(self, now, *, keep_source=None):
         self.db.execute("DELETE FROM attempts WHERE stamp<=?", (now - 60,))
         self.db.execute("DELETE FROM identities WHERE last<=?", (now - 86400,))
         self.db.execute("DELETE FROM targets WHERE last<=?", (now - 86400,))
         self.db.execute("DELETE FROM charges WHERE until<=?", (now,))
         self.db.execute("DELETE FROM refs WHERE expires<=?", (now,))
-        self.db.execute("DELETE FROM sources WHERE expires<=? AND NOT EXISTS (SELECT 1 FROM operations o WHERE o.robot=sources.robot AND o.scene=sources.scene AND o.target=sources.target AND o.source=sources.message_id AND o.state IN ('reserved','in_flight','unknown'))", (now,))
+        guard = " AND (robot,scene,target,message_id) != (?,?,?,?)" if keep_source is not None else ""
+        args = keep_source or ()
+        pins = {value[:4] for value in self._delivery_pins.values()}
+        if pins:
+            # A live event must not lose a definitive invalid/unauthorized-source rejection.
+            guard += " AND NOT (blocked IS NOT NULL AND blocked NOT LIKE 'active:%' AND (robot,scene,target,message_id) IN (" + ",".join("(?,?,?,?)" for _ in pins) + "))"
+            args += tuple(value for key in pins for value in key)
+        self.db.execute("DELETE FROM sources WHERE expires<=? AND NOT (blocked IS NOT NULL AND blocked NOT LIKE 'active:%' AND received>?) AND NOT EXISTS (SELECT 1 FROM operations o WHERE o.robot=sources.robot AND o.scene=sources.scene AND o.target=sources.target AND o.source=sources.message_id AND (o.state IN ('reserved','in_flight','unknown') OR (sources.blocked IS NOT NULL AND sources.blocked NOT LIKE 'active:%')))" + guard,
+                        (now, now - 86400, *args))
         guard, args = self._delivery_guard()
         self.db.execute(f"DELETE FROM deliveries AS d WHERE accepted<? AND {guard}", (now - 86400, *args))
         self.db.execute("DELETE FROM operations WHERE updated<? AND state IN ('sent','rejected','not_sent','history_evicted') AND NOT EXISTS (SELECT 1 FROM charges c WHERE c.robot=operations.robot AND c.op_id=operations.op_id)", (now - 86400,))
@@ -322,17 +332,54 @@ class MessageStore:
         if row is None or row["expires"] <= now or source.expires <= now:
             failure("reply_expired", "The original incoming message reply window has expired.")
         if row["blocked"]:
-            failure("reply_source_rejected", "QQ rejected this reply source; active fallback is forbidden.")
+            failure("reply_source_rejected", "QQ rejected this passive reply source.")
         return row
+
+    def reply_mode(self, route, source):
+        if source is None:
+            self.target(route)
+            return None
+        if route_key(source.route) != route_key(route):
+            failure("identity_mismatch", "Reply source belongs to another target.")
+        now = self.now()
+        key = (*route_key(route), source_key(source))
+        row = self.db.execute("SELECT * FROM sources WHERE robot=? AND scene=? AND target=? AND message_id=?", key).fetchone()
+        if row is not None and row["blocked"]:
+            blocked = row["blocked"]
+            if blocked in {str(c) for c in ACTIVE_FALLBACK_CODES}:
+                rows = self.db.execute("SELECT error FROM operations WHERE robot=? AND scene=? AND target=? AND source=? AND state='rejected'", key)
+                for old in rows:
+                    error = json.loads(old[0]) if old[0] else {}
+                    if (str(error.get("business_code")) == blocked and error.get("phase") == "rejected"
+                            and error.get("code") != "token_refresh_failed" and error.get("http_status") in {200, 400}):
+                        blocked = "active:" + blocked
+                        break
+            if not blocked.startswith("active:") or blocked[7:] not in {str(c) for c in ACTIVE_FALLBACK_CODES}:
+                failure("reply_source_rejected", "This rejected source is not eligible for active fallback.")
+            self.target(route)
+            return {"code": "passive_source_rejected", "business_code": int(blocked[7:])}
+        if row is None:
+            observed = self.db.execute("SELECT 1 FROM deliveries WHERE robot=? AND scene=? AND target=? AND message_id=? AND ref_idx=?", (*key, source.ref_idx or "")).fetchone()
+            observed = observed or self.db.execute("SELECT 1 FROM operations WHERE robot=? AND scene=? AND target=? AND source=?", key).fetchone()
+            observed = observed or (*key, source.ref_idx or "") in self._delivery_pins.values()
+            if not observed or source.expires > now:
+                failure("reply_source_unavailable", "No retained observation proves this reply source.")
+        if row is None or row["expires"] <= now:
+            self.target(route)
+            return {"code": "reply_window_expired"}
+        return None
+
 
     def check_source(self, route, source):
         with self.transaction():
             return self._source(route, source, self.now())
 
-    def block_source(self, route, source, code):
+    def block_source(self, route, source, code, *, allow_active=False):
         if source:
             with self.transaction():
-                self.db.execute("UPDATE sources SET blocked=? WHERE robot=? AND scene=? AND target=? AND message_id=?", (str(code), *route_key(route), source_key(source)))
+                blocked = f"active:{code}" if allow_active and code in ACTIVE_FALLBACK_CODES else str(code)
+                extra = " AND (blocked IS NULL OR blocked LIKE 'active:%')" if blocked.startswith("active:") else ""
+                self.db.execute("UPDATE sources SET blocked=? WHERE robot=? AND scene=? AND target=? AND message_id=?" + extra, (blocked, *route_key(route), source_key(source)))
 
     def register_event_source(self, source):
         if source.message_id is not None:
@@ -360,12 +407,12 @@ class MessageStore:
         result["error"] = json.loads(result["error"]) if result["error"] else None
         return result
 
-    def reserve(self, route, source, digest, op_id):
+    def reserve(self, route, source, digest, op_id, *, allow_active=False):
         text_id(op_id)
         key = route_key(route)
         with self.transaction():
             now = self.now()
-            self._prune(now)
+            self._prune(now, keep_source=(*key, source_key(source)) if source else None)
             old = self.db.execute("SELECT * FROM operations WHERE robot=? AND op_id=?", (key[0], op_id)).fetchone()
             if old:
                 if (old["scene"], old["target"], old["source"], old["digest"]) != (route.scene, route.target, source_key(source) if source else None, digest):
@@ -380,15 +427,38 @@ class MessageStore:
             pending = self.db.execute("SELECT count(*) FROM operations WHERE state IN ('reserved','in_flight','unknown')").fetchone()[0]
             if pending >= self.operation_capacity:
                 failure("message_state_full", "Unfinished operation capacity reached; unknown and in-flight writes were retained.", 503)
+            reason = self.reply_mode(route, source) if allow_active else None
             seq = None
-            if source:
+            if source and reason is None:
                 row = self._source(route, source, now)
                 seq = row["seq"] + 1
-            if source:
                 self.db.execute("UPDATE sources SET seq=?,used=used+1 WHERE robot=? AND scene=? AND target=? AND message_id=?", (seq, *key, source_key(source)))
+            delivery = None
+            if allow_active:
+                mode = "passive" if source and reason is None else "active"
+                delivery = {"delivery": {"mode": mode, "reason": reason, "attempts": [{"mode": mode, "state": "not_sent", "wire_attempts": 0}]}}
             self.db.execute("INSERT INTO operations VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
-                            (key[0], op_id, route.scene, route.target, source_key(source) if source else None, digest, seq, "reserved", now, now, None, None))
+                            (key[0], op_id, route.scene, route.target, source_key(source) if source else None, digest, seq, "reserved", now, now, json.dumps(delivery) if delivery else None, None))
             return self.operation(route.robot, op_id)
+
+    def save_delivery(self, robot, op_id, delivery):
+        with self.transaction():
+            self.db.execute("UPDATE operations SET result=? WHERE robot=? AND op_id=? AND state IN ('reserved','in_flight')",
+                            (json.dumps({"delivery": delivery}), robot_key(robot), op_id))
+
+    def switch_active(self, route, source, op_id, delivery):
+        with self.transaction():
+            self.target(route)
+            row = self.operation(route.robot, op_id)
+            if row["state"] not in {"reserved", "in_flight"} or (row["scene"], row["target"], row["source"]) != (route.scene, route.target, source_key(source)):
+                failure("operation_conflict", "Only the original unfinished reply can change wire mode.")
+            if row["seq"] is None:
+                failure("operation_already_attempted", "This operation has already selected active delivery.")
+            self.db.execute("UPDATE sources SET used=max(0,used-1) WHERE robot=? AND scene=? AND target=? AND message_id=?", (*route_key(route), source_key(source)))
+            self.db.execute("DELETE FROM charges WHERE robot=? AND op_id=?", (robot_key(route.robot), op_id))
+            self.db.execute("UPDATE operations SET seq=NULL,state='reserved',updated=?,result=? WHERE robot=? AND op_id=?",
+                            (self.now(), json.dumps({"delivery": delivery}), robot_key(route.robot), op_id))
+
 
     def prepare_attempt(self, route, source, op_id, *, continuation=False):
         with self.transaction():
@@ -412,9 +482,16 @@ class MessageStore:
         if state in {"sent", "not_sent", "rejected"}:
             self._trim_operation_history(reserve=1)
         if state in {"not_sent", "rejected"}:
-            if row["source"]:
+            if row["source"] and row["seq"] is not None:
                 self.db.execute("UPDATE sources SET used=max(0,used-1) WHERE robot=? AND scene=? AND target=? AND message_id=?", (robot, row["scene"], row["target"], row["source"]))
             self.db.execute("DELETE FROM charges WHERE robot=? AND op_id=?", (robot, op_id))
+        delivery = ((error or {}).get("details") or {}).get("delivery") or (json.loads(row["result"]).get("delivery") if row["result"] else None)
+        if delivery:
+            delivery["attempts"][-1]["state"] = state
+            if result is not None:
+                result = {"delivery": delivery, **result}
+            else:
+                error = {**(error or {}), "details": {**((error or {}).get("details") or {}), "delivery": delivery}}
         self.db.execute("UPDATE operations SET state=?,updated=?,result=?,error=? WHERE robot=? AND op_id=?",
                         (state, now, json.dumps(result) if result else None, json.dumps(error) if error else None, robot, op_id))
         if state == "sent" and result.get("message_id"):

@@ -153,7 +153,7 @@ class ExtensionStore:
             phase = exc.phase
             if attempted and exc.business_code in ambiguous_codes:
                 phase = "result_unknown"
-            if received and phase != "partial" or attempted and exc.http_status is not None and exc.http_status >= 500 and exc.code != "token_refresh_failed":
+            if received and phase != "partial" or attempted and exc.http_status is not None and (exc.http_status == 408 or exc.http_status >= 500) and exc.code != "token_refresh_failed":
                 phase = "result_unknown"
             state = {"not_sent": "not_sent", "rejected": "rejected", "partial": "partial"}.get(phase, "unknown")
             error = V2Error(exc.code, str(exc), retcode=exc.retcode, status=exc.status, business_code=exc.business_code,

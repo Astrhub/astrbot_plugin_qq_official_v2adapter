@@ -33,6 +33,8 @@ async def streaming(config, tmp_path):
         assert request.headers["Authorization"] == "QQBot stream-fixture"
         calls.append((request.path, data))
         mode = modes.pop(0) if modes else "ok"
+        if isinstance(mode, tuple):
+            return web.json_response({"code": mode[1]}, status=mode[0])
         if mode == "wait":
             entered.set()
             await release.wait()

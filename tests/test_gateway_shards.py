@@ -141,6 +141,8 @@ async def group_env(config, tmp_path):
     handshakes, beats = asyncio.Queue(), asyncio.Queue()
     sockets, requests = {}, []
     messages = []
+    message_errors = []
+    slow_close, close_release = set(), asyncio.Event()
     suggestion = [3]
     info = {"url": ""}
     async def handle(request):
@@ -156,9 +158,11 @@ async def group_env(config, tmp_path):
         if request.path in {"/v2/groups/group-one/messages", "/channels/channel-one/messages"}:
             assert request.method == "POST" and request.headers["Authorization"] == "QQBot fixture-group-token"
             messages.append((request.path, await request.json()))
+            if message_errors:
+                return web.json_response({"code": message_errors.pop(0)}, status=400)
             return web.json_response({"id": f"reply-{len(messages)}", "timestamp": "2027-01-15T08:00:00+00:00"})
         assert request.path == "/ws" and "Authorization" not in request.headers and "Cookie" not in request.headers
-        ws = web.WebSocketResponse()
+        ws = web.WebSocketResponse(autoclose=False)
         await ws.prepare(request)
         await ws.send_json(HELLO)
         login = await ws.receive_json()
@@ -174,6 +178,8 @@ async def group_env(config, tmp_path):
             if value["op"] == 1:
                 beats.put_nowait((shard, value["d"]))
                 await ws.send_json({"op": 11})
+        if shard in slow_close:
+            await close_release.wait()
         return ws
     inbox = RawInbox(tmp_path / "raw")
     ingress = Ingress(inbox, "original-owner")
@@ -184,8 +190,10 @@ async def group_env(config, tmp_path):
         group = GatewayGroup(http, ingress, IdentifyBudget())
         try:
             yield SimpleNamespace(group=group, http=http, inbox=inbox, ingress=ingress, sockets=sockets,
-                handshakes=handshakes, beats=beats, suggestion=suggestion, requests=requests, messages=messages, config=config)
+                handshakes=handshakes, beats=beats, suggestion=suggestion, requests=requests, messages=messages, config=config,
+                slow_close=slow_close, close_release=close_release, message_errors=message_errors)
         finally:
+            close_release.set()
             await group.close()
             await http.close()
             await ingress.close()

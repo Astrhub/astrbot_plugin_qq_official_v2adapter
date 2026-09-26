@@ -153,6 +153,7 @@ class GatewayGroup:
                 "shards": [{"index": g.shard[0], "count": g.shard[1],
                             "state": "failed" if g.shard[0] in self.terminal_failures else g.state,
                             "online": g.online, "failure": self.terminal_failures.get(g.shard[0], g.last_failure),
+                            "cleanup_failure": g.cleanup_failure,
                             "recovery": "reload_required" if g.shard[0] in self.terminal_failures else None}
                            for g in self.gateways]}
 
@@ -182,7 +183,7 @@ class GatewayGroup:
                     try:
                         await task
                     except V2Error as exc:
-                        if exc.code != "reconnect_exhausted":
+                        if exc.code not in {"reconnect_exhausted", "ws_close_timeout"}:
                             raise
                         gateway = by_task[task]
                         # Exhaustion is terminal for this shard; only an explicit reload retries it.
@@ -190,7 +191,8 @@ class GatewayGroup:
                             "attempts": gateway.attempts, "last_transport_failure": gateway.last_failure}}
                     else:
                         return
-            raise V2Error("reconnect_exhausted", "All QQ shards exhausted their retry budgets; reload to retry.", status=503)
+            code = "reconnect_exhausted" if all(f["code"] == "reconnect_exhausted" for f in self.terminal_failures.values()) else "gateway_group_failed"
+            raise V2Error(code, "No QQ shards remain runnable; reload to retry.", status=503)
         except asyncio.CancelledError:
             self._state = "stopped"
             raise

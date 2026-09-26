@@ -34,24 +34,24 @@ async def test_generation_rotation_after_upstream_receives_write_keeps_unknown(s
     assert s.store.db.execute("SELECT used FROM sources").fetchone()[0] == 1
 
 
-async def test_expiry_while_waiting_for_http_slot_cannot_become_active(sending):
+async def test_expiry_while_waiting_for_http_slot_selects_active_before_writing(sending):
     s = sending
     chat, client = s.observe()
     s.http._slots = asyncio.Semaphore(0)
     original = s.store.reserve
     reserved = asyncio.Event()
-    def reserve(*args):
-        result = original(*args)
+    def reserve(*args, **kwargs):
+        result = original(*args, **kwargs)
         reserved.set()
         return result
     s.store.reserve = reserve
     task = asyncio.create_task(client.send(chat.route, "waiting"))
-    await reserved.wait()
+    await asyncio.wait_for(reserved.wait(), 2)
     s.clock[0] += 301
     s.http._slots.release()
-    with pytest.raises(V2Error) as exc:
-        await task
-    assert exc.value.code == "reply_expired" and not s.calls
+    result = await asyncio.wait_for(task, 2)
+    assert result["state"] == "sent" and result["delivery"]["reason"]["code"] == "reply_window_expired"
+    assert s.calls == [("/v2/groups/group-one/messages", {"content": "waiting", "msg_type": 0})]
     assert s.store.db.execute("SELECT used FROM sources").fetchone()[0] == 0
 
 
