@@ -59,6 +59,9 @@ class V2MessageEvent(AstrMessageEvent):
         await super().send_streaming(generator, use_fallback)
 
     async def send_typing(self):
+        typing = self.bot._state.typing
+        if self.route.scene != "c2c" or typing is None or not typing.settings().get("typing_enabled", False):
+            return
         return await self.bot.qq.typing(self.route.scene, self.route.target)
 
     async def stop_typing(self):
