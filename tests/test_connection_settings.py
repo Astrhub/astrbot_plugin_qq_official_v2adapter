@@ -6,10 +6,17 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from astrbot.core.platform.register import platform_cls_map, platform_registry, register_platform_adapter, unregister_platform_adapters_by_module
+from astrbot.core.platform.register import (
+    platform_cls_map,
+    platform_registry,
+    register_platform_adapter,
+    unregister_platform_adapters_by_module,
+)
 from astrbot.dashboard.services.config_service import ConfigDisplayService
-from test_lifecycle import context, plugin_module as plugin_module
-from test_onboarding import HostConfig, owner as owner
+from test_lifecycle import context
+from test_lifecycle import plugin_module as plugin_module
+from test_onboarding import HostConfig
+from test_onboarding import owner as owner
 
 from v2 import PLATFORM_TYPE, PLATFORM_TYPES, WEBHOOK_TYPE
 from v2.connection_config import normalize_connection

@@ -10,7 +10,13 @@ from test_lifecycle import context
 from test_lifecycle import plugin_module as plugin_module
 from test_onboarding import owner as owner
 from test_transport_http import MappedSession, upstream
-from test_transport_receive import HELLO, READY, FakeGatewayHTTP, FakeWS, gateway_document
+from test_transport_receive import (
+    HELLO,
+    READY,
+    FakeGatewayHTTP,
+    FakeWS,
+    gateway_document,
+)
 
 from v2.errors import V2Error
 from v2.models import InstanceKey, RobotKey

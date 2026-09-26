@@ -5,7 +5,6 @@ import pytest
 from aiohttp import web
 from test_transport_http import MappedSession, spec, upstream
 from test_transport_receive import (
-    gateway_document,
     HELLO,
     READY,
     Callback,
@@ -13,6 +12,7 @@ from test_transport_receive import (
     FakeWS,
     StepClock,
     event,
+    gateway_document,
 )
 
 from v2.errors import V2Error

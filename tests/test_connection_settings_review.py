@@ -2,8 +2,8 @@
 import asyncio
 import copy
 import importlib
-import time
 import json
+import time
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -13,7 +13,8 @@ from astrbot.core.message.message_event_result import MessageChain
 from astrbot.core.platform.manager import PlatformManager
 from astrbot.core.platform.register import platform_registry
 from test_gateway_shards import group_env as group_env
-from test_lifecycle import context, plugin_module as plugin_module
+from test_lifecycle import context
+from test_lifecycle import plugin_module as plugin_module
 from test_messaging_state import chat_payload
 from test_onboarding import HostConfig
 

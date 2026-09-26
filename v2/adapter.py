@@ -23,8 +23,8 @@ from .network import OneBotServer
 from .network_config import DEFAULT_NETWORK, network_config
 from .transport.http import HTTPTransport
 from .transport.inbox import Ingress
-from .transport.webhook import Webhook
 from .transport.shards import GatewayGroup, IdentifyBudget
+from .transport.webhook import Webhook
 
 DEFAULT_PLATFORM_CONFIG = {
     "id": "qq_v2", "type": PLATFORM_TYPE, "enable": False,

@@ -8,8 +8,8 @@ from astrbot.api.event import AstrMessageEvent, filter
 from astrbot.api.star import Context, Star, StarTools
 from astrbot.core.platform.register import (
     platform_cls_map,
-    register_platform_adapter,
     platform_registry,
+    register_platform_adapter,
 )
 from astrbot.core.star.filter.command import GreedyStr
 

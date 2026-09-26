@@ -8,7 +8,12 @@ import uuid
 from pathlib import Path
 
 from . import PLATFORM_TYPE, PLATFORM_TYPES, WEBHOOK_TYPE
-from .connection_config import DEFAULT_INTENTS, normalize_connection, receiver_conflict, saved_connection
+from .connection_config import (
+    DEFAULT_INTENTS,
+    normalize_connection,
+    receiver_conflict,
+    saved_connection,
+)
 from .errors import V2Error
 from .models import InstanceKey, text_id
 from .network_config import DEFAULT_NETWORK, NETWORK_FIELDS, network_config

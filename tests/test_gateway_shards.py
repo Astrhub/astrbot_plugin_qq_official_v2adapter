@@ -7,7 +7,14 @@ import pytest
 from aiohttp import web
 from test_lifecycle import plugin_module as plugin_module
 from test_transport_http import MappedSession, upstream
-from test_transport_receive import FakeGatewayHTTP, FakeWS, HELLO, READY, StepClock, gateway_document
+from test_transport_receive import (
+    HELLO,
+    READY,
+    FakeGatewayHTTP,
+    FakeWS,
+    StepClock,
+    gateway_document,
+)
 
 from v2.errors import V2Error
 from v2.models import InstanceKey
@@ -292,6 +299,7 @@ async def test_one_shard_resume_then_identify_preserves_others_and_aggregates_fa
 async def test_host_reload_group_retains_raw_owner_and_leaves_no_children(group_env, plugin_module, tmp_path, monkeypatch):
     import importlib
     import time
+
     from astrbot.core.platform.manager import PlatformManager
     from test_lifecycle import context
     from test_messaging_state import chat_payload

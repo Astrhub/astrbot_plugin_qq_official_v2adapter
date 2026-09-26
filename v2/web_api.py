@@ -12,8 +12,8 @@ from types import SimpleNamespace
 from astrbot.api.web import json_response, request
 
 from . import PLATFORM_TYPES, PLUGIN_NAME
-from .connection_config import normalize_connection
 from .commands import collect_catalog, layout_preview, panel_preview
+from .connection_config import normalize_connection
 from .errors import V2Error, unsupported
 from .host_auth import require_admin
 from .models import SCENES, InstanceKey
