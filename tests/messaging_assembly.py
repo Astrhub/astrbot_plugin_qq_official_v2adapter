@@ -88,6 +88,8 @@ async def messaging_roundtrip(lifecycle, client, headers, owner, instance, callb
             assert active["content"] == "explicit active send" and "msg_id" not in active
             await group_mention_roundtrip(client, owner, instance, callback, replies, completed, monkeypatch)
             await session_compat_roundtrip(lifecycle, client, owner, instance, callback, replies, completed)
+            from host_message_assembly import host_message_roundtrip
+            await host_message_roundtrip(lifecycle, client, owner, instance, callback, replies, completed)
             prefix = f"/api/v1/plugins/extensions/{PLUGIN_NAME}"
             boot = (await client.get(prefix + "/bootstrap", headers=headers)).json()
             view = (await client.get(prefix + "/config", params={"platform_id": instance.identity.platform_id}, headers=headers)).json()

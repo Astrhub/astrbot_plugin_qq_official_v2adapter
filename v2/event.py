@@ -2,6 +2,7 @@
 
 import copy
 
+from astrbot.core.message.components import At, AtAll
 from astrbot.core.platform.astr_message_event import AstrMessageEvent
 
 from .errors import V2Error, unsupported
@@ -22,6 +23,18 @@ class V2MessageEvent(AstrMessageEvent):
         # A public ID alone may match several QQ scenes; this binding stays event-local.
         self.session._qq_v2_route = (client.identity, route, session.session_id)
         self.is_at_or_wake_command = self.raw_data.get("t") in {"GROUP_AT_MESSAGE_CREATE", "AT_MESSAGE_CREATE"} and not self.raw_data.get("derived_from_interaction")
+
+    def get_message_outline(self):
+        """Hide only this event's self mention in the host summary view."""
+        self_id = self.get_self_id()
+        if not self_id:
+            return super().get_message_outline()
+        # Trace calls this during BaseEvent construction; never swap the shared chain.
+        view = copy.copy(self)
+        view.message_obj = copy.copy(self.message_obj)
+        view.message_obj.message = [part for part in self.get_messages()
+                                    if not (isinstance(part, At) and not isinstance(part, AtAll) and str(part.qq) == self_id)]
+        return AstrMessageEvent.get_message_outline(view)
 
     def cleanup_temporary_local_files(self):
         try:
