@@ -227,7 +227,7 @@ READY = {"op": 0, "s": 1, "t": "READY", "d": {"session_id": "fixture-session", "
 
 
 async def reconnect_sleep(delay):
-    if delay >= 1:
+    if delay > 1:
         await asyncio.Event().wait()
     await asyncio.sleep(0)
 
@@ -238,7 +238,7 @@ async def test_gateway_first_connect_resume_full_envelope_and_fatal(config, inbo
     first = FakeWS([HELLO, READY, event(), {"op": 7}])
     second = FakeWS([HELLO, {"op": 0, "s": 3, "t": "RESUMED", "d": ""}, event(), 4014])
     http = FakeGatewayHTTP(InstanceKey.from_config(config), [OSError("first connect"), first, second])
-    gateway = Gateway(http, ingress, attempts=3, sleep=lambda delay: asyncio.sleep(0) if delay < 2 else asyncio.Event().wait(), jitter=lambda: 0)
+    gateway = Gateway(http, ingress, attempts=3, sleep=lambda delay: asyncio.sleep(0) if delay <= 2 else asyncio.Event().wait(), jitter=lambda: 0)
     try:
         with pytest.raises(V2Error) as exc:
             await asyncio.wait_for(gateway.run(), 2)
@@ -334,7 +334,7 @@ async def test_documented_resume_then_invalid_session_identifies(config, inbox, 
     fresh = FakeWS([HELLO, READY, 4014])
     http = FakeGatewayHTTP(InstanceKey.from_config(config), [first, resumed, fresh])
     gateway = Gateway(http, ingress, attempts=3, jitter=lambda: 0,
-                      sleep=lambda delay: asyncio.sleep(0) if delay < 2 else asyncio.Event().wait())
+                      sleep=lambda delay: asyncio.sleep(0) if delay <= 2 else asyncio.Event().wait())
     try:
         with pytest.raises(V2Error) as exc:
             await asyncio.wait_for(gateway.run(), 2)

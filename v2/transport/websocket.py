@@ -5,14 +5,26 @@ import random
 import time
 
 import aiohttp
+from astrbot.api import logger
 
 from ..errors import V2Error
 from ..protocol import RawEnvelope, openapi_base
+from .http import retry_after_seconds
 from .shards import IdentifyBudget
 
 FATAL_CLOSES = {4001, 4002, 4010, 4011, 4012, 4013, 4014, 4914, 4915}
 # QQ 4009 expires the connection, not the session; the official contract allows Resume.
 FRESH_CLOSES = {4006, 4007, *range(4900, 4914)}
+
+MAX_RECONNECT_DELAY = 900
+
+
+def reconnect_delay(failures, retry_after=None, *, jitter=random.random):
+    base = min(MAX_RECONNECT_DELAY / 1.25, 2 ** min(max(0, failures - 1), 10))
+    spread = jitter()
+    delay = min(MAX_RECONNECT_DELAY, base * (1 + 0.25 * spread))
+    suggested = retry_after_seconds(retry_after)
+    return max(delay, suggested + min(5, suggested * 0.05) * spread) if suggested is not None else delay
 
 
 class GatewayClosed(V2Error):
@@ -22,7 +34,7 @@ class GatewayClosed(V2Error):
 
 class Gateway:
     def __init__(self, http, ingress, *, guard=lambda: None, clock=time.monotonic,
-                 sleep=asyncio.sleep, jitter=random.random, attempts=6, hello_timeout=10,
+                 sleep=asyncio.sleep, jitter=random.random, attempts=None, hello_timeout=10,
                  budget=None, shard=None, ws_session=None):
         self.http, self.ingress, self.guard = http, ingress, guard
         self.budget = budget if budget is not None else IdentifyBudget()
@@ -40,6 +52,9 @@ class Gateway:
         self.cleanup_failure = None
         self.attempts = 0
         self.interval = 30
+        self.consecutive_failures = 0
+        self.next_retry_at = None
+        self.last_login = None
         self.ack_pending = False
         self.last_ack = 0
         self.ack_sent_at = 0
@@ -56,40 +71,72 @@ class Gateway:
     async def run(self):
         failed = False
         try:
-            for attempt in range(self.attempt_limit):
+            while True:
                 self.guard()
                 if self.stopped:
                     return
-                self.attempts = attempt + 1
+                self.attempts += 1
+                self.next_retry_at = None
                 self.state = "connecting"
                 fatal = False
+                retry_after = None
                 try:
                     await self._connect()
+                    raise V2Error("gateway_disconnected", "QQ gateway ended without a close reason.", status=503)
                 except asyncio.CancelledError:
                     fatal = True
                     raise
                 except V2Error as exc:
                     self.last_error = exc.code
-                    self.last_failure = exc.as_dict()
+                    self.last_failure = {**exc.as_dict(), "stage": self.state, "login": self.last_login}
+                    retry_after = exc.retry_after
                     code = exc.business_code
-                    if code in FATAL_CLOSES | {100007, 100016, 10004} or exc.code in {"invalid_gateway", "stale_generation", "unsupported_environment"}:
+                    if (code in FATAL_CLOSES | {100007, 100016, 10004}
+                            or (exc.http_status is not None and 400 <= exc.http_status < 500
+                                and exc.http_status not in {408, 409, 429})
+                            or exc.code in {"invalid_gateway", "stale_generation", "unsupported_environment"}):
                         fatal = True
                         raise
                     if code in FRESH_CLOSES:
                         self._fresh()
+                except aiohttp.WSServerHandshakeError as exc:
+                    retry_after = exc.headers.get("Retry-After") if exc.headers is not None else None
+                    if exc.status not in {404, 408, 409, 410, 429, 500, 502, 503, 504}:
+                        fatal = True
+                        self.last_error = "gateway_handshake_rejected"
+                        self.last_failure = {"code": self.last_error, "http_status": exc.status,
+                                             "stage": self.state, "login": self.last_login}
+                        raise V2Error("gateway_handshake_rejected", "QQ gateway rejected the WebSocket handshake.",
+                                      status=503, http_status=exc.status) from None
+                    self.last_error = "gateway_handshake_retryable"
+                    self.last_failure = {"code": self.last_error, "http_status": exc.status,
+                                         "retry_after": retry_after_seconds(retry_after),
+                                         "stage": self.state, "login": self.last_login}
                 except (aiohttp.ClientError, OSError, TimeoutError):
                     self.last_error = "gateway_io_failure"
-                    self.last_failure = {"code": self.last_error}
+                    self.last_failure = {"code": self.last_error, "stage": self.state, "login": self.last_login}
                 except Exception:
                     fatal = True
                     raise
                 finally:
                     self.connected = False
                     await self._disconnect(preserve_error=fatal)
-                if attempt + 1 < self.attempt_limit:
-                    self.state = "backoff"
-                    await self.sleep(min(15, 0.5 * 2**attempt) + self.jitter() * 0.25)
-            raise V2Error("reconnect_exhausted", "QQ reconnect budget exhausted; inspect configuration before reloading.", status=503)
+                self.consecutive_failures += 1
+                if self.attempt_limit is not None and self.consecutive_failures >= self.attempt_limit:
+                    raise V2Error("reconnect_exhausted", "QQ reconnect budget exhausted; inspect configuration before reloading.", status=503)
+                self.state = "backoff"
+                delay = reconnect_delay(self.consecutive_failures, retry_after, jitter=self.jitter)
+                if self.last_failure and self.last_failure.get("business_code") == 4008:
+                    delay = max(delay, 5)
+                self.next_retry_at = time.time() + delay
+                if self.consecutive_failures in {1, 3, 6} or self.consecutive_failures % 10 == 0:
+                    reason = self.last_failure or {}
+                    logger.warning(
+                        f"QQ V2 shard {self.shard[0]}/{self.shard[1]} reconnecting: "
+                        f"code={self.last_error}, close={reason.get('business_code')}, "
+                        f"http={reason.get('http_status')}, stage={reason.get('stage')}, "
+                        f"login={reason.get('login')}, failures={self.consecutive_failures}, delay={delay:.1f}s")
+                await self.sleep(delay)
         except asyncio.CancelledError:
             failed = True
             self.state = "stopped"
@@ -104,7 +151,11 @@ class Gateway:
 
     async def _connect(self):
         openapi_base(self.http.identity.robot.environment)
+        self.last_login = None
+        if self.consecutive_failures >= 3:
+            await self.budget.discover(self.http, refresh=True)
         resume = self.session_id is not None and self.ingress.last_sequence is not None
+        self.last_login = "resume" if resume else "identify"
         self.state = "connecting" if resume else "waiting_identify"
         async with self.budget.session_start(self.http, self.guard, resume=resume) as data:
             self.guard()
@@ -160,6 +211,10 @@ class Gateway:
             if op == 11:
                 self.ack_pending = False
                 self.last_ack = self.clock()
+                if self.consecutive_failures:
+                    logger.info(f"QQ V2 shard {self.shard[0]}/{self.shard[1]} recovered after {self.consecutive_failures} failures")
+                self.consecutive_failures = 0
+                self.cleanup_failure = None
             elif op == 1:
                 await self._send_heartbeat()
             elif op == 7:
@@ -228,7 +283,7 @@ class Gateway:
                     raise
                 error = V2Error("ws_close_timeout", "QQ socket close deadline exceeded; its response was closed.", status=503)
                 self.cleanup_failure = error.as_dict()
-                if not preserve_error:
+                if not preserve_error and not isinstance(ws, aiohttp.ClientWebSocketResponse):
                     raise error from None
 
     async def close(self):

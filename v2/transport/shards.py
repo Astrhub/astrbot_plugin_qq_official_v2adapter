@@ -1,15 +1,18 @@
 """Bounded WS groups with one robot-wide Identify budget and per-socket cursors."""
 import asyncio
+import random
 import time
 from collections import deque
 from contextlib import asynccontextmanager
 
 import aiohttp
+from astrbot.api import logger
 from astrbot.core.utils.http_ssl import build_ssl_context_with_certifi
 
 from ..connection_config import MAX_AUTO_SHARDS
 from ..errors import V2Error
 from ..protocol import RequestSpec, openapi_base
+from .http import retry_after_seconds
 
 
 def gateway_info(data):
@@ -30,23 +33,43 @@ class IdentifyBudget:
         self.clock, self.sleep = clock, sleep
         self.lock = asyncio.Lock()
         self.info = None
+        self.last_refresh_at = None
+        self.refresh_not_before = 0
         self.reset_at = 0
         self.remaining = 0
         self.starts = deque()
 
-    async def _discover(self, http):
-        if self.info is None or self.clock() >= self.reset_at:
+    async def _discover(self, http, *, refresh=False):
+        if refresh or self.info is None or self.clock() >= self.reset_at:
             response = await http.request(RequestSpec(http.identity.robot.environment, "GET", "/gateway/bot"))
             data = gateway_info(response.data)
+            remaining = data["session_start_limit"]["remaining"]
+            if refresh and self.info is not None and self.clock() < self.reset_at:
+                remaining = min(self.remaining, remaining)
             self.info = data
-            self.remaining = data["session_start_limit"]["remaining"]
+            self.remaining = remaining
             self.reset_at = self.clock() + data["session_start_limit"]["reset_after"] / 1000
+            self.last_refresh_at = self.clock()
+            self.refresh_not_before = 0
         return self.info
 
-    async def discover(self, http):
+    async def discover(self, http, *, refresh=False):
         openapi_base(http.identity.robot.environment)
         async with self.lock:
-            return await self._discover(http)
+            if refresh and self.info is not None:
+                now = self.clock()
+                if ((self.last_refresh_at is not None and now - self.last_refresh_at < 60)
+                        or now < self.refresh_not_before):
+                    return self.info
+                self.last_refresh_at = now
+                try:
+                    return await self._discover(http, refresh=True)
+                except V2Error as exc:
+                    delay = retry_after_seconds(exc.retry_after)
+                    if delay is not None:
+                        self.refresh_not_before = max(self.refresh_not_before, self.clock() + delay)
+                    raise
+            return await self._discover(http, refresh=refresh)
 
     async def acquire(self, http, guard):
         async with self.session_start(http, guard) as data:
@@ -101,11 +124,14 @@ class ShardIngress:
 
 
 class GatewayGroup:
-    def __init__(self, http, ingress, budget, *, guard=lambda: None):
+    def __init__(self, http, ingress, budget, *, guard=lambda: None, sleep=asyncio.sleep, jitter=random.random):
         self.http, self.ingress, self.budget, self.guard = http, ingress, budget, guard
+        self.sleep, self.jitter = sleep, jitter
         self.gateways = []
         self.tasks = set()
         self.terminal_failures = {}
+        self.discovery_failure = None
+        self.next_retry_at = None
         self.session = None
         self.recommended = None
         self.planned = 0
@@ -139,7 +165,7 @@ class GatewayGroup:
     def last_failure(self):
         if self.terminal_failures:
             return next(reversed(self.terminal_failures.values()))
-        return next((g.last_failure for g in self.gateways if g.last_failure), None)
+        return next((g.last_failure for g in self.gateways if g.last_failure), self.discovery_failure)
 
     @property
     def last_error(self):
@@ -149,19 +175,43 @@ class GatewayGroup:
     def status(self):
         return {"mode": self.http.identity.shard_mode, "recommended": self.recommended,
                 "planned": self.planned, "connected": sum(g.online for g in self.gateways), "state": self.state,
-                "available": self.available,
+                "available": self.available, "discovery_failure": self.discovery_failure,
+                "next_retry_at": self.next_retry_at,
                 "shards": [{"index": g.shard[0], "count": g.shard[1],
                             "state": "failed" if g.shard[0] in self.terminal_failures else g.state,
                             "online": g.online, "failure": self.terminal_failures.get(g.shard[0], g.last_failure),
-                            "cleanup_failure": g.cleanup_failure,
+                            "cleanup_failure": g.cleanup_failure, "attempts": g.attempts,
+                            "consecutive_failures": g.consecutive_failures, "next_retry_at": g.next_retry_at,
                             "recovery": "reload_required" if g.shard[0] in self.terminal_failures else None}
                            for g in self.gateways]}
 
     async def run(self):
-        from .websocket import Gateway
+        from .websocket import Gateway, reconnect_delay
         self._state = "connecting"
         try:
-            data = await self.budget.discover(self.http)
+            failures = 0
+            while True:
+                self.guard()
+                try:
+                    data = await self.budget.discover(self.http)
+                    self.next_retry_at = None
+                    self._state = "connecting"
+                    if failures:
+                        logger.info(f"QQ V2 gateway discovery recovered after {failures} failures")
+                    break
+                except V2Error as exc:
+                    if (exc.code not in {"connect_failed", "network_failure", "request_deadline", "qq_rate_limited"}
+                            and exc.http_status not in {408, 409, 429, 500, 502, 503, 504}):
+                        raise
+                    failures += 1
+                    self.discovery_failure = exc.as_dict()
+                    self._state = "backoff"
+                    delay = reconnect_delay(failures, exc.retry_after, jitter=self.jitter)
+                    self.next_retry_at = time.time() + delay
+                    if failures in {1, 3, 6} or failures % 10 == 0:
+                        logger.warning(f"QQ V2 gateway discovery retry: code={exc.code}, "
+                                       f"http={exc.http_status}, failures={failures}, delay={delay:.1f}s")
+                    await self.sleep(delay)
             self.guard()
             self.recommended = data["shards"]
             if self.http.identity.shard_mode == "auto":

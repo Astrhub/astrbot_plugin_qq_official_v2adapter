@@ -18,6 +18,19 @@ TOKEN_URL = "https://api.bot.qq.com/app/getAppAccessToken"
 READ_METHODS = {"GET", "HEAD"}
 
 
+def retry_after_seconds(value, *, wall=time.time):
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        delay = float(value)
+    except (ValueError, TypeError, OverflowError):
+        try:
+            delay = parsedate_to_datetime(value).timestamp() - wall()
+        except (ValueError, TypeError, AttributeError, OverflowError):
+            return None
+    return max(0, delay) if math.isfinite(delay) else None
+
+
 @dataclass(frozen=True)
 class HTTPResult:
     data: object
