@@ -6,6 +6,7 @@ from urllib.parse import quote
 from ..errors import V2Error
 from ..messaging.store import robot_key
 from ..protocol import RequestSpec
+from .callbacks import CallbackTickets
 from .events import ExtensionEvent
 from .keyboard import TicketStore, make_keyboard
 from .management import empty
@@ -23,7 +24,8 @@ class ExtensionDispatcher:
         self.state = adapter.owner.extension_state
         self.tickets = TicketStore(adapter)
         self.robot = robot_key(adapter.identity.robot)
-        self.tasks = set()
+        self.callbacks = CallbackTickets(adapter)
+        self.tasks, self.intake, self.business = set(), set(), set()
         self.closed, self.last_error = False, None
 
     def update(self, key, *, ack=None, business=None, error=None):
@@ -56,9 +58,9 @@ class ExtensionDispatcher:
                 if any(previous.get(field) != event.metadata().get(field) for field in ("interaction_type", "scene", "target", "actor")):
                     raise V2Error("extension_event_conflict", "A retained event ID changed its original scope.", status=409)
                 return True
-            if event.interaction_type in {11, 12} and event.sent_at + 300 <= self.store.now():
-                raise V2Error("interaction_expired", "The original interaction is too old for a new ACK attempt.", status=409)
-            if len(self.tasks) >= 8:
+            if event.interaction_type in {11, 12} and min(event.sent_at, event.received_at) + 3 <= self.store.now():
+                raise V2Error("interaction_expired", "The original interaction exceeded the end-to-end ACK deadline.", status=409)
+            if len(self.intake) >= 8:
                 raise V2Error("extension_capacity", "ACK/intake workers are full; the raw event remains pending.", status=503)
             self.store.db.execute("DELETE FROM extension_events WHERE updated<=? AND ack NOT IN ('pending','unknown') AND business NOT IN ('pending','queued','admitted','unknown')", (self.store.now() - 86400,))
             count = self.store.db.execute("SELECT count(*) FROM extension_events").fetchone()[0]
@@ -73,8 +75,11 @@ class ExtensionDispatcher:
             network.observe_extension(event)
         task = asyncio.create_task(self.process(key, event), name="qq-v2-extension-dispatch")
         self.tasks.add(task)
+        self.intake.add(task)
         def finished(t):
             self.tasks.discard(t)
+            self.intake.discard(t)
+            self.business.discard(t)
             if t.cancelled() and not self.store.closed and event.interaction_type in {11, 12}:
                 try:
                     outcome = self.state.operation(self.adapter.identity.robot, "ack-" + digest(event.interaction_id))["state"]
@@ -89,11 +94,19 @@ class ExtensionDispatcher:
     async def acknowledge(self, key, event):
         op_id = "ack-" + digest(event.interaction_id)
         spec = RequestSpec(self.adapter.identity.robot.environment, "PUT", "/interactions/" + quote(event.interaction_id, safe=""), json_body={"code": 0})
+        deadline = min(event.sent_at, event.received_at) + 3
+        remaining = deadline - self.store.now()
+        if remaining <= 0:
+            self.update(key, ack="not_sent", business="not_executed", error={"code": "ack_deadline"})
+            return False
+        def before_send():
+            self.adapter.check_generation()
+            if self.store.now() >= deadline:
+                raise V2Error("ack_deadline", "Interaction ACK exceeded its original deadline.", status=409)
         try:
-            # This is an internal service objective, not a claimed QQ protocol timeout.
-            async with self.timeout_factory(self.ack_timeout):
+            async with self.timeout_factory(min(self.ack_timeout, remaining)):
                 await self.state.execute(self.ack_http, spec, op_id=op_id, kind="interaction_ack", priority=True,
-                    before_send=self.adapter.check_generation, validate=empty)
+                    before_send=before_send, validate=empty)
             self.update(key, ack="succeeded")
             return True
         except (TimeoutError, V2Error) as exc:
@@ -107,9 +120,13 @@ class ExtensionDispatcher:
             return False
 
     async def process(self, key, event):
+        task = asyncio.current_task()
         try:
-            if event.interaction_type in {11, 12} and not await self.acknowledge(key, event):
-                return
+            try:
+                if event.interaction_type in {11, 12} and not await self.acknowledge(key, event):
+                    return
+            finally:
+                self.intake.discard(task)
             if event.name == "GROUP_JOIN_REQUEST":
                 # Approval flags come from an explicit fresh application-list read, not chat observation.
                 self.update(key, business="typed_notice")
@@ -117,7 +134,16 @@ class ExtensionDispatcher:
             if event.interaction_type != 11:
                 self.update(key, business="typed_notice")
                 return
+            if len(self.business) >= 8:
+                self.update(key, business="not_executed", error={"code": "callback_business_capacity"})
+                return
+            self.business.add(task)
             token = event.payload["d"].get("data", {}).get("resolved", {}).get("button_data")
+            if isinstance(token, str) and token.startswith("qv2cb."):
+                self.update(key, business="admitted")
+                outcome = await self.callbacks.dispatch(event, token)
+                self.update(key, business=outcome)
+                return
             ticket = self.tickets.redeem(token, event, consume=False)
             slots = self.adapter.owner.delivery_slots
             if ticket["intent"] != "confirm" and not slots.available(self.adapter._event_queue):
@@ -149,12 +175,14 @@ class ExtensionDispatcher:
             raise
         except V2Error as exc:
             self.last_error = exc.code
-            self.update(key, business="rejected", error=exc.as_dict())
+            self.update(key, business="unknown" if exc.phase == "result_unknown" else "rejected", error=exc.as_dict())
         except Exception:
             self.last_error = "extension_processing_failed"
             self.update(key, business="unknown", error={"code": self.last_error})
         finally:
             self.tasks.discard(asyncio.current_task())
+            self.intake.discard(task)
+            self.business.discard(task)
             self.adapter.owner.inbox.changed.set()
 
     async def confirm(self, event, ticket):

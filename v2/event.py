@@ -13,6 +13,7 @@ class V2MessageEvent(AstrMessageEvent):
         self.bot = client.bind(route, source=getattr(message, "v2_source", None))
         self.delivery_finished = lambda: None
         self.qq = self.bot.qq
+        self.qq._actor = message.sender.user_id
         self.route = route
         self.raw_data = copy.deepcopy(message.raw_message)
         if message.type != route.message_type:

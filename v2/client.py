@@ -82,8 +82,16 @@ class ClientState:
 
 
 class NativeView:
-    def __init__(self, client):
+    def __init__(self, client, *, actor=None):
         self._client = client
+        self._actor = actor
+
+    def callback_button(self, function, *, label, data=None, audience="actor"):
+        self._client.check()
+        service = self._client._state.extensions
+        if service is None or self._client._route is None or self._actor is None:
+            raise unsupported("Callback buttons require a live QQ V2 event and extension service.")
+        return service.callbacks.issue(self._client._route, self._actor, function, label=label, data=data, audience=audience)
 
     def avatar_url(self, openid, size=100):
         self._client.check()
@@ -203,7 +211,7 @@ class V2Client:
                         "channel_dm": "online WebSocket required",
                         "media": {"support": "conditional", "group_c2c": ["image", "record", "video", "file"], "channel": ["image_http_url", "image_multipart"], "dm": ["image_http_url"]} if self._state.sender and self._state.sender.media else "not_implemented"},
             "streaming": {"c2c": "native", "other_scenes": "explicit_bounded_aggregate", "permission": "unknown"} if self._state.streaming else "not_implemented",
-            "interaction": {"ack_types": [11, 12], "execution": "opt_in_actor_ticket_host_pipeline", "permission": "unknown"} if self._state.extensions else "not_implemented",
+            "interaction": {"ack_types": [11, 12], "execution": "owned_menu_ticket_or_registered_star_button_callback", "permission": "unknown"} if self._state.extensions else "not_implemented",
             "actions": {
                 **{name: {"support": "unsupported", "reason": "complete_action_contract_unavailable" if self._state.http else "transport_not_ready", "permission": "unknown"} for name in sorted(REMOTE_ACTIONS)},
                 **{name: {"support": "unsupported", "reason": "no_equivalent_or_not_implemented", "permission": "unknown"} for name in sorted(UNSUPPORTED_ACTIONS)},

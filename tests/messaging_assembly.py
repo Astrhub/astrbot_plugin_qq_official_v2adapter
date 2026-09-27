@@ -182,7 +182,7 @@ async def group_mention_roundtrip(client, owner, instance, callback, replies, co
 
 
 async def session_compat_roundtrip(lifecycle, client, owner, instance, callback, replies, completed):
-    from astrbot.core.message.components import Plain
+    from astrbot.core.message.components import Json, Plain
     from astrbot.core.message.message_event_result import MessageChain
 
     manager = owner.context.astrbot_config_mgr
@@ -219,6 +219,11 @@ async def session_compat_roundtrip(lifecycle, client, owner, instance, callback,
             assert await owner.context.send_message(umo, MessageChain([Plain("native UMO active send")]))
             body = await asyncio.wait_for(replies.get(), 2)
             assert body["content"] == "native UMO active send" and "msg_id" not in body
+            card = {"msg_type": 2, "markdown": {"content": "## active card"}, "keyboard": {"id": "fixture-template"}}
+            assert await owner.context.send_message(umo, MessageChain([Json(card)]))
+            body = await asyncio.wait_for(replies.get(), 2)
+            assert body["markdown"] == card["markdown"] and body["keyboard"] == card["keyboard"]
+            assert body["msg_type"] == 2 and "msg_id" not in body and "event_id" not in body
         print("NATIVE_UMO: group/C2C/isolated group use real host profile routing, sid, menu and serialized send_by_session; no extra isolation prefix")
     finally:
         instance.session_isolated = previous_isolated

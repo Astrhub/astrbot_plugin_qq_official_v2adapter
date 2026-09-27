@@ -247,6 +247,55 @@ async def test_real_result_decorate_and_respond_reach_v2_http(sending, host_conf
     assert event._has_send_oper and event.get_result() is None
 
 
+
+async def test_host_result_pipeline_keeps_json_card_atomic_with_segmentation_and_t2i(sending, host_config, monkeypatch):
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+    from astrbot.core.message.components import Json
+    from astrbot.core.pipeline.context import PipelineContext
+    from astrbot.core.pipeline.respond.stage import RespondStage
+    from astrbot.core.pipeline.result_decorate import stage as decorating
+    from astrbot.core.star.star_handler import StarHandlerRegistry
+
+    monkeypatch.setattr(decorating, "star_handlers_registry", StarHandlerRegistry())
+    chat, client = sending.observe()
+    event = make_event(chat, client)
+    host_config["t2i"] = True
+    host_config["platform_settings"].update(reply_prefix="decorated:", reply_with_mention=True, reply_with_quote=True)
+    host_config["platform_settings"]["segmented_reply"].update(enable=True, only_llm_result=False, interval="0,0")
+    ctx = PipelineContext(host_config, SimpleNamespace(context=SimpleNamespace(get_using_tts_provider_async=AsyncMock(return_value=None))), "selected-profile")
+    decorate, respond = decorating.ResultDecorateStage(), RespondStage()
+    await decorate.initialize(ctx)
+    await respond.initialize(ctx)
+    card = {"msg_type": 2, "markdown": {"content": "## choose"}, "keyboard": {"id": "template"}}
+    event.set_result(event.chain_result([Json(card)]))
+    assert [part async for part in decorate.process(event)] == []
+    assert len(event.get_result().chain) == 1 and type(event.get_result().chain[0]) is Json
+    await respond.process(event)
+    assert sending.calls == [("/v2/groups/group-one/messages", {**card, "msg_id": "msg-one", "msg_seq": 1})]
+    assert event.get_result() is None
+
+
+@pytest.mark.parametrize("handler_style", ["yield", "return"])
+async def test_host_call_handler_emits_one_native_card_for_both_async_styles(sending, host_config, handler_style):
+    from astrbot.core.message.components import Json
+    from astrbot.core.pipeline.context_utils import call_handler
+    from astrbot.core.pipeline.context import PipelineContext
+    from astrbot.core.pipeline.respond.stage import RespondStage
+
+    chat, client = sending.observe()
+    event = make_event(chat, client)
+    card = {"msg_type": 2, "markdown": {"content": "callback"}, "keyboard": {"id": "template"}}
+    async def generator(ev):
+        yield ev.chain_result([Json(card)])
+    async def coroutine(ev):
+        return ev.chain_result([Json(card)])
+    respond = RespondStage()
+    await respond.initialize(PipelineContext(host_config, None, "selected-profile"))
+    async for _ in call_handler(event, generator if handler_style == "yield" else coroutine):
+        await respond.process(event)
+    assert sending.calls == [("/v2/groups/group-one/messages", {**card, "msg_id": "msg-one", "msg_seq": 1})]
+
 async def test_unsupported_group_at_all_remains_explicit(sending):
     from astrbot.core.message.message_event_result import MessageChain
 
