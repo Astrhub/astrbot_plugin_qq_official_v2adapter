@@ -22,7 +22,7 @@ def _text(value, limit=512):
     return value
 
 
-def keyboard_body(route, keyboard, callbacks=None, *, operation_id=None):
+def keyboard_body(route, keyboard, callbacks=None):
     if route.scene not in {"group", "c2c"}:
         raise unsupported("Keyboards are supported only for group/C2C messages.")
     _fields(keyboard, optional={"id", "content"})
@@ -101,10 +101,9 @@ def keyboard_body(route, keyboard, callbacks=None, *, operation_id=None):
             if kind == 1:
                 if callbacks is None:
                     raise unsupported("Callback buttons require an attached, enabled callback service.")
-                callbacks.validate(route, data, permission, allow_published=operation_id is not None, operation_id=operation_id)
-                if data in tokens:
+                if any(token == data for token, _ in tokens):
                     invalid("A callback ticket cannot be repeated in one card.")
-                tokens.append(data)
+                tokens.append((data, copy.deepcopy(permission)))
     try:
         body = copy.deepcopy(keyboard)
         if len(json.dumps(body, ensure_ascii=False).encode()) > 32 * 1024:
@@ -114,7 +113,7 @@ def keyboard_body(route, keyboard, callbacks=None, *, operation_id=None):
     return body, tokens
 
 
-def card_body(route, payload, store, callbacks=None, *, operation_id=None):
+def card_body(route, payload, store, callbacks=None):
     if type(payload) is not dict:
         invalid("A QQ card must be a JSON object.")
     _fields(payload, {"msg_type", "keyboard"}, {"content", "markdown", "media", "message_reference"})
@@ -152,7 +151,7 @@ def card_body(route, payload, store, callbacks=None, *, operation_id=None):
     if "message_reference" in payload:
         _fields(payload["message_reference"], {"message_id"})
         body["message_reference"] = {"message_id": store.reference(route, text_id(payload["message_reference"]["message_id"]))}
-    body["keyboard"], tokens = keyboard_body(route, payload["keyboard"], callbacks, operation_id=operation_id)
+    body["keyboard"], tokens = keyboard_body(route, payload["keyboard"], callbacks)
     return body, media, tokens
 
 def media_card(media, keyboard, *, reference=None):

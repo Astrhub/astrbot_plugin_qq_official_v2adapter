@@ -262,12 +262,13 @@ class SendingCore:
         atoms, use_md = parse_message(message, onebot=onebot, auto_escape=auto_escape, markdown=markdown)
         op_id = uuid4().hex if operation_id is None else text_id(operation_id)
         cards = [value for kind, value in atoms if kind == "card"]
-        callback_tokens = []
+        callback_actions, callback_tokens = [], []
         if cards:
             if keyboard is not None:
                 invalid("A card already contains its keyboard.")
             from .cards import card_body
-            body, card_media, callback_tokens = card_body(route, cards[0], self.store, self.callbacks, operation_id=op_id)
+            body, card_media, callback_actions = card_body(route, cards[0], self.store, self.callbacks)
+            callback_tokens = [token for token, _ in callback_actions]
             media = [card_media] if card_media else []
             if media and self.media is None:
                 raise unsupported("This client has no owned media service.")
@@ -314,6 +315,16 @@ class SendingCore:
                 prepared = await self.media.prepare(route, media[0])
             binding = {"body": body, "media": prepared.descriptor()} if prepared else body
             fingerprint = hashlib.sha256(json.dumps(binding, sort_keys=True).encode()).hexdigest()
+            if callback_actions and operation_id is not None:
+                retained = self.store.reserve(route, source, fingerprint, op_id, allow_active=True, existing_only=True)
+                if retained is not None:
+                    return retained["result"]
+            try:
+                for token, permission in callback_actions:
+                    self.callbacks.validate(route, token, permission, operation_id=op_id)
+            except V2Error:
+                callback_tokens = []  # Validation never published a ticket; do not revoke another valid issuance.
+                raise
             operation = self.store.reserve(route, source, fingerprint, op_id, allow_active=True)
             if operation["state"] == "sent":
                 return operation["result"]

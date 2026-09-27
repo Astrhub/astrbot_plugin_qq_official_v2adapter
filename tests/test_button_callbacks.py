@@ -3,6 +3,7 @@ import asyncio
 import copy
 import functools
 import importlib
+from dataclasses import replace
 from datetime import UTC, datetime
 
 import pytest
@@ -17,6 +18,8 @@ from astrbot.core.star.star_handler import star_handlers_registry
 from test_extension_dispatch import dispatch as dispatch
 from test_interactions import interaction
 from test_lifecycle import plugin_module as plugin_module
+from test_media_boundary import PNG
+from test_media_upload import media as media
 from test_messaging_delivery import accept
 from test_messaging_delivery import receiver as receiver
 from test_messaging_state import NOW
@@ -156,8 +159,11 @@ async def test_callback_disabled_plugin_and_wire_permission_mismatch(callback_ca
     button = event.qq.callback_button(star.confirm, label="确认", audience="all")
     altered = copy.deepcopy(button)
     altered["action"]["permission"] = {"type": 0, "specify_user_ids": ["user-one"]}
-    with pytest.raises(RuntimeError):
+    with pytest.raises(RuntimeError) as mismatch:
         await event.send(MessageChain([Json(card(altered))]))
+    assert mismatch.value.code == "ticket_scope_mismatch"
+    assert s.owner.messages.db.execute("SELECT count(*) FROM operations").fetchone()[0] == 0
+    assert s.owner.messages.db.execute("SELECT used,published FROM callback_tickets").fetchone()[:] == (0, 0)
     await event.send(MessageChain([Json(card(button))]))
     plugin = star_map[star.__class__.__module__]
     plugin.activated = False
@@ -278,6 +284,164 @@ async def test_same_operation_reuses_sent_callback_card_receipt_without_second_w
     assert error.value.code == "ticket_already_published" and len(s.calls) == 1
 
 
+
+
+@pytest.mark.parametrize("lifecycle", ["clicked", "expired", "pruned"])
+async def test_sent_card_receipt_survives_callback_ticket_lifecycle(callback_case, lifecycle):
+    s, event, star, seen = callback_case
+    clock = [NOW]
+    s.owner.messages.clock = lambda: clock[0]
+    button = event.qq.callback_button(star.direct, label="执行", data="once")
+    chain = MessageChain([Json(card(button))])
+    first = await event.bot.send(event.route, chain, operation_id="retained-card")
+    assert first["state"] == "sent"
+    token = button["action"]["data"]
+    if lifecycle == "clicked":
+        assert s.service.accept(interaction(s.config, token=token), NOW)
+        await settle(s)
+        assert seen == ["once"]
+    else:
+        clock[0] += 121
+        if lifecycle == "pruned":
+            event.qq.callback_button(star.direct, label="other")
+            with pytest.raises(RuntimeError) as missing:
+                s.service.callbacks._lookup(token)
+            assert missing.value.code == "ticket_unavailable"
+    before = list(s.calls)
+    assert await event.bot.send(event.route, chain, operation_id="retained-card") == first
+    assert s.calls == before and seen == (["once"] if lifecycle == "clicked" else [])
+    with pytest.raises(RuntimeError) as fresh:
+        await event.bot.send(event.route, chain, operation_id="fresh-card")
+    assert fresh.value.code == "ticket_unavailable" and s.calls == before
+    assert s.owner.messages.db.execute("SELECT 1 FROM operations WHERE op_id='fresh-card'").fetchone() is None
+
+
+async def test_consumed_card_receipt_rejects_changed_content_target_source_and_other_robot(callback_case):
+    s, event, star, seen = callback_case
+    button = event.qq.callback_button(star.direct, label="执行", data="once")
+    chain = MessageChain([Json(card(button))])
+    result = await event.bot.send(event.route, chain, operation_id="bound-card")
+    assert s.service.accept(interaction(s.config, token=button["action"]["data"]), NOW)
+    await settle(s)
+    assert seen == ["once"]
+    before = list(s.calls)
+    for change in ("markdown", "button"):
+        payload = copy.deepcopy(card(button))
+        if change == "markdown":
+            payload["markdown"]["content"] = "Another message"
+        else:
+            payload["keyboard"]["content"]["rows"][0]["buttons"][0]["render_data"]["label"] = "别的按钮"
+        with pytest.raises(RuntimeError) as conflict:
+            await event.bot.send(event.route, MessageChain([Json(payload)]), operation_id="bound-card")
+        assert conflict.value.code == "operation_conflict"
+    other_route = event.bot.route_for("group", "another-group")
+    malformed = copy.deepcopy(card(button))
+    malformed["msg_id"] = "forged"
+    with pytest.raises(RuntimeError) as invalid:
+        await event.bot.send(event.route, MessageChain([Json(malformed)]), operation_id="bound-card")
+    assert invalid.value.code == "invalid_message"
+    with pytest.raises(RuntimeError) as wrong_target:
+        await event.bot.send(other_route, chain, operation_id="bound-card")
+    assert wrong_target.value.code == "operation_conflict"
+    other_source = replace(event.bot._source, message_id="different-source")
+    with pytest.raises(RuntimeError) as wrong_source:
+        await s.instance.sender.send(event.route, chain, source=other_source, operation_id="bound-card")
+    assert wrong_source.value.code == "operation_conflict"
+    assert s.calls == before and event.bot.qq.send_status("bound-card")["result"] == result
+
+    config = {**s.config, "id": "receipt-other-platform", "appid": "receipt-other-robot"}
+    s.owner.context.get_config()["platform"].append(config)
+    other = s.owner.adapter_class(config, {}, asyncio.Queue())
+    other_route = other.client.route_for("group", "group-one")
+    with pytest.raises(RuntimeError) as cross_robot:
+        await other.client.send(other_route, chain, operation_id="bound-card")
+    assert cross_robot.value.code == "ticket_unavailable"
+    assert other.http.session is None and s.calls == before
+    assert s.owner.messages.db.execute("SELECT count(*) FROM operations").fetchone()[0] == 2
+
+async def test_unknown_or_evicted_card_operation_cannot_replay_after_ticket_lifecycle(callback_case):
+    s, event, star, seen = callback_case
+    button = event.qq.callback_button(star.direct, label="执行")
+    chain = MessageChain([Json(card(button))])
+    s.modes[:] = ["wait"]
+    sending = asyncio.create_task(event.bot.send(event.route, chain, operation_id="unknown-receipt"))
+    try:
+        await asyncio.wait_for(s.entered.wait(), 2)
+        sending.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await sending
+    finally:
+        s.release.set()
+    assert event.bot.qq.send_status("unknown-receipt")["state"] == "unknown"
+    before = list(s.calls)
+    with pytest.raises(RuntimeError) as unknown:
+        await event.bot.send(event.route, chain, operation_id="unknown-receipt")
+    assert unknown.value.code == "send_result_unknown" and s.calls == before and not seen
+
+    new_button = event.qq.callback_button(star.direct, label="执行")
+    new_chain = MessageChain([Json(card(new_button))])
+    await event.bot.send(event.route, new_chain, operation_id="evicted-receipt")
+    assert s.service.accept(interaction(s.config, token=new_button["action"]["data"]), NOW)
+    await settle(s)
+    with s.owner.messages.transaction():
+        s.owner.messages.db.execute(
+            "UPDATE operations SET state='history_evicted',result=NULL WHERE op_id='evicted-receipt'")
+    before = list(s.calls)
+    with pytest.raises(RuntimeError) as evicted:
+        await event.bot.send(event.route, new_chain, operation_id="evicted-receipt")
+    assert evicted.value.code == "operation_history_evicted" and s.calls == before
+
+
+async def test_in_flight_card_operation_is_not_replayed(callback_case):
+    s, event, star, _ = callback_case
+    button = event.qq.callback_button(star.direct, label="执行")
+    chain = MessageChain([Json(card(button))])
+    s.modes[:] = ["wait"]
+    sending = asyncio.create_task(event.bot.send(event.route, chain, operation_id="in-flight-receipt"))
+    try:
+        await asyncio.wait_for(s.entered.wait(), 2)
+        before = list(s.calls)
+        with pytest.raises(RuntimeError) as in_flight:
+            await event.bot.send(event.route, chain, operation_id="in-flight-receipt")
+        assert in_flight.value.code == "operation_already_attempted" and s.calls == before
+    finally:
+        s.release.set()
+        await sending
+    assert event.bot.qq.send_status("in-flight-receipt")["state"] == "sent"
+    assert len(s.calls) == 1
+
+
+async def test_media_callback_receipt_rechecks_owned_local_file_hash_before_reuse(callback_case, plugin_module, media, tmp_path):
+    s, event, star, _ = callback_case
+    api = importlib.import_module(plugin_module.__package__ + ".api")
+    s.instance.http._factory = media.http._factory
+    s.instance.media.transfer = type(s.instance.media.transfer)(
+        s.owner.media_pool, session_factory=media.service.transfer.session_factory)
+    file_path = tmp_path / "card-image.png"
+    file_path.write_bytes(PNG)
+    button = event.qq.callback_button(star.direct, label="执行")
+    item = api.media_card(api.MediaInput("image", file_path.as_uri()),
+                          {"content": {"rows": [{"buttons": [button]}]}})
+    chain = MessageChain([item])
+    first = await event.bot.send(event.route, chain, operation_id="file-card-receipt")
+    assert first["state"] == "sent" and first["media"]["source"] == "bytes"
+    before_calls, before_puts = list(media.calls), list(media.puts)
+    clock = [NOW + 121]
+    s.owner.messages.clock = lambda: clock[0]
+    retained = await event.bot.send(event.route, chain, operation_id="file-card-receipt")
+    assert retained["message_id"] == first["message_id"] and retained["operation_id"] == first["operation_id"]
+    assert retained["media"] == {key: value for key, value in first["media"].items() if key != "raw_url"}
+    assert "raw_url" not in retained["media"]
+    assert media.calls == before_calls and media.puts == before_puts
+    file_path.write_bytes(PNG + b"changed")
+    with pytest.raises(RuntimeError) as conflict:
+        await event.bot.send(event.route, chain, operation_id="file-card-receipt")
+    assert conflict.value.code == "operation_conflict"
+    assert media.calls == before_calls and media.puts == before_puts
+    with pytest.raises(RuntimeError) as fresh:
+        await event.bot.send(event.route, chain, operation_id="new-file-card")
+    assert fresh.value.code == "ticket_unavailable"
+    assert media.calls == before_calls and media.puts == before_puts
 
 
 async def test_permission_filter_and_effective_plugin_config_are_checked_before_business(callback_case):
@@ -435,6 +599,7 @@ async def test_media_callback_ticket_lifecycle_tracks_message_outcome(callback_c
             assert error.value.phase == "result_unknown"
             assert [path for _, path, _ in calls] == ["/v2/groups/group-one/files", "/v2/groups/group-one/messages"]
             assert s.owner.messages.db.execute("SELECT published FROM callback_tickets").fetchone()[0] == 1
-            with pytest.raises(RuntimeError):
+            with pytest.raises(RuntimeError) as unknown:
                 await event.bot.send(event.route, MessageChain([item]), operation_id="media-card-op")
+            assert unknown.value.code == "send_result_unknown"
             assert len(calls) == 2 and not seen
