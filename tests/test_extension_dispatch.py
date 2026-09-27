@@ -32,6 +32,8 @@ async def dispatch(receiver, config, monkeypatch):
         body = await request.json()
         calls.append((request.method, request.path, body))
         mode = modes.pop(0) if modes else "ok"
+        if mode == "auth_rejected":
+            return web.json_response({"code": 11243}, status=401)
         if mode == "wait":
             entered.set()
             await release.wait()
@@ -206,3 +208,111 @@ async def test_completed_callback_capacity_does_not_reanimate_old_ack(dispatch):
     with pytest.raises(Exception) as error:
         s.service.accept(old, clock[0])
     assert error.value.code == "interaction_expired" and len(s.calls) == 2
+
+async def test_queued_interaction_past_original_ack_deadline_never_calls_network(dispatch, monkeypatch):
+    s = dispatch
+    clock = [NOW]
+    s.owner.messages.clock = lambda: clock[0]
+    entered, resume = asyncio.Event(), asyncio.Event()
+    original = s.service.acknowledge
+    async def delayed(key, event):
+        entered.set()
+        await resume.wait()
+        return await original(key, event)
+    monkeypatch.setattr(s.service, "acknowledge", delayed)
+    payload = interaction(s.config, kind=12)
+    assert s.service.accept(payload, NOW)
+    await asyncio.wait_for(entered.wait(), 2)
+    clock[0] += 4
+    resume.set()
+    await settle(s)
+    assert not s.calls
+    assert s.service.records()[0]["ack"] == "not_sent"
+    assert s.service.records()[0]["business"] == "not_executed"
+
+
+async def test_token_wait_cannot_extend_ack_deadline(dispatch):
+    s = dispatch
+    clock = [NOW]
+    s.owner.messages.clock = lambda: clock[0]
+    original = s.instance.ack_http.token_provider
+    async def delayed_token(*, rejected=None):
+        token = await original(rejected=rejected)
+        clock[0] += 4
+        return token
+    s.instance.ack_http.token_provider = delayed_token
+    assert s.service.accept(interaction(s.config, kind=12), NOW)
+    await settle(s)
+    assert not s.calls
+    record = s.service.records()[0]
+    assert record["ack"] == "not_sent" and record["business"] == "not_executed"
+    assert record["error"]["code"] == "ack_deadline"
+
+
+async def test_full_business_pool_still_acks_new_click_and_menu_then_recovers(dispatch, monkeypatch):
+    s = dispatch
+    active, release, acked, menu_acked = asyncio.Event(), asyncio.Event(), asyncio.Event(), asyncio.Event()
+    started = 0
+    async def business(event, token):
+        nonlocal started
+        started += 1
+        if started == 8:
+            active.set()
+        await release.wait()
+        return "finished_unconfirmed"
+    original_ack = s.service.acknowledge
+    async def ack(key, event):
+        result = await original_ack(key, event)
+        if event.interaction_id == "overflow" and result:
+            acked.set()
+        if event.interaction_id == "menu-during-busy" and result:
+            menu_acked.set()
+        return result
+    monkeypatch.setattr(s.service.callbacks, "dispatch", business)
+    monkeypatch.setattr(s.service, "acknowledge", ack)
+    try:
+        for index in range(8):
+            assert s.service.accept(interaction(s.config, token="qv2cb.fixture", interaction_id=f"busy-{index}"), NOW)
+        await asyncio.wait_for(active.wait(), 2)
+        assert len(s.service.business) == 8 and not s.service.intake
+        overflow = interaction(s.config, token="qv2cb.fixture", interaction_id="overflow")
+        assert s.service.accept(overflow, NOW)
+        await asyncio.wait_for(acked.wait(), 2)
+        outcome = next(row for row in s.service.records() if row["event_key"] == "interaction:overflow")
+        assert outcome["ack"] == "succeeded" and outcome["business"] == "not_executed"
+        assert outcome["error"] == {"code": "callback_business_capacity"}
+        assert s.service.accept(overflow, NOW)
+        assert s.service.accept(interaction(s.config, kind=12, interaction_id="menu-during-busy"), NOW)
+        await asyncio.wait_for(menu_acked.wait(), 2)
+        # The ACK lane is free even when all eight business slots are occupied.
+        assert len([path for method, path, _ in s.calls if method == "PUT"]) == 10
+    finally:
+        release.set()
+        await settle(s)
+    assert not s.service.intake and not s.service.business and not s.service.tasks
+    assert started == 8
+    assert s.service.accept(interaction(s.config, token="qv2cb.fixture", interaction_id="after-release"), NOW)
+    await settle(s)
+    assert started == 9
+    assert s.service.records()[0]["business"] == "finished_unconfirmed"
+
+
+async def test_dispatch_close_cancels_business_without_replaying_acked_interaction(dispatch, monkeypatch):
+    s = dispatch
+    active, blocker = asyncio.Event(), asyncio.Event()
+    async def business(event, token):
+        active.set()
+        await blocker.wait()
+        return "finished_unconfirmed"
+    monkeypatch.setattr(s.service.callbacks, "dispatch", business)
+    frame = interaction(s.config, token="qv2cb.fixture", interaction_id="close-busy")
+    assert s.service.accept(frame, NOW)
+    await asyncio.wait_for(active.wait(), 2)
+    await s.service.close()
+    assert not s.service.tasks and not s.service.intake and not s.service.business
+    record = s.service.records()[0]
+    assert record["ack"] == "succeeded" and record["business"] == "unknown"
+    assert s.instance._event_queue.empty()
+    with pytest.raises(Exception) as error:
+        s.service.accept(frame, NOW)
+    assert error.value.code == "service_stopped"

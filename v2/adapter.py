@@ -108,6 +108,7 @@ class V2Adapter(Platform):
         self.ack_http = HTTPTransport(identity, platform_config["secret"], guard=self.check_generation, token_provider=self.http.token)
         self.extensions = ExtensionDispatcher(self, self.ack_http)
         self.client._state.extensions = self.extensions
+        self.sender.callbacks = self.extensions.callbacks
         self.network = OneBotServer(self, network)
         self.client._state.network = self.network
         self.owner.instances.add(self)

@@ -21,13 +21,23 @@ async def test_real_astrbot_assembly(config, monkeypatch, qq_reject_server, qq_p
     plugin_dir = Path("/work/data/plugins") / PLUGIN_NAME
     plugin_dir.parent.mkdir(parents=True, exist_ok=True)
     plugin_dir.mkdir()
-    for entry in ("main.py", "metadata.yaml", "_conf_schema.json", "requirements.txt", "assets", "v2", "pages"):
+    for entry in ("main.py", "api.py", "metadata.yaml", "_conf_schema.json", "requirements.txt", "assets", "v2", "pages"):
         source = Path("/plugin") / entry
         if source.is_dir():
             shutil.copytree(source, plugin_dir / entry)
         else:
             shutil.copy2(source, plugin_dir / entry)
     import importlib
+    third_party = plugin_dir.parent / "fixture_button_star"
+    third_party.mkdir()
+    (third_party / "metadata.yaml").write_text("name: fixture_button_star\nauthor: fixture\ndesc: Real callback loader test\nversion: v0.0.1\n")
+    (third_party / "main.py").write_text(
+        "from astrbot.api.star import Star\n"
+        "from data.plugins.astrbot_plugin_qq_official_v2adapter.api import button_callback\n"
+        "class ThirdPartyButton(Star):\n"
+        "    @button_callback('confirm')\n"
+        "    async def respond_button(self, event):\n"
+        "        yield event.plain_result('confirmed')\n")
 
     from test_transport_http import MappedSession
     mapped_sessions = []
@@ -63,6 +73,16 @@ async def test_real_astrbot_assembly(config, monkeypatch, qq_reject_server, qq_p
         assert metadata is not None
         owner = metadata.star_cls
         assert owner and not owner.stopping
+        from astrbot.core.star.star_handler import star_handlers_registry
+        other_star = lifecycle.star_context.get_registered_star("fixture_button_star")
+        assert other_star and other_star.star_cls and other_star.activated
+        other_handler = star_handlers_registry.get_handler_by_full_name("data.plugins.fixture_button_star.main_respond_button")
+        assert other_handler and type(other_handler.handler) is partial
+        assert other_handler.handler.args == (other_star.star_cls,)
+        assert other_handler.handler.func.__qq_v2_callback_name__ == "confirm"
+        assert other_handler.handler_full_name in other_star.star_handler_full_names
+        verified = next(iter(owner.instances)).extensions.callbacks._handler(function=other_star.star_cls.respond_button)
+        assert verified[1] is other_handler and verified[3]
         assert PLATFORM_TYPE in platform_cls_map
         assert len(owner.instances) == 1
         instance = next(iter(owner.instances))

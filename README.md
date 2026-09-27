@@ -24,6 +24,7 @@
 - OneBot `send_group_msg` / `send_private_msg` / `send_msg`，缓存资料和头像 URL 查询
 - 外链交QQ转存，本地文件/Base64分片上传；C2C原生流式、其他场景有界聚合、显式C2C typing
 - 互动11/12独立ACK、短期点击者票据与正常权限管线；群/频道具名管理、分享及有真实记录的撤回
+- 群/C2C 原生 Json 卡片、模板/自定义键盘、第三方 Star 受控回调与媒体卡片；[按钮用法与边界](docs/BUTTONS.md)
 
 | 场景 | 基础发送 | 限制 |
 |------|----------|------|
@@ -39,7 +40,7 @@ OneBot 接入通过 Pages“连接配置”管理，每实例单独端口和专�
 | 群/C2C媒体 | 图片、语音、视频、文件；格式接受由QQ判断，URL转存及prepare→PUT→finish→files；整链预检，不静默丢caption或拆多条 |
 | 频道/DM图片 | HTTP(S)图片URL直传；频道本地图片另支持multipart。DM本地文件及两场景语音/视频/文件拒绝 |
 | 流式/typing | C2C原生流；其他场景先声明聚合模式。typing需开关和被动来源，使用一次回复序号、不续期；自动typing跳过不支持、未开启或服务未附加的场景 |
-| 键盘 | 群/C2C开启后使用 `v2menu kb`；导航/详情/预填与无参指令二次确认分开，权限未知，有参不自动执行 |
+| 键盘 | 群/C2C 可直接发送原生 Json 模板或自定义卡片；`keyboard_enabled` 启用受控回调，旧 `v2menu kb` 的 `keyboard_execute` 仅限无参指令票据。详见 [插件按钮](docs/BUTTONS.md) |
 | 管理/分享 | 原生具名接口；OneBot同步群资料/成员/禁言/移除/审批、真实bot资料与撤回。写入默认关闭，实际权限由QQ决定 |
 
 本地文件按 AstrBot 读取及进程文件权限，无额外 `media_roots` 白名单；旧字段兼容忽略。
@@ -124,6 +125,7 @@ ASTRBOT_SOURCE=/patch/AstrBot bash scripts/test-isolated.sh -q
 astrbot_plugin_qq_official_v2adapter/
 ├── main.py               # 插件主入口：注册/注销两种自有平台
 ├── assets/               # QQ 官方平台图标与来源许可
+├── api.py                # 第三方插件公共按钮 API
 ├── v2/                   # 适配器核心
 │   ├── adapter.py        #   平台适配器与实例生命周期
 │   ├── event.py          #   V2 事件与发送入口

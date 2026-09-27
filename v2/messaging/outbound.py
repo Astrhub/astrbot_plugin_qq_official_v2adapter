@@ -9,11 +9,20 @@ from html.parser import HTMLParser
 from urllib.parse import quote, unquote_plus
 from uuid import uuid4
 
-from astrbot.core.message.components import At, File, Image, Plain, Record, Reply, Video
+from astrbot.core.message.components import (
+    At,
+    File,
+    Image,
+    Json,
+    Plain,
+    Record,
+    Reply,
+    Video,
+)
 from astrbot.core.message.message_event_result import MessageChain
 
 from ..errors import V2Error, unsupported
-from ..media.types import FilePart, MediaInput
+from ..media.types import FilePart, MediaInput, native_media_input
 from ..models import text_id
 from ..protocol import RequestSpec, openapi_base
 from .reply import (
@@ -82,7 +91,9 @@ def parse_message(message, *, onebot=False, auto_escape=False, markdown=None):
         invalid()
     atoms, markdown_segments = [], 0
     for segment in segments:
-        if isinstance(segment, Plain):
+        if type(segment) is Json:
+            kind, value = "card", segment.data
+        elif isinstance(segment, Plain):
             kind, value = "text", segment.text
         elif isinstance(segment, At):
             kind, value = "at", segment.qq
@@ -91,9 +102,7 @@ def parse_message(message, *, onebot=False, auto_escape=False, markdown=None):
         elif isinstance(segment, MediaInput):
             kind, value = "media", segment.validate()
         elif isinstance(segment, (Image, Record, Video, File)):
-            media_kind = {Image: "image", Record: "record", Video: "video", File: "file"}[type(segment)]
-            source = (segment.file_ if isinstance(segment, File) else segment.file) or segment.url
-            kind, value = "media", MediaInput(media_kind, source, getattr(segment, "name", None) or "upload").validate()
+            kind, value = "media", native_media_input(segment)
         elif isinstance(segment, dict) and segment.keys() <= {"type", "data"}:
             kind = segment.get("type")
             data = segment.get("data")
@@ -111,7 +120,7 @@ def parse_message(message, *, onebot=False, auto_escape=False, markdown=None):
             value = data[name]
         else:
             raise unsupported("This message component is not supported by basic sending.")
-        if kind == "media":
+        if kind in {"media", "card"}:
             atoms.append((kind, value))
             continue
         if not isinstance(value, str):
@@ -126,6 +135,8 @@ def parse_message(message, *, onebot=False, auto_escape=False, markdown=None):
         atoms.append((kind, value))
     if markdown_segments and (markdown_segments != 1 or any(k == "text" for k, _ in atoms)):
         invalid("Mixed text and Markdown segments cannot be sent as one equivalent message.")
+    if any(kind == "card" for kind, _ in atoms) and (len(atoms) != 1 or onebot or markdown is not None or use_md):
+        raise unsupported("A QQ card must be the sole native Json component with no stream/OneBot/text overrides.")
     return atoms, use_md
 
 
@@ -220,6 +231,7 @@ class SendingCore:
         self.identity, self.http, self.store, self.guard = identity, http, store, guard
         self.is_online, self.ws_online = is_online, ws_online
         self.media = media
+        self.callbacks = None
         self.tasks = set()
         self.closed = False
         self.storage_failed = False
@@ -248,34 +260,47 @@ class SendingCore:
         if len(self.tasks) >= 32:
             raise V2Error("send_capacity", "Too many pending sends.", status=429)
         atoms, use_md = parse_message(message, onebot=onebot, auto_escape=auto_escape, markdown=markdown)
-        if keyboard is not None:
-            from ..extensions.keyboard import OwnedKeyboard
-            if not isinstance(keyboard, OwnedKeyboard) or not use_md or route.scene not in {"group", "c2c"}:
-                raise unsupported("Only owned group/C2C Markdown keyboards are supported.")
-            keyboard.validate(route)
-        media = [value for kind, value in atoms if kind == "media"]
-        if media:
-            if self.media is None:
-                raise unsupported("This client has no owned media service.")
-            if len(media) != 1 or use_md:
-                raise unsupported("One media item is supported; mixed Markdown/media or multiple items cannot be sent equivalently.")
-            ordinary = [(kind, value) for kind, value in atoms if kind != "media"]
-            if route.scene in {"channel", "dm"} and atoms[-1][0] != "media":
-                raise unsupported("Channel/DM media must follow its text/reference components.")
-            if any(kind != "reply" for kind, _ in ordinary):
-                body = build_body(route, ordinary, False, self.store)
-            else:
-                if len(ordinary) > 1:
-                    invalid("Only one reply reference can be expressed.")
-                body = {"message_reference": {"message_id": self.store.reference(route, ordinary[0][1])}} if ordinary else {}
-        else:
-            body = build_body(route, atoms, use_md, self.store)
-        if keyboard is not None:
-            body["keyboard"] = keyboard.validate(route)
         op_id = uuid4().hex if operation_id is None else text_id(operation_id)
+        cards = [value for kind, value in atoms if kind == "card"]
+        callback_actions, callback_tokens = [], []
+        if cards:
+            if keyboard is not None:
+                invalid("A card already contains its keyboard.")
+            from .cards import card_body
+            body, card_media, callback_actions = card_body(route, cards[0], self.store, self.callbacks)
+            callback_tokens = [token for token, _ in callback_actions]
+            media = [card_media] if card_media else []
+            if media and self.media is None:
+                raise unsupported("This client has no owned media service.")
+        else:
+            if keyboard is not None:
+                from ..extensions.keyboard import OwnedKeyboard
+                if not isinstance(keyboard, OwnedKeyboard) or not use_md or route.scene not in {"group", "c2c"}:
+                    raise unsupported("Only owned group/C2C Markdown keyboards are supported.")
+                keyboard.validate(route)
+            media = [value for kind, value in atoms if kind == "media"]
+            if media:
+                if self.media is None:
+                    raise unsupported("This client has no owned media service.")
+                if len(media) != 1 or use_md:
+                    raise unsupported("One media item is supported; mixed Markdown/media or multiple items cannot be sent equivalently.")
+                ordinary = [(kind, value) for kind, value in atoms if kind != "media"]
+                if route.scene in {"channel", "dm"} and atoms[-1][0] != "media":
+                    raise unsupported("Channel/DM media must follow its text/reference components.")
+                if any(kind != "reply" for kind, _ in ordinary):
+                    body = build_body(route, ordinary, False, self.store)
+                else:
+                    if len(ordinary) > 1:
+                        invalid("Only one reply reference can be expressed.")
+                    body = {"message_reference": {"message_id": self.store.reference(route, ordinary[0][1])}} if ordinary else {}
+            else:
+                body = build_body(route, atoms, use_md, self.store)
+            if keyboard is not None:
+                body["keyboard"] = keyboard.validate(route)
         task = asyncio.current_task()
         self.tasks.add(task)
         attempted, wire_started, prepared, upload = False, None, None, None
+        published_here = False
         def check_source():
             self.check(route, source)
             if prepared:
@@ -290,6 +315,16 @@ class SendingCore:
                 prepared = await self.media.prepare(route, media[0])
             binding = {"body": body, "media": prepared.descriptor()} if prepared else body
             fingerprint = hashlib.sha256(json.dumps(binding, sort_keys=True).encode()).hexdigest()
+            if callback_actions and operation_id is not None:
+                retained = self.store.reserve(route, source, fingerprint, op_id, allow_active=True, existing_only=True)
+                if retained is not None:
+                    return retained["result"]
+            try:
+                for token, permission in callback_actions:
+                    self.callbacks.validate(route, token, permission, operation_id=op_id)
+            except V2Error:
+                callback_tokens = []  # Validation never published a ticket; do not revoke another valid issuance.
+                raise
             operation = self.store.reserve(route, source, fingerprint, op_id, allow_active=True)
             if operation["state"] == "sent":
                 return operation["result"]
@@ -316,13 +351,20 @@ class SendingCore:
                     else:
                         spec = RequestSpec(robot.environment, "POST", path, json_body=wire_body)
                     def before_send():
-                        nonlocal attempted, wire_started
+                        nonlocal attempted, wire_started, published_here
+                        # HTTPTransport re-enters write preflight only after an explicit HTTP 401.
+                        retried_auth, attempted = attempted, False
                         check_source()
                         if upload and upload["expires_at"] is not None and upload["expires_at"] <= self.store.now():
                             raise V2Error("upload_ticket_expired", "The upload receipt expired before the message request.", status=409)
                         if keyboard is not None:
                             keyboard.validate(route)
-                        delivery.before_send(retried_auth=attempted)
+                        if callback_tokens:
+                            for token in callback_tokens:
+                                self.callbacks.validate(route, token, allow_published=True, operation_id=op_id)
+                        if callback_tokens and self.callbacks.publish(callback_tokens, op_id):
+                            published_here = True
+                        delivery.before_send(retried_auth=retried_auth)
                         attempted = True
                         wire_started = self.store.now()
                     try:
@@ -385,6 +427,14 @@ class SendingCore:
                 self.store.finish(robot, op_id, "unknown" if attempted else "not_sent")
                 raise V2Error("send_state_failure", "Send state could not be finalized; inspect the retained operation before retrying.",
                               status=503, phase="result_unknown" if attempted else "not_sent", operation_id=op_id) from None
+        except V2Error as exc:
+            if callback_tokens and exc.phase in {"not_sent", "rejected"}:
+                self.callbacks.revoke(callback_tokens, definite=published_here, operation_id=op_id)
+            raise
+        except asyncio.CancelledError:
+            if callback_tokens and not attempted:
+                self.callbacks.revoke(callback_tokens)
+            raise
         except sqlite3.Error:
             self.storage_failed = True
             raise V2Error("send_state_failure", "Message storage failed; restore it and inspect this operation before retrying.",

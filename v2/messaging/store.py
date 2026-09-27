@@ -407,7 +407,7 @@ class MessageStore:
         result["error"] = json.loads(result["error"]) if result["error"] else None
         return result
 
-    def reserve(self, route, source, digest, op_id, *, allow_active=False):
+    def reserve(self, route, source, digest, op_id, *, allow_active=False, existing_only=False):
         text_id(op_id)
         key = route_key(route)
         with self.transaction():
@@ -424,6 +424,8 @@ class MessageStore:
                 if old["state"] == "history_evicted":
                     failure("operation_history_evicted", "Confirmed-send result details were evicted; this operation cannot be replayed.")
                 failure("operation_already_attempted", "This operation was already attempted; inspect its recorded result.")
+            if existing_only:
+                return None
             pending = self.db.execute("SELECT count(*) FROM operations WHERE state IN ('reserved','in_flight','unknown')").fetchone()[0]
             if pending >= self.operation_capacity:
                 failure("message_state_full", "Unfinished operation capacity reached; unknown and in-flight writes were retained.", 503)
