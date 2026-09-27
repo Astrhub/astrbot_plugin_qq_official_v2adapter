@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from urllib.parse import urlsplit
 
-from astrbot.core.message.components import At, Plain, Reply, Unknown
+from astrbot.core.message.components import At, File, Image, Plain, Record, Reply, Unknown, Video
 from astrbot.core.platform.astrbot_message import AstrBotMessage, MessageMember
 from astrbot.core.platform.message_type import MessageType
 
@@ -76,6 +76,42 @@ def safe_avatar(value):
     except ValueError:
         # Omit malformed optional avatars without discarding the real chat identity.
         pass
+    return None
+
+
+def attachment_url(value):
+    if not isinstance(value, str):
+        return None
+    try:
+        parsed = urlsplit(value)
+        if (value.startswith(("http://", "https://")) and parsed.hostname and parsed.username is None
+                and parsed.password is None and not any(ord(c) <= 32 or ord(c) == 127 for c in value)):
+            return value
+    except ValueError:
+        pass
+    return None
+
+
+def attachment_component(item):
+    kind = item.get("content_type")
+    url = attachment_url(item.get("url"))
+    if kind == "voice":
+        source = attachment_url(item.get("voice_wav_url")) or url
+        if source:
+            caption = item.get("asr_refer_text")
+            return Record(file=source, url=source, text=caption if isinstance(caption, str) else None)
+    elif url and isinstance(kind, str):
+        if kind.startswith("image/") and len(kind) > len("image/"):
+            return Image(file=url, url=url)
+        if kind == "video/mp4":
+            return Video(file=url, url=url)
+    if url:
+        name = item.get("filename")
+        if (not isinstance(name, str) or not 1 <= len(name.encode()) <= 255
+                or any(c in name for c in "/\\") or any(ord(c) < 32 or ord(c) == 127 for c in name)
+                or name in {".", ".."}):
+            name = "file"
+        return File(name=name, url=url)
     return None
 
 
@@ -188,7 +224,6 @@ def convert_chat(identity, envelope, *, isolated=False, bot_id=""):
         if scene == "group":
             part.qq = user  # Preserve OpenID leading zeros; the host At constructor coerces numeric strings.
         parts.append(part)
-    quoted = {}
     nodes = 0
 
     def elements(node, depth=0):
@@ -208,23 +243,18 @@ def convert_chat(identity, envelope, *, isolated=False, bot_id=""):
             if size is not None and (type(size) is not int or size < 0):
                 invalid()
             attachments.append(copy.deepcopy(item))
-        if depth:
-            idx = node.get("msg_idx")
-            is_reference = node.get("message_type") == 103 or (idx and idx == indices.get("ref_msg_idx"))
-            user = observe(node["author"]) if is_reference and "author" in node else None
-            text = node.get("content", "")
-            if not isinstance(text, str):
-                invalid()
-            if idx:
-                idx = text_id(idx)
-                quoted[idx] = (user, text, node.get("author", {}).get("username"))
-                references.append({"ref_idx": idx, "sender": user})
+        text = node.get("content", "")
+        if not isinstance(text, str):
+            invalid()
+        idx = node.get("msg_idx") if depth else None
+        if idx is not None:
+            idx = text_id(idx)
         children = node.get("msg_elements", [])
         if not isinstance(children, list):
             invalid()
-        for child in children:
-            elements(child, depth + 1)
-    elements(data)
+        return node, idx, [elements(child, depth + 1) for child in children]
+
+    root = elements(data)
     ref = indices.get("ref_msg_idx")
     if scene in {"channel", "dm"} and "message_reference" in data:
         reference = data["message_reference"]
@@ -233,10 +263,57 @@ def convert_chat(identity, envelope, *, isolated=False, bot_id=""):
         ref = text_id(reference.get("message_id"))
         references.append({"message_id": ref})
     if ref:
-        user, text, nickname = quoted.get(ref, (None, "", None))
-        parts.insert(0, Reply(id=ref, sender_id=user, sender_nickname=nickname, time=None,
-                              chain=[Plain(text)] if text else [], message_str=text))
-    if attachments:
+        selected = []
+        has_other_index = False
+        if scene in {"group", "c2c"} and data.get("message_type") not in (101, 102):
+            def match(nodes):
+                nonlocal has_other_index
+                for node in nodes:
+                    if node[1] == ref:
+                        selected.append(node)
+                    elif node[1] is not None:
+                        has_other_index = True
+                    else:
+                        match(node[2])
+            match(root[2])
+            # Official group quotes can omit child msg_idx entirely.
+            if data.get("message_type") == 103 and not selected and not has_other_index:
+                selected = [node for node in root[2] if node[1] is None and node[0].get("message_type") not in (101, 102)]
+
+        def quote_parts(node):
+            payload, _, children = node
+            result = [Plain(payload["content"])] if payload.get("content") else []
+            result.extend(part for item in payload.get("attachments", [])
+                          if (part := attachment_component(item)) is not None)
+            for child in children:
+                if child[1] is None or child[1] == ref:
+                    result.extend(quote_parts(child))
+            return result
+
+        chain = [part for node in selected for part in quote_parts(node)]
+        quoted_text = "".join(part.text for part in chain if isinstance(part, Plain))
+        authors = []
+        for node in selected:
+            quoted_author = node[0].get("author")
+            if quoted_author is not None and quoted_author.get(field) is not None:
+                authors.append((text_id(quoted_author[field]), quoted_author))
+        quoted_user, quoted_name = None, None
+        if authors and len({user for user, _ in authors}) == 1:
+            quoted_user = observe(authors[0][1])
+            quoted_name = authors[0][1].get("username")
+            if not isinstance(quoted_name, str) or len(quoted_name) > 256:
+                quoted_name = None
+        if selected and any(node[1] == ref for node in selected):
+            references.append({"ref_idx": ref, "sender": quoted_user})
+        reply = Reply(id=ref, sender_id=quoted_user, sender_nickname=quoted_name, time=None,
+                      chain=chain, message_str=quoted_text)
+        if quoted_user is not None:
+            reply.sender_id = quoted_user  # The host model coerces numeric-looking IDs to int.
+        parts.insert(0, reply)
+    top_attachments = data.get("attachments", [])
+    converted = [attachment_component(item) for item in top_attachments]
+    parts.extend(part for part in converted if part is not None)
+    if top_attachments and not any(part is not None for part in converted):
         parts.append(Unknown(text="[附件元数据；需显式受控读取]"))
     if not parts:
         # Empty/structured chat remains a real chat, not fabricated card prompt text.
