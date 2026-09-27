@@ -166,7 +166,7 @@ class CallbackTickets:
         token = "qv2cb." + secrets.token_urlsafe(24)
         with self.store.transaction():
             self.store.db.execute("DELETE FROM callback_tickets WHERE expires<=?", (self.store.now(),))
-            if self.store.db.execute("SELECT count(*) FROM callback_tickets").fetchone()[0] >= 4096:
+            if self.store.db.execute("SELECT count(*) FROM callback_tickets WHERE robot=?", (robot_key(route.robot),)).fetchone()[0] >= 4096:
                 raise V2Error("ticket_capacity", "Callback tickets reached their bounded capacity.", status=429)
             self.store.db.execute("INSERT INTO callback_tickets VALUES(?,?,?,?,?,?,?)", (hashlib.sha256(token.encode()).hexdigest(), robot_key(route.robot), self.store.now() + settings["applied"]["extensions"].get("ticket_ttl", 120), 0, 0, None, json.dumps(body, ensure_ascii=False)))
         return {"id": secrets.token_hex(6), "render_data": {"label": label, "style": 1},
