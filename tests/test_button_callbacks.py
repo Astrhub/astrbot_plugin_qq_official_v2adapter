@@ -223,6 +223,48 @@ async def test_published_ticket_cannot_be_reused_in_parallel_message(callback_ca
         await task
     assert [path for _, path, _ in s.calls] == ["/v2/groups/group-one/messages"]
 
+@pytest.mark.parametrize("auth_retry", [False, True])
+async def test_callback_publication_failure_is_not_sent_and_releases_reply_charge(callback_case, monkeypatch, auth_retry):
+    s, event, star, seen = callback_case
+    store = s.owner.messages
+    button = event.qq.callback_button(star.direct, label="执行")
+    item = MessageChain([Json(card(button))])
+
+    def fail_publication():
+        store.db.execute("CREATE TEMP TRIGGER fail_callback_publication BEFORE UPDATE OF published ON callback_tickets "
+                         "BEGIN SELECT RAISE(ABORT, 'publication fixture failure'); END")
+
+    if auth_retry:
+        original_exchange = s.instance.http._exchange
+
+        async def exchange(*args, **kwargs):
+            response = await original_exchange(*args, **kwargs)
+            if response[0] == 401:
+                fail_publication()
+            return response
+
+        monkeypatch.setattr(s.instance.http, "_exchange", exchange)
+        s.modes[:] = ["auth_rejected"]
+    else:
+        fail_publication()
+
+    with pytest.raises(RuntimeError) as error:
+        await event.bot.send(event.route, item, operation_id="publication-failure")
+    assert len(s.calls) == int(auth_retry)
+    assert error.value.phase == "not_sent"
+    operation = event.bot.qq.send_status("publication-failure")
+    assert operation["state"] == "not_sent"
+    assert operation["error"]["details"]["delivery"]["attempts"][-1]["wire_attempts"] == int(auth_retry)
+    assert store.db.execute("SELECT used FROM sources").fetchone()[0] == 0
+    assert store.db.execute("SELECT count(*) FROM callback_tickets").fetchone()[0] == 0
+    assert not seen
+
+    store.db.execute("DROP TRIGGER fail_callback_publication")
+    fresh = event.qq.callback_button(star.direct, label="执行")
+    result = await event.bot.send(event.route, MessageChain([Json(card(fresh))]), operation_id="publication-recovered")
+    assert result["state"] == "sent" and len(s.calls) == int(auth_retry) + 1
+
+
 async def test_same_operation_reuses_sent_callback_card_receipt_without_second_wire(callback_case):
     s, event, star, seen = callback_case
     button = event.qq.callback_button(star.direct, label="执行")

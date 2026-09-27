@@ -341,6 +341,8 @@ class SendingCore:
                         spec = RequestSpec(robot.environment, "POST", path, json_body=wire_body)
                     def before_send():
                         nonlocal attempted, wire_started, published_here
+                        # HTTPTransport re-enters write preflight only after an explicit HTTP 401.
+                        retried_auth, attempted = attempted, False
                         check_source()
                         if upload and upload["expires_at"] is not None and upload["expires_at"] <= self.store.now():
                             raise V2Error("upload_ticket_expired", "The upload receipt expired before the message request.", status=409)
@@ -349,10 +351,10 @@ class SendingCore:
                         if callback_tokens:
                             for token in callback_tokens:
                                 self.callbacks.validate(route, token, allow_published=True, operation_id=op_id)
-                        delivery.before_send(retried_auth=attempted)
-                        attempted = True
                         if callback_tokens and self.callbacks.publish(callback_tokens, op_id):
                             published_here = True
+                        delivery.before_send(retried_auth=retried_auth)
+                        attempted = True
                         wire_started = self.store.now()
                     try:
                         response = await self.http.request(spec, before_send=before_send)

@@ -32,6 +32,8 @@ async def dispatch(receiver, config, monkeypatch):
         body = await request.json()
         calls.append((request.method, request.path, body))
         mode = modes.pop(0) if modes else "ok"
+        if mode == "auth_rejected":
+            return web.json_response({"code": 11243}, status=401)
         if mode == "wait":
             entered.set()
             await release.wait()

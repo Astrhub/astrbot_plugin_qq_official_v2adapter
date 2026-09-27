@@ -63,4 +63,6 @@ await event.send(MessageChain([image]))
 本地文件可使用 `Image.fromFileSystem(path)` 或 `File(name, file=file_uri)`；`MediaInput("image", source)` 仍可作为高级输入。
 媒体按现有进程文件权限、Base64 大小限制或外链交 QQ 转存；上传后用本次目标自己的 `file_info` 发 `msg_type=7` + keyboard。Markdown 中的公网图片 URL 由 QQ 转存，不会把本地图片伪装成公网 URL。群没有原生流式；C2C `stream_messages` 也没有 keyboard 字段。流式片段含 Json/按钮时明确失败；结束流后按需另发卡片，不自动重发全文。
 
+本地回调票据发布失败记为 `not_sent`，释放本次回复占用；HTTP 401 后重新准备时也遵守此边界。
+
 确定 `not_sent`/`rejected` 后调用方可另选纯文本；`result_unknown` 时先用 `event.bot.qq.send_status(operation_id)` 核对，不能自动重试或降级。真实 QQ 的媒体与按钮组合、客户端权限和 mini-program scheme 尚需独立平台验证。
