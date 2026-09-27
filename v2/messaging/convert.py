@@ -93,6 +93,7 @@ def attachment_url(value):
         return None
     try:
         parsed = urlsplit(value)
+        _ = parsed.port  # The parser rejects nonnumeric and out-of-range ports.
         if (value.startswith(("http://", "https://")) and parsed.hostname and parsed.username is None
                 and parsed.password is None and not any(ord(c) <= 32 or ord(c) == 127 for c in value)):
             return value
@@ -286,6 +287,8 @@ def convert_chat(identity, envelope, *, isolated=False, bot_id=""):
             def match(nodes):
                 nonlocal has_other_index
                 for node in nodes:
+                    if node[0].get("message_type") in (101, 102):
+                        continue
                     if node[1] == ref:
                         selected.append(node)
                     elif node[1] is not None:
@@ -302,7 +305,7 @@ def convert_chat(identity, envelope, *, isolated=False, bot_id=""):
             result = [Plain(payload["content"])] if payload.get("content") else []
             result.extend(attachment_parts(payload.get("attachments", [])))
             for child in children:
-                if child[1] is None or child[1] == ref:
+                if child[0].get("message_type") not in (101, 102) and (child[1] is None or child[1] == ref):
                     result.extend(quote_parts(child))
             return result
 
