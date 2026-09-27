@@ -115,7 +115,7 @@ async def test_op9_resume_or_identify(config, tmp_path, resumable):
     first = FakeWS([HELLO, READY, {"op": 9, "d": resumable}])
     second = FakeWS([HELLO, READY, 4014])
     gateway = Gateway(FakeGatewayHTTP(InstanceKey.from_config(config), [first, second]), ingress,
-                      attempts=2, sleep=lambda delay: asyncio.sleep(0) if delay < 1 else asyncio.Event().wait(), jitter=lambda: 0)
+                      attempts=2, sleep=lambda delay: asyncio.sleep(0) if delay <= 1 else asyncio.Event().wait(), jitter=lambda: 0)
     try:
         with pytest.raises(V2Error):
             await asyncio.wait_for(gateway.run(), 2)
