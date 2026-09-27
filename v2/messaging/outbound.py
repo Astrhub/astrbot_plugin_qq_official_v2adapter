@@ -9,7 +9,16 @@ from html.parser import HTMLParser
 from urllib.parse import quote, unquote_plus
 from uuid import uuid4
 
-from astrbot.core.message.components import At, File, Image, Json, Plain, Record, Reply, Video
+from astrbot.core.message.components import (
+    At,
+    File,
+    Image,
+    Json,
+    Plain,
+    Record,
+    Reply,
+    Video,
+)
 from astrbot.core.message.message_event_result import MessageChain
 
 from ..errors import V2Error, unsupported

@@ -4,15 +4,13 @@ import base64
 import pytest
 from astrbot.core.message.components import File, Image, Json, Plain, Record, Video
 from astrbot.core.message.message_event_result import MessageChain
-from test_media_upload import PNG
+from test_media_upload import PNG, sending_core
 from test_media_upload import media as media
-from test_media_upload import sending_core
 
 from v2.errors import V2Error
 from v2.media.types import MediaInput
 from v2.messaging.cards import media_card
 from v2.messaging.streaming import StreamingCore
-
 
 KEYBOARD = {"content": {"rows": [{"buttons": [{
     "id": "open", "render_data": {"label": "打开", "style": 1},

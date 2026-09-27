@@ -27,7 +27,6 @@ from ..messaging.store import robot_key
 from ..models import SessionRoute, text_id
 from .events import EventReplySource
 
-
 _INSTANCES = {}
 
 

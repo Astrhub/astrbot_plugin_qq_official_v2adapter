@@ -6,10 +6,9 @@ from aiohttp import web
 from astrbot.core.message.components import Json, Plain
 from astrbot.core.message.message_event_result import MessageChain
 from test_lifecycle import plugin_module as plugin_module
+from test_messaging_delivery import accept
 from test_messaging_delivery import receiver as receiver
 from test_transport_http import MappedSession, upstream
-
-from test_messaging_delivery import accept
 
 
 @pytest.fixture

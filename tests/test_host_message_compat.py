@@ -251,6 +251,7 @@ async def test_real_result_decorate_and_respond_reach_v2_http(sending, host_conf
 async def test_host_result_pipeline_keeps_json_card_atomic_with_segmentation_and_t2i(sending, host_config, monkeypatch):
     from types import SimpleNamespace
     from unittest.mock import AsyncMock
+
     from astrbot.core.message.components import Json
     from astrbot.core.pipeline.context import PipelineContext
     from astrbot.core.pipeline.respond.stage import RespondStage
@@ -279,8 +280,8 @@ async def test_host_result_pipeline_keeps_json_card_atomic_with_segmentation_and
 @pytest.mark.parametrize("handler_style", ["yield", "return"])
 async def test_host_call_handler_emits_one_native_card_for_both_async_styles(sending, host_config, handler_style):
     from astrbot.core.message.components import Json
-    from astrbot.core.pipeline.context_utils import call_handler
     from astrbot.core.pipeline.context import PipelineContext
+    from astrbot.core.pipeline.context_utils import call_handler
     from astrbot.core.pipeline.respond.stage import RespondStage
 
     chat, client = sending.observe()

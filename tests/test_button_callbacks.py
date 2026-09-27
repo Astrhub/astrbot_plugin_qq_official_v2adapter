@@ -7,12 +7,11 @@ from datetime import UTC, datetime
 
 import pytest
 from aiohttp import web
-from test_transport_http import MappedSession, upstream
 from astrbot.api.event import filter
-from astrbot.core.star.filter.permission import PermissionType
 from astrbot.core.message.components import Json, Plain
 from astrbot.core.message.message_event_result import MessageChain
 from astrbot.core.star.base import Star
+from astrbot.core.star.filter.permission import PermissionType
 from astrbot.core.star.star import star_map, star_registry
 from astrbot.core.star.star_handler import star_handlers_registry
 from test_extension_dispatch import dispatch as dispatch
@@ -21,7 +20,7 @@ from test_lifecycle import plugin_module as plugin_module
 from test_messaging_delivery import accept
 from test_messaging_delivery import receiver as receiver
 from test_messaging_state import NOW
-
+from test_transport_http import MappedSession, upstream
 
 
 def test_equal_star_instances_get_distinct_callback_keys():
