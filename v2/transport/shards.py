@@ -12,6 +12,7 @@ from astrbot.core.utils.http_ssl import build_ssl_context_with_certifi
 from ..connection_config import MAX_AUTO_SHARDS
 from ..errors import V2Error
 from ..protocol import RequestSpec, openapi_base
+from .http import retry_after_seconds
 
 
 def gateway_info(data):
@@ -33,6 +34,7 @@ class IdentifyBudget:
         self.lock = asyncio.Lock()
         self.info = None
         self.last_refresh_at = None
+        self.refresh_not_before = 0
         self.reset_at = 0
         self.remaining = 0
         self.starts = deque()
@@ -48,14 +50,25 @@ class IdentifyBudget:
             self.remaining = remaining
             self.reset_at = self.clock() + data["session_start_limit"]["reset_after"] / 1000
             self.last_refresh_at = self.clock()
+            self.refresh_not_before = 0
         return self.info
 
     async def discover(self, http, *, refresh=False):
         openapi_base(http.identity.robot.environment)
         async with self.lock:
-            if (refresh and self.info is not None and self.last_refresh_at is not None
-                    and self.clock() - self.last_refresh_at < 60):
-                return self.info
+            if refresh and self.info is not None:
+                now = self.clock()
+                if ((self.last_refresh_at is not None and now - self.last_refresh_at < 60)
+                        or now < self.refresh_not_before):
+                    return self.info
+                self.last_refresh_at = now
+                try:
+                    return await self._discover(http, refresh=True)
+                except V2Error as exc:
+                    delay = retry_after_seconds(exc.retry_after)
+                    if delay is not None:
+                        self.refresh_not_before = max(self.refresh_not_before, self.clock() + delay)
+                    raise
             return await self._discover(http, refresh=refresh)
 
     async def acquire(self, http, guard):

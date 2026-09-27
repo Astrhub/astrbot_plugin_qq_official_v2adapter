@@ -21,9 +21,10 @@ MAX_RECONNECT_DELAY = 900
 
 def reconnect_delay(failures, retry_after=None, *, jitter=random.random):
     base = min(MAX_RECONNECT_DELAY / 1.25, 2 ** min(max(0, failures - 1), 10))
-    delay = min(MAX_RECONNECT_DELAY, base * (1 + 0.25 * jitter()))
+    spread = jitter()
+    delay = min(MAX_RECONNECT_DELAY, base * (1 + 0.25 * spread))
     suggested = retry_after_seconds(retry_after)
-    return max(delay, suggested) if suggested is not None else delay
+    return max(delay, suggested + min(5, suggested * 0.05) * spread) if suggested is not None else delay
 
 
 class GatewayClosed(V2Error):

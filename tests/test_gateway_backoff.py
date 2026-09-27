@@ -173,6 +173,7 @@ def test_retry_after_date_and_missing_header():
     future = format_datetime(datetime.now(UTC) + timedelta(seconds=120), usegmt=True)
     assert 118 <= retry_after_seconds(future) <= 121
     assert reconnect_delay(1, "120", jitter=lambda: 0) == 120
+    assert reconnect_delay(1, "120", jitter=lambda: 1) == 125
     assert reconnect_delay(12, None, jitter=lambda: 0) == 720
     assert reconnect_delay(12, None, jitter=lambda: 1) == 900
     assert reconnect_delay(12, "invalid", jitter=lambda: 0) == 720

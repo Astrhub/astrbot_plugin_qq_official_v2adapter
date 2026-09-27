@@ -71,6 +71,38 @@ async def test_shared_budget_five_second_window_remaining_reset_and_cancellation
     assert budget.remaining == 2 and future.cancelled() and not budget.lock.locked()
 
 
+async def test_refresh_rate_limit_cools_down_all_shards_without_refunding_identify(config):
+    clock = StepClock()
+    budget = IdentifyBudget(clock=lambda: clock.now, sleep=clock.sleep)
+    http = Discovery(config, remaining=2, concurrency=1, reset=200000)
+    await budget.acquire(http, lambda: None)
+    assert budget.remaining == 1
+    clock.now = 61
+    original_request = http.request
+    attempts = []
+    async def throttled(spec):
+        attempts.append(spec.url)
+        if len(attempts) == 1:
+            raise V2Error("qq_rate_limited", "fixture", status=429, http_status=429, retry_after="120")
+        return await original_request(spec)
+    http.request = throttled
+    async def refresh():
+        try:
+            return await budget.discover(http, refresh=True)
+        except V2Error as exc:
+            return exc.code
+    results = await asyncio.gather(*(refresh() for _ in range(16)))
+    assert results.count("qq_rate_limited") == 1 and len(attempts) == 1
+    assert all(result is budget.info for result in results[1:])
+    assert budget.refresh_not_before == 181 and budget.remaining == 1
+    clock.now = 180
+    assert await budget.discover(http, refresh=True) is budget.info and len(attempts) == 1
+    clock.now = 181
+    http.data["session_start_limit"]["remaining"] = 2
+    await budget.discover(http, refresh=True)
+    assert len(attempts) == 2 and budget.remaining == 1 and not budget.lock.locked()
+
+
 async def test_handshake_completion_sets_rate_window_and_uncertainty_does_not_refund(config):
     clock = StepClock()
     budget = IdentifyBudget(clock=lambda: clock.now, sleep=clock.sleep)
