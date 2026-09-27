@@ -4,8 +4,20 @@ from pathlib import Path
 
 import pytest
 from aiohttp import web
-from astrbot.core.message.components import At, File, Image, Plain, Record, Reply, Unknown, Video
-from astrbot.core.utils.quoted_message import extract_quoted_message_images, extract_quoted_message_text
+from astrbot.core.message.components import (
+    At,
+    File,
+    Image,
+    Plain,
+    Record,
+    Reply,
+    Unknown,
+    Video,
+)
+from astrbot.core.utils.quoted_message import (
+    extract_quoted_message_images,
+    extract_quoted_message_text,
+)
 from test_host_message_compat import make_event
 from test_lifecycle import plugin_module as plugin_module
 from test_messaging_delivery import receiver as receiver
@@ -260,6 +272,58 @@ def test_generic_file_uses_neutral_name_for_untrusted_filename(config):
     chat = converted(config, payload)
     assert [type(part) for part in chat.message.message] == [File]
     assert chat.message.message[0].name == "file" and chat.message.message[0].file_ == ""
+
+
+@pytest.mark.parametrize("context", ["current", "quoted"])
+@pytest.mark.parametrize("case", ["missing_url", "rejected_url", "all_valid", "all_invalid"])
+async def test_unconvertible_attachments_keep_hint_in_their_own_chain(config, context, case):
+    requests = []
+
+    async def serve(request):
+        requests.append(request.path)
+        return web.Response(body=IMAGE_BYTES)
+
+    async with upstream(serve) as base:
+        image = {"content_type": "image/png", "url": base + "/image"}
+        file = {"content_type": "file", "filename": "safe.txt", "url": base + "/file"}
+        without_url = {"content_type": "file", "filename": "missing.txt"}
+        rejected_url = {"content_type": "file", "url": "file:///etc/passwd"}
+        items = {
+            "missing_url": [image, without_url],
+            "rejected_url": [image, rejected_url],
+            "all_valid": [image, file],
+            "all_invalid": [without_url, rejected_url],
+        }[case]
+        payload = chat_payload(text="current body")
+        if context == "quoted":
+            quote(payload, child={"msg_idx": "REFIDX_prior", "content": "quoted body", "attachments": items})
+        else:
+            payload["d"]["attachments"] = items
+        chat = converted(config, payload)
+        event = make_event(chat)
+        if context == "quoted":
+            chain = reply_of(chat).chain
+            assert [type(part) for part in event.get_messages()] == [Reply, Plain]
+            assert chat.message.message_str == "current body"
+        else:
+            chain = event.get_messages()
+            assert chat.message.message_str == "current body"
+        expected = {
+            "missing_url": [Plain, Image, Unknown],
+            "rejected_url": [Plain, Image, Unknown],
+            "all_valid": [Plain, Image, File],
+            "all_invalid": [Plain, Unknown],
+        }[case]
+        assert [type(part) for part in chain] == expected
+        assert chain[0].text == ("quoted body" if context == "quoted" else "current body")
+        assert [part.text for part in chain if isinstance(part, Unknown)] == (
+            [] if case == "all_valid" else ["[附件元数据；需显式受控读取]"]
+        )
+        assert [part.url for part in chain if isinstance(part, Image)] == ([] if case == "all_invalid" else [base + "/image"])
+        assert [part.url for part in chain if isinstance(part, File)] == ([base + "/file"] if case == "all_valid" else [])
+        assert chat.attachments == items and chat.message.raw_message == payload and requests == []
+        event.cleanup_temporary_local_files()
+
 
 def test_known_quote_in_other_scope_never_fills_missing_author(config, tmp_path):
     from v2.messaging.store import MessageStore

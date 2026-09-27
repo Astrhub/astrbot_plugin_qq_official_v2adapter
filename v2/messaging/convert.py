@@ -8,7 +8,16 @@ from dataclasses import dataclass
 from datetime import datetime
 from urllib.parse import urlsplit
 
-from astrbot.core.message.components import At, File, Image, Plain, Record, Reply, Unknown, Video
+from astrbot.core.message.components import (
+    At,
+    File,
+    Image,
+    Plain,
+    Record,
+    Reply,
+    Unknown,
+    Video,
+)
 from astrbot.core.platform.astrbot_message import AstrBotMessage, MessageMember
 from astrbot.core.platform.message_type import MessageType
 
@@ -113,6 +122,14 @@ def attachment_component(item):
             name = "file"
         return File(name=name, url=url)
     return None
+
+
+def attachment_parts(items):
+    converted = [attachment_component(item) for item in items]
+    parts = [part for part in converted if part is not None]
+    if any(part is None for part in converted):
+        parts.append(Unknown(text="[附件元数据；需显式受控读取]"))
+    return parts
 
 
 def convert_chat(identity, envelope, *, isolated=False, bot_id=""):
@@ -283,8 +300,7 @@ def convert_chat(identity, envelope, *, isolated=False, bot_id=""):
         def quote_parts(node):
             payload, _, children = node
             result = [Plain(payload["content"])] if payload.get("content") else []
-            result.extend(part for item in payload.get("attachments", [])
-                          if (part := attachment_component(item)) is not None)
+            result.extend(attachment_parts(payload.get("attachments", [])))
             for child in children:
                 if child[1] is None or child[1] == ref:
                     result.extend(quote_parts(child))
@@ -310,11 +326,7 @@ def convert_chat(identity, envelope, *, isolated=False, bot_id=""):
         if quoted_user is not None:
             reply.sender_id = quoted_user  # The host model coerces numeric-looking IDs to int.
         parts.insert(0, reply)
-    top_attachments = data.get("attachments", [])
-    converted = [attachment_component(item) for item in top_attachments]
-    parts.extend(part for part in converted if part is not None)
-    if top_attachments and not any(part is not None for part in converted):
-        parts.append(Unknown(text="[附件元数据；需显式受控读取]"))
+    parts.extend(attachment_parts(data.get("attachments", [])))
     if not parts:
         # Empty/structured chat remains a real chat, not fabricated card prompt text.
         parts.append(Unknown(text="[结构化聊天；见原始信封]"))
