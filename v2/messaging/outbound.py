@@ -13,7 +13,7 @@ from astrbot.core.message.components import At, File, Image, Json, Plain, Record
 from astrbot.core.message.message_event_result import MessageChain
 
 from ..errors import V2Error, unsupported
-from ..media.types import FilePart, MediaInput
+from ..media.types import FilePart, MediaInput, native_media_input
 from ..models import text_id
 from ..protocol import RequestSpec, openapi_base
 from .reply import (
@@ -93,9 +93,7 @@ def parse_message(message, *, onebot=False, auto_escape=False, markdown=None):
         elif isinstance(segment, MediaInput):
             kind, value = "media", segment.validate()
         elif isinstance(segment, (Image, Record, Video, File)):
-            media_kind = {Image: "image", Record: "record", Video: "video", File: "file"}[type(segment)]
-            source = (segment.file_ if isinstance(segment, File) else segment.file) or segment.url
-            kind, value = "media", MediaInput(media_kind, source, getattr(segment, "name", None) or "upload").validate()
+            kind, value = "media", native_media_input(segment)
         elif isinstance(segment, dict) and segment.keys() <= {"type", "data"}:
             kind = segment.get("type")
             data = segment.get("data")

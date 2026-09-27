@@ -46,15 +46,19 @@ class MyStar(Star):
 
 `callback_button(function, *, label, data=None, audience="actor")` 只接受已装载 Star 的绑定方法。默认票据仅当前用户可点；显式 `audience="all"` 对应 QQ 的所有人权限，业务侧仍须自行校验。QQ 群管理员不等于 AstrBot 管理员，`permission.type=1` 不授予本地管理权限。`keyboard_enabled` 控制卡片回调；旧 `keyboard_execute` 只控制旧菜单无参命令票据。票据单次使用、过期/换代/禁用/热重载失效；互动 11/12 在原事件起 3 秒内先独立 ACK，再只调用注册的处理函数及其过滤器，不广播聊天监听器，也不触发 LLM。业务执行结果只能记录为已调度/未确认，不承诺外部副作用成功。
 
-媒体卡片请使用同一模块导出的 `MediaInput`、`media_card`：
+宿主会话白名单、会话整体启停和会话插件禁用在 ACK 后、业务前按当前配置检查。最多 8 个业务回调并发；满载时仍 ACK 新互动并持久记录 `callback_business_capacity`/`not_executed`，不自动重放。
+
+媒体卡片优先传 AstrBot 原生 `Image`、`Record`、`Video`、`File`；高级接口仍支持本插件 `MediaInput`：
 
 ```python
-from data.plugins.astrbot_plugin_qq_official_v2adapter.api import MediaInput, media_card
+from astrbot.core.message.components import Image
+from data.plugins.astrbot_plugin_qq_official_v2adapter.api import media_card
 
-image = media_card(MediaInput("image", "base64://..."), card["keyboard"])
+image = media_card(Image.fromURL("https://example.com/image.png"), card["keyboard"])
 await event.send(MessageChain([image]))
 ```
 
+本地文件可使用 `Image.fromFileSystem(path)` 或 `File(name, file=file_uri)`；`MediaInput("image", source)` 仍可作为高级输入。
 媒体按现有进程文件权限、Base64 大小限制或外链交 QQ 转存；上传后用本次目标自己的 `file_info` 发 `msg_type=7` + keyboard。Markdown 中的公网图片 URL 由 QQ 转存，不会把本地图片伪装成公网 URL。群没有原生流式；C2C `stream_messages` 也没有 keyboard 字段。流式片段含 Json/按钮时明确失败；结束流后按需另发卡片，不自动重发全文。
 
 确定 `not_sent`/`rejected` 后调用方可另选纯文本；`result_unknown` 时先用 `event.bot.qq.send_status(operation_id)` 核对，不能自动重试或降级。真实 QQ 的媒体与按钮组合、客户端权限和 mini-program scheme 尚需独立平台验证。

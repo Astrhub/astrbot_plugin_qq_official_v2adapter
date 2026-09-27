@@ -6,7 +6,7 @@ from urllib.parse import urlsplit
 from astrbot.core.message.components import Json
 
 from ..errors import unsupported
-from ..media.types import MediaInput
+from ..media.types import MediaInput, native_media_input
 from ..models import text_id
 from .outbound import build_body, invalid
 
@@ -156,10 +156,8 @@ def card_body(route, payload, store, callbacks=None, *, operation_id=None):
     return body, media, tokens
 
 def media_card(media, keyboard, *, reference=None):
-    """Return one host-native Json component with owned media and keyboard."""
-    if type(media) is not MediaInput:
-        invalid("Use a MediaInput for a media card.")
-    payload = {"msg_type": 7, "media": media.validate(), "keyboard": keyboard}
+    """Return one host-native Json with an AstrBot component or owned MediaInput."""
+    payload = {"msg_type": 7, "media": native_media_input(media), "keyboard": keyboard}
     if reference is not None:
         payload["message_reference"] = {"message_id": text_id(reference)}
     return Json(payload)

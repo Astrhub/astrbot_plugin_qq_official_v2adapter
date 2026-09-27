@@ -136,6 +136,11 @@ async def test_callback_rejects_actor_tampering_and_unpublished_ticket(callback_
     s.service.accept(frame, NOW)
     await settle(s)
     assert s.service.records()[0]["business"] == "rejected" and not seen
+    _, _, issued = s.service.callbacks._lookup(button["action"]["data"])
+    plugin, _, _, fingerprint, instance_key = s.service.callbacks._handler(function=star.confirm)
+    assert issued["plugin"] == plugin.name
+    assert issued["binding"] == fingerprint
+    assert issued["instance"] == instance_key
     await event.send(MessageChain([Json(card(button))]))
     other = interaction(s.config, token=button["action"]["data"], actor="other", interaction_id="second", event_id="outer-second")
     s.service.accept(other, NOW)

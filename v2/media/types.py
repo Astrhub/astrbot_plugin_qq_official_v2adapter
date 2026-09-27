@@ -1,6 +1,8 @@
 """Explicit input policy; a chat string alone never authorizes a local read."""
 from dataclasses import dataclass, field
 
+from astrbot.core.message.components import File, Image, Record, Video
+
 from ..errors import V2Error
 
 
@@ -20,6 +22,16 @@ class MediaInput:
             raise V2Error("invalid_media_name", "Use a bounded filename without path separators or control characters.")
         return self
 
+
+def native_media_input(value):
+    """Map AstrBot components to the same validated media input used by ordinary sends."""
+    if type(value) is MediaInput:
+        return value.validate()
+    kind = {Image: "image", Record: "record", Video: "video", File: "file"}.get(type(value))
+    if kind is None:
+        raise V2Error("invalid_media_input", "Use an AstrBot media component or MediaInput.")
+    source = (value.file_ if type(value) is File else value.file) or value.url
+    return MediaInput(kind, source, getattr(value, "name", None) or "upload").validate()
 
 @dataclass(frozen=True)
 class FilePart:
