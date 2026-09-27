@@ -39,7 +39,8 @@ def binding_fingerprint(plugin, handler, ancestry, params):
     function = function.__func__ if inspect.ismethod(function) else function
     if not inspect.isfunction(function):
         return None
-    source = hashlib.sha256(marshal.dumps(function.__code__)).hexdigest()
+    # Marshal v3+ encodes live reference-count flags; v2 encodes code content consistently.
+    source = hashlib.sha256(marshal.dumps(function.__code__, 2)).hexdigest()
     value = [plugin.name, handler.handler_module_path, handler.handler_full_name, source,
              [parent.handler_full_name for parent, _ in ancestry], params]
     return hashlib.sha256(json.dumps(value, sort_keys=True, ensure_ascii=False).encode()).hexdigest()

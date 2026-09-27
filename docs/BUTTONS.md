@@ -48,6 +48,8 @@ class MyStar(Star):
 
 宿主会话白名单、会话整体启停和会话插件禁用在 ACK 后、业务前按当前配置检查。最多 8 个业务回调并发；满载时仍 ACK 新互动并持久记录 `callback_business_capacity`/`not_executed`，不自动重放。
 
+指纹格式升级后，旧菜单/回调票据会安全失效，不自动迁移或重放；自定义面板的历史指令绑定需管理员显式确认后重绑。
+
 媒体卡片优先传 AstrBot 原生 `Image`、`Record`、`Video`、`File`；高级接口仍支持本插件 `MediaInput`：
 
 ```python
