@@ -1,6 +1,6 @@
 """Gateway outages wait for recovery without replaying outbound messages."""
 import asyncio
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from email.utils import format_datetime
 from types import SimpleNamespace
 
@@ -9,7 +9,13 @@ import pytest
 from aiohttp import web
 from test_gateway_shards import group_env as group_env
 from test_transport_http import upstream
-from test_transport_receive import HELLO, READY, FakeGatewayHTTP, FakeWS, gateway_document
+from test_transport_receive import (
+    HELLO,
+    READY,
+    FakeGatewayHTTP,
+    FakeWS,
+    gateway_document,
+)
 
 from v2.errors import V2Error
 from v2.models import InstanceKey
@@ -164,7 +170,7 @@ async def test_token_rate_limit_preserves_retry_after_across_gateway_retries(con
 
 
 def test_retry_after_date_and_missing_header():
-    future = format_datetime(datetime.now(timezone.utc) + timedelta(seconds=120), usegmt=True)
+    future = format_datetime(datetime.now(UTC) + timedelta(seconds=120), usegmt=True)
     assert 118 <= retry_after_seconds(future) <= 121
     assert reconnect_delay(1, "120", jitter=lambda: 0) == 120
     assert reconnect_delay(12, None, jitter=lambda: 0) == 720
@@ -247,7 +253,7 @@ async def test_websocket_handshake_429_uses_header_and_recovers(config, tmp_path
     ingress = Ingress(inbox, "app")
     ingress.start()
     responses, logins = [], []
-    release_server, parked, retry = asyncio.Event(), asyncio.Event(), asyncio.Event()
+    release_server, parked, retry, ready = asyncio.Event(), asyncio.Event(), asyncio.Event(), asyncio.Event()
     async def handle(request):
         assert request.path == "/ws" and "Authorization" not in request.headers
         responses.append(request.path)
@@ -261,6 +267,7 @@ async def test_websocket_handshake_429_uses_header_and_recovers(config, tmp_path
         await socket.send_json({"op": 1})
         await socket.receive_json()
         await socket.send_json({"op": 11})
+        ready.set()
         await release_server.wait()
         return socket
     async with upstream(handle) as base:
@@ -289,10 +296,8 @@ async def test_websocket_handshake_429_uses_header_and_recovers(config, tmp_path
             assert gateway.last_failure["retry_after"] == 120 and not task.done()
             assert gateway.last_failure["stage"] == "waiting_identify" and gateway.last_failure["login"] == "identify"
             retry.set()
-            async def online():
-                while not gateway.online:
-                    await asyncio.sleep(0)
-            await asyncio.wait_for(online(), 2)
+            await asyncio.wait_for(ready.wait(), 2)
+            assert gateway.online
             assert logins[0]["op"] == 2 and len(responses) == 2
         finally:
             retry.set()
