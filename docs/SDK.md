@@ -1,4 +1,4 @@
-# 进程内 QQ V2 SDK（M0–M7 首版候选）
+# QQ V2 SDK
 
 从 V2 事件的 `event.bot.qq` 或平台的 `adapter.get_client().qq` 获取当前实例视图；不另开网络服务。原生群成员读取 `.get_group_member_info(group_openid, member_openid)`、`.get_group_member_list(group_openid, cursor="")` 返回 QQ 原始 dict，后者仅一页；`iter_group_members(group_openid)` 逐页迭代，不能当作原子名单。旧 `client.api.get_group_member_info/get_group_member_list/get_group_info` 保留 OneBot 投影与现有聚合行为，同名不能互换。其余原生方法逐项状态见 [覆盖台账](SDK_COVERAGE.md)。
 
