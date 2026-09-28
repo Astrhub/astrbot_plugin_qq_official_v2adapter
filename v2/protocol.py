@@ -15,6 +15,10 @@ from .models import RobotKey, text_id
 class RawEnvelope:
     payload: dict
     received_at: float
+    transport: str | None = None
+    shard: tuple[int, int] | None = None
+    session_id: str | None = None
+    generation: str | None = None
 
     @classmethod
     def parse(cls, raw: bytes, *, now=None):

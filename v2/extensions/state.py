@@ -66,6 +66,7 @@ class ExtensionStore:
         with self.messages.transaction():
             self.prune()
             row = self.db.execute("SELECT * FROM extension_ops WHERE robot=? AND op_id=?", key).fetchone()
+            self.messages._bind_operation(robot, op_id, "extension", digest([kind, binding]))
             if row:
                 if (row["kind"], row["binding"]) != (kind, binding):
                     raise V2Error("operation_conflict", "This operation is bound to another extension request.", status=409)

@@ -1,5 +1,7 @@
 """One client, one generation and one explicit capability boundary."""
 
+import sqlite3
+
 from . import PLATFORM_TYPE, VERSION
 from .errors import V2Error, not_ready, unsupported
 from .extensions.management import MANAGEMENT_ACTIONS, NATIVE_ACTIONS
@@ -74,6 +76,9 @@ class ClientState:
         self.extensions = None
         self.extension_state = None
         self.network = None
+        self.events = None
+        self.profiles = None
+        self.reads = None
 
     def check(self, generation):
         if self.closed or generation != self.identity.generation:
@@ -82,9 +87,102 @@ class ClientState:
 
 
 class NativeView:
-    def __init__(self, client, *, actor=None):
+    def __init__(self, client, *, actor=None, options=None):
+        from .sdk.types import CallOptions
         self._client = client
         self._actor = actor
+        self._options = options or CallOptions()
+
+    def with_options(self, *, operation_id=None, owner=None):
+        """Return a per-call view without changing the shared client state."""
+        from .sdk.types import CallOptions
+        if operation_id is not None:
+            text_id(operation_id)
+        self._client.check()
+        return NativeView(self._client, actor=self._actor, options=CallOptions(operation_id, owner))
+
+    def _operation_id(self, explicit):
+        default = self._options.operation_id
+        if default is not None and explicit is not None and explicit != default:
+            raise V2Error("operation_conflict", "Call options and explicit operation ID disagree.", status=409)
+        return explicit if explicit is not None else default
+
+    @property
+    def events(self):
+        self._client.check()
+        if self._client._state.events is None:
+            raise not_ready()
+        return self._client._state.events
+
+    @property
+    def profiles(self):
+        self._client.check()
+        if self._client._state.profiles is None:
+            raise not_ready()
+        return self._client._state.profiles
+
+    async def get_group_member_info(self, group_openid: str, member_openid: str) -> dict:
+        """Read current QQ member data and merge scoped profile evidence."""
+        self._client.check()
+        if self._client._state.reads is None:
+            raise not_ready()
+        profiles = self._client._state.profiles
+        revision = profiles.store.revision(self._client.identity.robot, "group", group_openid) if profiles else 0
+        started = profiles.store.clock() if profiles else None
+        data = await self._client._state.reads.get_group_member_info(group_openid, member_openid)
+        if profiles:
+            try:
+                profiles.store.query_member(self._client.identity.robot, "group", group_openid, member_openid,
+                    started_revision=revision, started_at=started, fields={
+                        "nickname": data.get("username"), "last_known_role": data.get("member_role"),
+                        "joined_at": data.get("joined_at"), "bot": data.get("bot"),
+                        "union_openid": data.get("union_openid")})
+            except V2Error as exc:
+                if exc.code != "cache_capacity":
+                    raise
+            except sqlite3.Error:
+                profiles.store.last_error = "cache_storage_unavailable"
+        return data
+
+    async def get_group_member_list(self, group_openid: str, cursor: str = "") -> dict:
+        """Read one native member page including its official next_cursor."""
+        self._client.check()
+        if self._client._state.reads is None:
+            raise not_ready()
+        profiles = self._client._state.profiles
+        started = profiles.store.clock() if profiles else None
+        page = await self._client._state.reads.get_group_member_list(group_openid, cursor)
+        if profiles:
+            for member in page["members"]:
+                if not isinstance(member, dict) or not isinstance(member.get("member_openid"), str):
+                    continue
+                try:
+                    profiles.store.merge(self._client.identity.robot, "group", group_openid, member["member_openid"],
+                        {"nickname": member.get("username"), "joined_at": member.get("joined_at"),
+                         "last_known_role": member.get("member_role"), "bot": member.get("bot"),
+                         "union_openid": member.get("union_openid")},
+                        source="member_page", as_of=started)
+                except V2Error as exc:
+                    if exc.code != "cache_capacity":
+                        raise
+                except sqlite3.Error:
+                    profiles.store.last_error = "cache_storage_unavailable"
+        return page
+
+    async def iter_group_members(self, group_openid: str):
+        """Yield members across bounded native pages."""
+        self._client.check()
+        if self._client._state.reads is None:
+            raise not_ready()
+        async for row in self._client._state.reads.iter_group_members(group_openid):
+            yield row
+
+    async def get_group_info(self, group_openid: str) -> dict:
+        """Read the native group response without a OneBot projection."""
+        self._client.check()
+        if self._client._state.management is None:
+            raise not_ready()
+        return await self._client._state.management.group_info(group_openid)
 
     def callback_button(self, function, *, label, data=None, audience="actor"):
         self._client.check()
@@ -102,7 +200,7 @@ class NativeView:
 
     async def send(self, scene, target, message, *, markdown=None, operation_id=None):
         route = self._client.route_for(scene, target)
-        return await self._client.send(route, message, markdown=markdown, operation_id=operation_id)
+        return await self._client.send(route, message, markdown=markdown, operation_id=self._operation_id(operation_id))
 
     def streaming_mode(self, scene, target, *, use_fallback=False):
         self._client.check()
@@ -111,7 +209,7 @@ class NativeView:
         return self._client._state.streaming.mode(self._client.route_for(scene, target), use_fallback)
 
     async def send_streaming(self, scene, target, generator, *, input_mode="append", use_fallback=False, operation_id=None):
-        return await self._client.stream(self._client.route_for(scene, target), generator, input_mode=input_mode, use_fallback=use_fallback, operation_id=operation_id)
+        return await self._client.stream(self._client.route_for(scene, target), generator, input_mode=input_mode, use_fallback=use_fallback, operation_id=self._operation_id(operation_id))
 
     async def send_file(self, scene, target, file, *, name="upload", kind="file", allow_file_fallback=True, operation_id=None):
         from .media.types import MediaInput
@@ -143,6 +241,9 @@ class NativeView:
             if service is None:
                 raise not_ready()
             method = getattr(service, name)
+            if self._options.operation_id is not None and "operation_id" in inspect.signature(method).parameters:
+                kwargs = dict(kwargs)
+                kwargs["operation_id"] = self._operation_id(kwargs.get("operation_id"))
             try:
                 inspect.signature(method).bind(*args, **kwargs)
             except TypeError:
@@ -222,6 +323,12 @@ class V2Client:
                 **({name: {"support": "conditional", "permission": "unknown", "reason": "real_response_and_retained_scope_required; writes_opt_in"}
                     for name in MANAGEMENT_ACTIONS} if self._state.management else {}),
             },
+            "sdk": {"contract_version": 1, "http_targets": 96, "legacy_sdk_methods": 64,
+                    "business_events": 56, "native_implemented": ["get_group_info", "get_group_member_info",
+                                                   "get_group_member_list", "iter_group_members"],
+                    "event_observation": "live_bounded" if self._state.events else "not_attached",
+                    "profiles": "durable" if self._state.profiles else "not_attached",
+                    "account_permission": "unverified"},
             "identity_cache": "durable, robot/kind/scene/target-scoped chat observations" if self._state.cache is not None else "not_ready",
         }
         for name, entry in result["actions"].items():
@@ -321,6 +428,8 @@ class V2Client:
                 "source": "qqapp", "verified": False}
 
     def __getattr__(self, name):
+        if name == "iter_group_members":
+            return self.qq.iter_group_members
         if name not in REMOTE_ACTIONS | UNSUPPORTED_ACTIONS | LOCAL_ACTIONS:
             raise AttributeError(name)
 

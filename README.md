@@ -37,6 +37,8 @@
 
 OneBot 接入通过 Pages“连接配置”管理，每实例单独端口和专用token，复用现有动作与发送防重账本；字符串ID与`qq_event`扩展不伪装完整v11。HTTP/WS路由、被动回复、限制和回退见[网络接入说明](docs/ONEBOT.md)。
 
+进程内 SDK 可读取原生单页群成员、订阅只读事件并查持久历史资料；订阅队列是实时观察，不提供业务重放。用法及迁移见 [SDK 基础](docs/SDK.md)，完整/待实现接口见 [覆盖台账](docs/SDK_COVERAGE.md)。
+
 | 扩展 | 实现与条件 |
 |---|---|
 | 群/C2C媒体 | 图片、语音、视频、文件；格式接受由QQ判断，URL转存及prepare→PUT→finish→files；整链预检，不静默丢caption或拆多条 |

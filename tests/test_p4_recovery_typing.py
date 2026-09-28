@@ -54,13 +54,13 @@ def test_p3_state_upgrade_keeps_unknown_charges_and_rejects_forward_schema(tmp_p
     store.db.commit()
     store.close()
     restored = MessageStore(path, clock=lambda: NOW)
-    assert restored.db.execute("PRAGMA user_version").fetchone()[0] == 2
+    assert restored.db.execute("PRAGMA user_version").fetchone()[0] == 3
     assert restored.operation(identity.robot, "legacy-operation")["state"] == "unknown"
     assert restored.db.execute("SELECT used FROM sources").fetchone()[0] == 1
     assert restored.db.execute("SELECT count(*) FROM charges").fetchone()[0] > 0
     with pytest.raises(V2Error):
         restored.reserve(chat.route, chat.source, "binding", "legacy-operation")
-    restored.db.execute("PRAGMA user_version=3")
+    restored.db.execute("PRAGMA user_version=4")
     restored.db.commit()
     restored.close()
     with pytest.raises(V2Error) as error:
@@ -68,7 +68,7 @@ def test_p3_state_upgrade_keeps_unknown_charges_and_rejects_forward_schema(tmp_p
     assert error.value.code == "message_state_corrupt"
     with sqlite3.connect(path) as db:
         assert db.execute("SELECT state FROM operations").fetchone()[0] == "unknown"
-        assert db.execute("PRAGMA user_version").fetchone()[0] == 3
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 4
 
 
 def test_legacy_settings_normalize_without_losing_selections_or_history(tmp_path):

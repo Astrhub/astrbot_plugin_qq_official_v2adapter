@@ -1,0 +1,230 @@
+"""Durable membership and profile merge rules remain independent of chat delivery."""
+
+import asyncio
+import time
+from types import SimpleNamespace
+
+import pytest
+
+from test_management import management
+from v2.errors import V2Error
+from v2.profiles.service import Profiles
+from v2.profiles.store import ProfileStore
+from v2.sdk.api.groups import GroupReads
+from v2.models import InstanceKey, RobotKey
+from v2.protocol import RequestSpec
+
+
+@pytest.fixture
+def profiles(tmp_path):
+    store = ProfileStore(tmp_path / "profiles.sqlite3")
+    yield store
+    store.close()
+
+
+def test_history_leave_rejoin_and_conflicting_seconds(profiles):
+    robot = RobotKey("app")
+    profiles.merge(robot, "group", "g", "001", {"nickname": "new"}, source="current_chat", as_of=300)
+    profiles.merge(robot, "group", "g", "001", {"nickname": "old", "bot": False}, source="chat_history", as_of=100)
+    profiles.member_event(robot, "group", "g", "001", "present", 300, connection="s:0/1", sequence=1)
+    profiles.member_event(robot, "group", "g", "001", "left", 301, connection="s:0/1", sequence=2)
+    assert profiles.get_member(robot, "group", "g", "001")["fields"]["nickname"]["value"] == "new"
+    assert profiles.get_member(robot, "group", "g", "001")["membership"] == "left"
+    profiles.member_event(robot, "group", "g", "001", "present", 300, connection="s:0/1", sequence=1)
+    assert profiles.get_member(robot, "group", "g", "001")["membership"] == "left"
+    profiles.member_event(robot, "group", "g", "001", "present", 301, connection="other:0/1", sequence=4)
+    assert profiles.get_member(robot, "group", "g", "001")["membership"] == "unknown"
+    assert profiles.get_member(robot, "group", "g", "001")["confirmed"] == "left"
+    profiles.member_event(robot, "group", "g", "001", "present", 302, connection="s:0/1", sequence=5)
+    assert profiles.get_member(robot, "group", "g", "001")["membership"] == "present"
+    with pytest.raises(V2Error):
+        profiles.get_member(RobotKey("other"), "group", "g", "001")
+
+
+def test_late_query_and_roster_gap_never_claim_current(profiles):
+    robot = RobotKey("app")
+    before = profiles.revision(robot, "group", "g")
+    started = time.time() - 2
+    profiles.member_event(robot, "group", "g", "001", "left", int(started + 1), connection="s:0/1", sequence=5)
+    assert not profiles.query_member(robot, "group", "g", "001", started_revision=before,
+                                     started_at=started, fields={"nickname": "known", "last_known_role": "admin"})
+    profiles.merge(robot, "group", "g", "001", {"nickname": "newer"}, source="current_chat", as_of=started + 1, received=started + 1)
+    assert not profiles.query_member(robot, "group", "g", "001", started_revision=before,
+                                     started_at=started, fields={"nickname": "older"})
+    result = profiles.get_member(robot, "group", "g", "001")
+    assert result["membership"] == "left" and result["fields"]["last_known_role"]["value"] == "admin"
+    assert result["fields"]["nickname"]["value"] == "newer"
+    assert not profiles.record_roster(robot, "group", "g", [], started_revision=before, started_at=started)
+    current_revision = profiles.revision(robot, "group", "g")
+    assert not profiles.record_roster(robot, "group", "g", [], started_revision=current_revision, started_at=time.time())
+    assert profiles.roster_status(robot, "group", "g")["continuous"] is False
+    known = profiles.list_known_members(robot, "group", "g")["members"]
+    assert len(known) == 1 and known[0]["user_id"] == "001"
+
+def test_same_second_query_and_event_conflict_is_unknown(profiles):
+    robot = RobotKey("app")
+    started = time.time()
+    assert profiles.query_member(robot, "group", "g", "001", started_revision=0, started_at=started,
+                                 fields={"nickname": "known"})
+    profiles.member_event(robot, "group", "g", "001", "left", int(started), connection="s:0/1", sequence=1)
+    assert profiles.get_member(robot, "group", "g", "001")["membership"] == "unknown"
+
+
+async def test_cache_only_in_sandbox_does_not_touch_network(profiles):
+    identity = InstanceKey("p", RobotKey("app", "sandbox"))
+    profiles.merge(identity.robot, "group", "g", "001", {"nickname": "cached"}, source="history", as_of=100)
+    class Reads:
+        http = SimpleNamespace(check=lambda: (_ for _ in ()).throw(AssertionError("network access")))
+    service = Profiles(identity, profiles, Reads())
+    try:
+        result = await service.get_member("g", "001", mode="cache_only")
+        assert result["fields"]["nickname"]["value"] == "cached"
+    finally:
+        await service.close()
+
+
+
+def test_capacity_and_restart_keep_existing_history(tmp_path):
+    path = tmp_path / "profiles.sqlite3"
+    robot = RobotKey("app")
+    store = ProfileStore(path, max_profiles=1)
+    store.merge(robot, "group", "g", "001", {"nickname": "known"}, source="chat", as_of=100)
+    store.merge(RobotKey("other"), "group", "g", "003", {"nickname": "other"}, source="chat", as_of=100)
+    assert store.get_member(RobotKey("other"), "group", "g", "003")["fields"]["nickname"]["value"] == "other"
+    with pytest.raises(V2Error) as exc:
+        store.merge(robot, "group", "g", "002", {"nickname": "new"}, source="chat", as_of=100)
+    assert exc.value.code == "cache_capacity"
+    store.member_event(robot, "group", "g", "001", "left", 100)
+    with pytest.raises(V2Error) as full_member:
+        store.member_event(robot, "group", "g", "002", "present", 101)
+    assert full_member.value.code == "cache_capacity"
+    store.member_event(RobotKey("other"), "group", "g", "003", "present", 101)
+    store.close()
+    reopened = ProfileStore(path, max_profiles=1)
+    try:
+        assert reopened.get_member(robot, "group", "g", "001")["fields"]["nickname"]["value"] == "known"
+        assert reopened.get_member(robot, "group", "g", "001")["membership"] == "left"
+        reopened.db.execute("PRAGMA user_version=2")
+        reopened.db.commit()
+    finally:
+        reopened.close()
+    with pytest.raises(V2Error, match="schema"):
+        ProfileStore(path)
+
+
+async def test_refresh_coalesces_and_late_event_wins(profiles):
+    identity = InstanceKey("p", RobotKey("app"))
+    started = asyncio.Event()
+    finish = asyncio.Event()
+    calls = []
+    class Reads:
+        http = SimpleNamespace(check=lambda: None)
+        async def get_group_member_info(self, group, member):
+            calls.append((group, member))
+            started.set()
+            await finish.wait()
+            return {"member_openid": member, "username": "Official", "member_role": "admin"}
+    service = Profiles(identity, profiles, Reads())
+    first = asyncio.create_task(service.get_member("g", "001", mode="refresh"))
+    await started.wait()
+    second = asyncio.create_task(service.get_member("g", "001", mode="refresh"))
+    await asyncio.sleep(0)
+    profiles.member_event(identity.robot, "group", "g", "001", "left", int(time.time()) + 1)
+    finish.set()
+    one, two = await asyncio.gather(first, second)
+    assert len(calls) == 1 and one["membership"] == two["membership"] == "left"
+    assert one["fields"]["nickname"]["value"] == "Official"
+    await service.close()
+
+async def test_roster_absence_is_not_leave_evidence_and_revision_protects_snapshot(profiles):
+    identity = InstanceKey("p", RobotKey("app"))
+    profiles.member_event(identity.robot, "group", "g", "001", "present", 100)
+    class Reads:
+        http = SimpleNamespace(check=lambda: None)
+        async def get_group_member_list(self, group, cursor):
+            if inject[0]:
+                profiles.member_event(identity.robot, "group", "g", "002", "present", 101)
+                inject[0] = False
+            return {"members": [], "next_cursor": ""}
+    service = Profiles(identity, profiles, Reads(), continuity_check=lambda: "same-ws-session")
+    inject = [True]
+    try:
+        stale = await service.refresh_roster("g")
+        assert stale["complete"] is False
+        assert profiles.get_member(identity.robot, "group", "g", "002")["membership"] == "present"
+        current = await service.refresh_roster("g")
+        assert current["complete"] and current["continuous"] and current["count"] == 0
+        assert profiles.get_member(identity.robot, "group", "g", "001")["membership"] == "present"
+    finally:
+        await service.close()
+
+
+async def test_roster_populates_present_members_without_elevating_cached_role(profiles):
+    identity = InstanceKey("p", RobotKey("app"))
+    class Reads:
+        http = SimpleNamespace(check=lambda: None)
+        async def get_group_member_list(self, group, cursor):
+            return {"members": [{"member_openid": "001", "username": "Name", "member_role": "admin",
+                                "bot": False, "joined_at": "2025-01-01T00:00:00Z"}], "next_cursor": ""}
+    service = Profiles(identity, profiles, Reads(), continuity_check=lambda: "session-1")
+    try:
+        roster = await service.refresh_roster("g")
+        assert roster["complete"] and roster["continuous"] and roster["count"] == 1
+        member = await service.get_member("g", "001", mode="cache_only")
+        assert member["fields"]["nickname"]["value"] == "Name"
+        assert member["fields"]["last_known_role"]["value"] == "admin"
+        assert member["membership"] == "present" and "role" not in member
+    finally:
+        await service.close()
+
+
+async def test_permission_failure_cools_ordinary_lookup_without_false_leave(profiles):
+    identity = InstanceKey("p", RobotKey("app"))
+    calls = []
+    class Reads:
+        http = SimpleNamespace(check=lambda: None)
+        async def get_group_member_info(self, group, member):
+            calls.append((group, member))
+            raise V2Error("qq_api_error", "fixture denial", business_code=11253, phase="rejected")
+    service = Profiles(identity, profiles, Reads())
+    try:
+        with pytest.raises(V2Error) as first:
+            await service.get_member("g", "001", mode="refresh")
+        assert first.value.business_code == 11253
+        profiles.merge(identity.robot, "group", "g", "001", {"bot": False}, source="history", as_of=1)
+        partial = await service.get_member("g", "001", mode="prefer_cache")
+        assert partial["membership"] == "unknown" and partial["refresh_error"] == "qq_api_error"
+        assert partial["missing_fields"] == ["nickname"] and len(calls) == 1
+    finally:
+        await service.close()
+
+
+
+async def test_native_member_page_preserves_url_and_fields():
+    identity = InstanceKey("p", RobotKey("app"))
+    requests = []
+    class FakeHTTP:
+        async def request(self, spec):
+            requests.append(spec)
+            return SimpleNamespace(data={"members": [], "next_cursor": "", "extra": True})
+    reads = GroupReads(identity, FakeHTTP(), RequestSpec)
+    page = await reads.get_group_member_list("g/01", "")
+    assert page["extra"] is True
+    assert requests[0].url == "https://api.bot.qq.com/v2/groups/g%2F01/members?cursor="
+    assert requests[0].method == "GET"
+
+
+async def test_native_member_reads_use_real_transport_qq_origin(management):
+    m = management
+    reads = GroupReads(m.service.identity, m.http, RequestSpec)
+    member = await reads.get_group_member_info("g", "u")
+    assert member["member_openid"] == "u"
+    assert m.http.session.calls[-1][1] == "https://api.bot.qq.com/v2/groups/g/members/u"
+    assert m.calls[-1][0] == "GET"
+    page = await reads.get_group_member_list("g", "")
+    assert page["next_cursor"] == "opaque &+"
+    assert m.http.session.calls[-1][1] == "https://api.bot.qq.com/v2/groups/g/members?cursor="
+    assert m.calls[-1][0] == "GET"
+    await m.service.group_info("g")
+    assert m.http.session.calls[-1][1] == "https://api.bot.qq.com/v2/groups/g/info"
+    assert m.calls[-1][0] == "GET"

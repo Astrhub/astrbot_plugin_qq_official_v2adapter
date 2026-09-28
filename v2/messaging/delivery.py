@@ -46,7 +46,14 @@ class ChatConsumer:
 
     def step(self):
         self.adapter.check_generation()
-        for item in self.inbox.pending(self.owner_key, 1, priority=getattr(self.adapter, "extensions", None) is not None):
+        core = getattr(self.adapter, "core", None)
+        did_core = core.step() if core is not None and core.task is None else False
+        if core is not None:
+            confirmed = self.inbox.completed_nonchat(self.owner_key)
+            if confirmed and confirmed["payload"].get("t") == "READY":
+                self.state = "awaiting_ready"
+                return False
+        for item in self.inbox.pending(self.owner_key, 1, priority=getattr(self.adapter, "extensions", None) is not None, core_ready=core is not None):
             receipt, payload = item["receipt"], item["payload"]
             if not isinstance(payload, dict):
                 self.inbox.retain(self.owner_key, receipt, "invalid_envelope", invalid=True)
@@ -131,7 +138,7 @@ class ChatConsumer:
             self.state, self.last_error = "delivered_to_host", None
             return True
         self.state = "idle"
-        return False
+        return did_core
 
     async def run(self):
         while not self.closed:

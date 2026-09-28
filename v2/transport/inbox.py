@@ -9,6 +9,7 @@ import time
 from pathlib import Path
 
 from ..errors import V2Error
+from ..protocol import CHAT_EVENTS
 
 
 class RawInbox:
@@ -31,9 +32,10 @@ class RawInbox:
         else:
             os.close(descriptor)
         self.db = sqlite3.connect(path, timeout=0.1)
+        self.db.row_factory = sqlite3.Row
         try:
             version = self.db.execute("PRAGMA user_version").fetchone()[0]
-            if version not in (0, 1, 2, 3):
+            if version not in (0, 1, 2, 3, 4):
                 raise V2Error("inbox_corrupt", "Unsupported raw inbox schema.", status=503)
             self.db.execute("PRAGMA synchronous=FULL")
             page_size = self.db.execute("PRAGMA page_size").fetchone()[0]
@@ -49,9 +51,18 @@ class RawInbox:
             if version < 3:
                 self.db.execute("ALTER TABLE inbox ADD COLUMN disposition TEXT NOT NULL DEFAULT 'pending'")
                 self.db.execute("ALTER TABLE inbox ADD COLUMN reason TEXT")
-            self.db.execute("PRAGMA user_version=3")
+            if version < 4:
+                for name, definition in (
+                    ("transport", "TEXT"), ("shard_index", "INTEGER"), ("shard_count", "INTEGER"),
+                    ("session_id", "TEXT"), ("received_generation", "TEXT"),
+                    ("core_state", "TEXT NOT NULL DEFAULT 'pending'"), ("core_at", "REAL"),
+                    ("core_error", "TEXT"),
+                ):
+                    self.db.execute(f"ALTER TABLE inbox ADD COLUMN {name} {definition}")
+            self.db.execute("PRAGMA user_version=4")
             self.db.execute("CREATE INDEX IF NOT EXISTS inbox_live_owner ON inbox(owner) WHERE body IS NOT NULL")
             self.db.execute("CREATE INDEX IF NOT EXISTS inbox_delivered_age ON inbox(delivered,row_id) WHERE body IS NULL")
+            self.db.execute("CREATE INDEX IF NOT EXISTS inbox_core_owner ON inbox(owner,core_state,row_id) WHERE body IS NOT NULL AND disposition='pending'")
             self._prune_delivered()
             self.db.commit()
         except BaseException:
@@ -78,26 +89,85 @@ class RawInbox:
                 own_count = self.db.execute("SELECT count(*) FROM inbox WHERE owner=? AND body IS NOT NULL", (owner,)).fetchone()[0]
                 if count >= self.max_rows or own_count >= 256 or size + len(encoded.encode()) > self.max_bytes:
                     raise V2Error("inbox_full", "Raw inbox is full; deliver pending events or inspect retained records in the WebUI.", status=503)
-                self.db.execute("INSERT INTO inbox(owner,event_id,body,received,size) VALUES (?,?,?,?,?)",
-                                (owner, envelope.event_id, encoded, envelope.received_at, len(encoded.encode())))
+                shard = envelope.shard
+                self.db.execute("""INSERT INTO inbox(owner,event_id,body,received,size,transport,shard_index,shard_count,session_id,received_generation) VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                                (owner, envelope.event_id, encoded, envelope.received_at, len(encoded.encode()),
+                                 envelope.transport, shard[0] if shard else None, shard[1] if shard else None,
+                                 envelope.session_id, envelope.generation))
             self.changed.set()
             return True
         except sqlite3.Error:
             raise V2Error("inbox_unavailable", "Raw inbox commit failed; event was not acknowledged.", status=503) from None
 
-    def pending(self, owner, limit=32, *, priority=False):
+    def pending(self, owner, limit=32, *, priority=False, core_ready=False):
         if type(limit) is not int or not 1 <= limit <= 256:
             raise V2Error("invalid_limit", "Read at most 256 pending events.")
+        chat_clause = ("AND core_state IN ('done','degraded') AND json_extract(body,'$.t') IN ("
+                       + ",".join("?" for _ in CHAT_EVENTS) + ") " if core_ready else "")
+        params = (owner, *CHAT_EVENTS, limit) if core_ready else (owner, limit)
         return [{"receipt": row, "payload": json.loads(body), "received_at": received}
                 for row, body, received in self.db.execute(
-                    "SELECT row_id,body,received FROM inbox WHERE owner=? AND body IS NOT NULL AND disposition='pending' ORDER BY "
+                    "SELECT row_id,body,received FROM inbox WHERE owner=? AND body IS NOT NULL AND disposition='pending' "
+                    + chat_clause + "ORDER BY "
                     + ("CASE WHEN json_extract(body,'$.t')='INTERACTION_CREATE' THEN 0 ELSE 1 END," if priority else "")
-                    + "row_id LIMIT ?", (owner, limit))]
+                    + "row_id LIMIT ?", params)]
 
-    def acknowledge(self, owner, receipt):
+    def completed_nonchat(self, owner):
+        """Finish a core-confirmed notice if the process stopped before raw acknowledgement."""
+        self._checked_open()
+        excluded = ",".join("?" for _ in CHAT_EVENTS)
+        row = self.db.execute("""SELECT row_id,body FROM inbox WHERE owner=? AND body IS NOT NULL
+            AND disposition='pending' AND core_state IN ('done','degraded') AND
+            json_extract(body,'$.t') NOT IN (""" + excluded + ") ORDER BY "
+            "CASE WHEN json_extract(body,'$.t')='READY' THEN 0 ELSE 1 END,row_id LIMIT 1",
+            (owner, *CHAT_EVENTS)).fetchone()
+        return {"receipt": row[0], "payload": json.loads(row[1])} if row else None
+
+
+    def core_pending(self, owner, limit=32):
+        self._checked_open()
+        return [{"receipt": row["row_id"], "payload": json.loads(row["body"]), "received_at": row["received"],
+                 "transport": row["transport"], "shard": (row["shard_index"], row["shard_count"])
+                 if row["shard_index"] is not None else None, "session_id": row["session_id"],
+                 "received_generation": row["received_generation"]}
+                for row in self.db.execute("""SELECT * FROM inbox WHERE owner=? AND body IS NOT NULL
+                    AND disposition='pending' AND core_state='pending' ORDER BY
+                    CASE WHEN json_extract(body,'$.t')='INTERACTION_CREATE' THEN 0 ELSE 1 END,row_id LIMIT ?""", (owner, limit))]
+
+    def _checked_open(self):
+        if self.closed:
+            raise V2Error("service_stopped", "Raw inbox is stopped.", status=503)
+
+    def core_done(self, owner, receipt, *, state="done", error=None):
+        self._checked_open()
+        if state not in {"done", "degraded", "invalid"} or error is not None and (not isinstance(error, str) or len(error) > 80):
+            raise V2Error("invalid_core_state", "Core disposition or diagnostic code is invalid.")
         with self.db:
-            self.db.execute("UPDATE inbox SET body=NULL,size=0,delivered=? WHERE owner=? AND row_id=? AND body IS NOT NULL", (self.clock(), owner, receipt))
+            self.db.execute("UPDATE inbox SET core_state=?,core_at=?,core_error=? WHERE owner=? AND row_id=? AND body IS NOT NULL AND core_state='pending'",
+                            (state, self.clock(), error, owner, receipt))
+        self.changed.set()
+
+    def acknowledge(self, owner, receipt, *, host=True):
+        with self.db:
+            self.db.execute("UPDATE inbox SET body=NULL,size=0,delivered=?,reason=? WHERE owner=? AND row_id=? AND body IS NOT NULL",
+                            (self.clock(), "host_admitted" if host else "core_confirmed", owner, receipt))
             self._prune_delivered()
+
+    def progress(self, owner, receipt):
+        """Return the retained raw/core/host checkpoint while its receipt exists."""
+        self._checked_open()
+        if type(receipt) is not int or receipt <= 0:
+            raise V2Error("invalid_receipt", "A positive receipt is required.")
+        row = self.db.execute("SELECT body,disposition,reason,core_state,core_at,core_error,delivered FROM inbox WHERE owner=? AND row_id=?",
+                              (owner, receipt)).fetchone()
+        if row is None:
+            raise V2Error("event_not_found", "The event receipt is no longer retained.", status=404)
+        state = ("delivered_to_host" if row["reason"] == "host_admitted" else
+                 "not_applicable" if row["reason"] == "core_confirmed" or row["disposition"] != "pending" else
+                 "pending" if row["body"] is not None else "unknown")
+        return {"receipt": receipt, "raw_state": row["disposition"], "core_state": row["core_state"],
+                "core_at": row["core_at"], "core_error": row["core_error"],
+                "host_state": state, "delivered_at": row["delivered"]}
 
     def retain(self, owner, receipt, reason, *, invalid=False):
         with self.db:
@@ -164,8 +234,8 @@ class RawInbox:
 
 
 class Ingress:
-    def __init__(self, inbox, owner, *, guard=lambda: None, capacity=32):
-        self.inbox, self.owner, self.guard = inbox, owner, guard
+    def __init__(self, inbox, owner, *, guard=lambda: None, capacity=32, identity=None):
+        self.inbox, self.owner, self.guard, self.identity = inbox, owner, guard, identity
         self.queue = asyncio.Queue(maxsize=capacity)
         self.worker = None
         self.stopped = False

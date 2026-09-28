@@ -16,6 +16,7 @@ from astrbot.core.star.filter.command import GreedyStr
 from .v2 import PLATFORM_TYPE, PLATFORM_TYPES, PLUGIN_NAME, WEBHOOK_TYPE
 from .v2.adapter import DEFAULT_PLATFORM_CONFIG, V2Adapter
 from .v2.connections import Connections
+from .v2.errors import V2Error
 from .v2.extensions.state import ExtensionStore
 from .v2.help import send_help
 from .v2.media.io import BlobPool
@@ -23,6 +24,7 @@ from .v2.messaging.delivery import DeliverySlots
 from .v2.messaging.store import MessageStore
 from .v2.onboarding import Onboarding
 from .v2.panels import PanelService
+from .v2.profiles.store import ProfileStore
 from .v2.settings import SettingsStore
 from .v2.transport.inbox import RawInbox
 from .v2.web_api import ControlAPI
@@ -51,6 +53,7 @@ class QQOfficialV2(Star):
         self.inbox = None
         self.messages = None
         self.extension_state = None
+        self.profiles = None
         self.media_pool = None
         self.panels = None
         self.catalog_ready = False
@@ -66,6 +69,17 @@ class QQOfficialV2(Star):
             self.inbox = RawInbox(StarTools.get_data_dir(PLUGIN_NAME) / "transport.sqlite3")
             self.messages = MessageStore(StarTools.get_data_dir(PLUGIN_NAME) / "messaging.sqlite3")
             self.extension_state = ExtensionStore(self.messages)
+            for name, low, high in (("profile_max_records", 1, 65536), ("profile_max_bytes", 1048576, 268435456),
+                                    ("profile_stale_seconds", 1, 86400), ("profile_cooldown_seconds", 1, 86400)):
+                value = self.config.get(name, {"profile_max_records": 32768, "profile_max_bytes": 67108864,
+                                               "profile_stale_seconds": 300, "profile_cooldown_seconds": 600}[name])
+                if type(value) is not int or not low <= value <= high:
+                    raise V2Error("invalid_profile_config", f"Invalid {name} profile setting")
+            self.profiles = ProfileStore(StarTools.get_data_dir(PLUGIN_NAME) / "profiles.sqlite3",
+                max_profiles=self.config.get("profile_max_records", 32768),
+                max_bytes=self.config.get("profile_max_bytes", 67108864),
+                stale_seconds=self.config.get("profile_stale_seconds", 300))
+            self.profiles.migrate_identities(self.messages)
             self.media_pool = BlobPool(StarTools.get_data_dir(PLUGIN_NAME) / "media-spool")
             for kind in PLATFORM_TYPES:
                 adapter = type("OwnedWebhookAdapter" if kind == WEBHOOK_TYPE else "OwnedAdapter", (V2Adapter,),
@@ -131,6 +145,11 @@ class QQOfficialV2(Star):
         if self.panels:
             self.panels.stable.clear()
 
+        owner = getattr(plugin, "star_cls", None)
+        if owner is not None:
+            for instance in tuple(self.instances):
+                instance.client._state.events.close_owner(owner)
+
     async def terminate(self):
         self.stopping = True
         if self._termination is None or (self._termination.done() and (self._termination.cancelled() or self._termination.exception() is not None)):
@@ -171,6 +190,8 @@ class QQOfficialV2(Star):
             self.inbox.close()
         if self.extension_state:
             await self.extension_state.close()
+        if self.profiles:
+            self.profiles.close()
         if self.media_pool:
             self.media_pool.close()
         if self.messages:

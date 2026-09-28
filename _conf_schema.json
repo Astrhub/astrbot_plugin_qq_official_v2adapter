@@ -1,5 +1,9 @@
 {
   "webui_enabled": {"description": "启用V2管理页面 API", "type": "bool", "default": true},
   "remote_menu_sync": {"description": "托管面板开关", "type": "bool", "default": false},
-  "onebot_network_enabled": {"description": "OneBot HTTP/正向开关", "type": "bool", "default": false}
+  "onebot_network_enabled": {"description": "OneBot HTTP/正向开关", "type": "bool", "default": false},
+  "profile_max_records": {"description": "资料库记录上限", "type": "int", "default": 32768},
+  "profile_max_bytes": {"description": "资料库字节上限", "type": "int", "default": 67108864},
+  "profile_stale_seconds": {"description": "资料过时标记秒数", "type": "int", "default": 300},
+  "profile_cooldown_seconds": {"description": "资料查询失败冷却秒数", "type": "int", "default": 600}
 }

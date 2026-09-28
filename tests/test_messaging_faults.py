@@ -217,7 +217,7 @@ def test_p2_raw_inbox_migration_preserves_pending_and_acknowledged_records(tmp_p
         assert inbox.pending("owner")[0]["payload"] == chat_payload()
         assert inbox.diagnostics("owner") == {"pending": 1}
         assert inbox.db.execute("SELECT delivered FROM inbox WHERE row_id=2").fetchone()[0] == NOW
-        assert inbox.db.execute("PRAGMA user_version").fetchone()[0] == 3
+        assert inbox.db.execute("PRAGMA user_version").fetchone()[0] == 4
     finally:
         inbox.close()
 

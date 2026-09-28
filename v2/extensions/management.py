@@ -11,6 +11,7 @@ from uuid import uuid4
 
 from ..errors import V2Error, unsupported
 from ..messaging.store import robot_key
+from .state import digest
 from ..models import text_id
 from ..protocol import RequestSpec
 
@@ -177,6 +178,13 @@ class Management:
             raise V2Error("invalid_duration", "Group mute duration must be 0..2592000 seconds.")
         self.check(write=True)
         await self._admin(group)
+        binding = digest(["group_ban", group, user, duration])
+        path = f"/v2/groups/{ident(group)}/restrict_chat_setting"
+        if operation_id is not None:
+            operation_id = text_id(operation_id)
+            frozen = self.store.frozen_request(self.identity.robot, operation_id, "group_ban", binding)
+            if frozen is not None:
+                return await self._write("POST", path, frozen, kind="group_ban", operation_id=operation_id)
         op = "del"
         if duration:
             member = await self.group_member(group, user)
@@ -191,7 +199,10 @@ class Management:
                 text_id(row.get("member_openid"))
             op = "update" if any(row["member_openid"] == user for row in data["members"]) else "add"
         expiry = datetime.fromtimestamp(self.store.now() + duration, UTC).isoformat() if duration else ""
-        return await self._write("POST", f"/v2/groups/{ident(group)}/restrict_chat_setting", {"members": [{"op": op, "member_openid": user, "mute_expire_at": expiry}]}, kind="group_ban", operation_id=operation_id)
+        body = {"members": [{"op": op, "member_openid": user, "mute_expire_at": expiry}]}
+        if operation_id is not None:
+            body = self.store.frozen_request(self.identity.robot, operation_id, "group_ban", binding, request=body)
+        return await self._write("POST", path, body, kind="group_ban", operation_id=operation_id)
 
     async def group_kick(self, group, users, *, blacklist=False, operation_id=None):
         ident(group)

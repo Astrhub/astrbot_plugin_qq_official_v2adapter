@@ -124,9 +124,10 @@ class ShardIngress:
 
 
 class GatewayGroup:
-    def __init__(self, http, ingress, budget, *, guard=lambda: None, sleep=asyncio.sleep, jitter=random.random):
+    def __init__(self, http, ingress, budget, *, guard=lambda: None, sleep=asyncio.sleep, jitter=random.random, on_fresh=lambda: None):
         self.http, self.ingress, self.budget, self.guard = http, ingress, budget, guard
         self.sleep, self.jitter = sleep, jitter
+        self.on_fresh = on_fresh
         self.gateways = []
         self.tasks = set()
         self.terminal_failures = {}
@@ -223,7 +224,7 @@ class GatewayGroup:
             self.planned = len(shards)
             self.session = self._make_session()
             self.gateways = [Gateway(self.http, ShardIngress(self.ingress), guard=self.guard,
-                budget=self.budget, shard=shard, ws_session=self.session) for shard in shards]
+                budget=self.budget, shard=shard, ws_session=self.session, on_fresh=self.on_fresh) for shard in shards]
             by_task = {asyncio.create_task(g.run(), name=f"qq-v2-shard-{g.shard[0]}"): g for g in self.gateways}
             self.tasks = set(by_task)
             pending = set(self.tasks)

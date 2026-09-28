@@ -44,6 +44,6 @@ def test_extension_history_compaction_retains_replay_fence(tmp_path):
         with pytest.raises(V2Error):
             ext.begin(robot, "a", "delete", digest(["a"]))
         assert not ext.begin(robot, "b", "delete", digest(["b"]))[0]
-        assert store.db.execute("PRAGMA user_version").fetchone()[0] == 2
+        assert store.db.execute("PRAGMA user_version").fetchone()[0] == 3
     finally:
         store.close()

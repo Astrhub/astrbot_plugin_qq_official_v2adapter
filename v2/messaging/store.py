@@ -62,7 +62,7 @@ class MessageStore:
                 failure("message_state_in_use", "Another owner holds this message-state directory.", 503)
             self.db = sqlite3.connect(path, timeout=0.1)
             self.db.row_factory = sqlite3.Row
-            if self.db.execute("PRAGMA user_version").fetchone()[0] not in (0, 1, 2):
+            if self.db.execute("PRAGMA user_version").fetchone()[0] not in (0, 1, 2, 3):
                 failure("message_state_corrupt", "Unsupported message-state schema; data was not reset.", 503)
             self.db.execute("PRAGMA synchronous=FULL")
             page_size = self.db.execute("PRAGMA page_size").fetchone()[0]
@@ -102,7 +102,17 @@ class MessageStore:
                 CREATE INDEX IF NOT EXISTS charge_budget ON charges(robot,bucket,subject,until);
                 CREATE TABLE IF NOT EXISTS attempts (robot TEXT, op_id TEXT, number INTEGER, scene TEXT, target TEXT, active INTEGER, stamp REAL NOT NULL, PRIMARY KEY(robot,op_id,number));
                 CREATE INDEX IF NOT EXISTS attempt_rate ON attempts(robot,stamp);
-                PRAGMA user_version=2;
+                CREATE TABLE IF NOT EXISTS sdk_bindings (robot TEXT NOT NULL, op_id TEXT NOT NULL,
+                    lane TEXT NOT NULL, binding TEXT NOT NULL, created REAL NOT NULL,
+                    PRIMARY KEY(robot,op_id));
+                CREATE TABLE IF NOT EXISTS sdk_frozen (robot TEXT NOT NULL, op_id TEXT NOT NULL,
+                    kind TEXT NOT NULL, digest TEXT NOT NULL, request TEXT NOT NULL, created REAL NOT NULL,
+                    PRIMARY KEY(robot,op_id));
+                CREATE TABLE IF NOT EXISTS sdk_sequences (robot TEXT NOT NULL, scene TEXT NOT NULL, target TEXT NOT NULL,
+                    source_kind TEXT NOT NULL, source_id TEXT NOT NULL, seq INTEGER NOT NULL,
+                    op_id TEXT NOT NULL, PRIMARY KEY(robot,scene,target,source_kind,source_id,seq));
+                CREATE INDEX IF NOT EXISTS sdk_seq_operation ON sdk_sequences(robot,op_id);
+                PRAGMA user_version=3;
             """)
             self._water = self.db.execute("SELECT value FROM clock_guard WHERE id=1").fetchone()[0]
             with self.transaction():
@@ -201,6 +211,12 @@ class MessageStore:
         self.db.execute(f"DELETE FROM deliveries AS d WHERE accepted<? AND {guard}", (now - 86400, *args))
         self.db.execute("DELETE FROM operations WHERE updated<? AND state IN ('sent','rejected','not_sent','history_evicted') AND NOT EXISTS (SELECT 1 FROM charges c WHERE c.robot=operations.robot AND c.op_id=operations.op_id)", (now - 86400,))
         self._trim_operation_history()
+        self.db.execute("DELETE FROM sdk_sequences WHERE rowid IN (SELECT s.rowid FROM sdk_sequences s LEFT JOIN sdk_bindings b ON b.robot=s.robot AND b.op_id=s.op_id WHERE b.op_id IS NULL)")
+        extension_fence = (" AND NOT EXISTS (SELECT 1 FROM extension_ops e WHERE e.robot=sdk_bindings.robot AND e.op_id=sdk_bindings.op_id)"
+                           if self.db.execute("SELECT 1 FROM sqlite_master WHERE name='extension_ops'").fetchone() else "")
+        self.db.execute("DELETE FROM sdk_bindings WHERE created<? AND NOT EXISTS (SELECT 1 FROM operations o WHERE o.robot=sdk_bindings.robot AND o.op_id=sdk_bindings.op_id)" + extension_fence, (now - 86400,))
+        if extension_fence:
+            self.db.execute("DELETE FROM sdk_frozen WHERE created<? AND NOT EXISTS (SELECT 1 FROM extension_ops e WHERE e.robot=sdk_frozen.robot AND e.op_id=sdk_frozen.op_id)", (now - 86400,))
 
     def prune(self):
         with self.transaction():
@@ -407,6 +423,87 @@ class MessageStore:
         result["error"] = json.loads(result["error"]) if result["error"] else None
         return result
 
+    def _bind_operation(self, robot, op_id, lane, binding):
+        """Fence one logical write across send, extension and native aliases."""
+        key = robot_key(robot)
+        old = self.db.execute("SELECT lane,binding FROM sdk_bindings WHERE robot=? AND op_id=?", (key, op_id)).fetchone()
+        if old is not None:
+            if tuple(old) != (lane, binding):
+                failure("operation_conflict", "Operation ID belongs to another write or payload.")
+            return
+        sent = self.db.execute("SELECT 1 FROM operations WHERE robot=? AND op_id=?", (key, op_id)).fetchone()
+        extension = (self.db.execute("SELECT 1 FROM extension_ops WHERE robot=? AND op_id=?", (key, op_id)).fetchone()
+                     if self.db.execute("SELECT 1 FROM sqlite_master WHERE name='extension_ops'").fetchone() else None)
+        if sent and lane != "send" or extension and lane != "extension":
+            failure("operation_conflict", "Operation ID belongs to another write.")
+        self.db.execute("INSERT INTO sdk_bindings VALUES(?,?,?,?,?)", (key, op_id, lane, binding, self.now()))
+
+    def claim_sequence(self, route, source_kind, source_id, op_id, requested=None, *, lane, binding):
+        """Reserve a source sequence under the same binding as its write ledger."""
+        if source_kind not in {"message", "event"}:
+            failure("invalid_source", "Sequence source must be a message or event.")
+        source_id, op_id = text_id(source_id), text_id(op_id)
+        if requested is not None and (type(requested) is not int or not 1 <= requested <= 2**31 - 1):
+            failure("invalid_sequence", "Sequence must be a positive integer.")
+        key = (*route_key(route), source_kind, source_id)
+        if lane not in {"send", "extension"} or not isinstance(binding, str) or not 1 <= len(binding) <= 128:
+            failure("invalid_binding", "Sequence must share a bounded write-ledger binding.")
+        with self.transaction():
+            self._bind_operation(route.robot, op_id, lane, binding)
+            old = self.db.execute("SELECT scene,target,source_kind,source_id,seq FROM sdk_sequences WHERE robot=? AND op_id=?", (key[0], op_id)).fetchone()
+            if old:
+                if tuple(old[:4]) != key[1:] or requested is not None and old[4] != requested:
+                    failure("operation_conflict", "This operation already claimed another source or sequence.")
+                return old[4]
+            high = self.db.execute("SELECT max(seq) FROM sdk_sequences WHERE robot=? AND scene=? AND target=? AND source_kind=? AND source_id=?", key).fetchone()[0] or 0
+            observed = self.db.execute("SELECT seq FROM sources WHERE robot=? AND scene=? AND target=? AND message_id=?", (*key[:3], source_id)).fetchone() if source_kind == "message" else None
+            high = max(high, observed[0]) if observed else high
+            legacy_source = source_id if source_kind == "message" else "\x1f" + source_id
+            retained = self.db.execute("""SELECT max(seq) FROM operations WHERE robot=? AND scene=? AND target=?
+                AND source=? AND state IN ('reserved','in_flight','unknown','sent','history_evicted')""",
+                (key[0], key[1], key[2], legacy_source)).fetchone()[0]
+            high = max(high, retained or 0)
+            seq = requested if requested is not None else high + 1
+            occupied = self.db.execute("""SELECT 1 FROM operations WHERE robot=? AND scene=? AND target=?
+                AND source=? AND seq=? AND state IN ('reserved','in_flight','unknown','sent','history_evicted')""",
+                (key[0], key[1], key[2], legacy_source, seq)).fetchone()
+            if occupied:
+                failure("sequence_conflict", "This source sequence belongs to a retained send.")
+            try:
+                self.db.execute("INSERT INTO sdk_sequences VALUES(?,?,?,?,?,?,?)", (*key, seq, op_id))
+            except sqlite3.IntegrityError:
+                failure("sequence_conflict", "This source sequence is already claimed.")
+            return seq
+
+
+    def frozen_request(self, robot, op_id, kind, digest, *, request=None):
+        """Freeze safe derived management fields before a request is bound."""
+        key = robot_key(robot), text_id(op_id)
+        with self.transaction():
+            binding = self.db.execute("SELECT lane FROM sdk_bindings WHERE robot=? AND op_id=?", key).fetchone()
+            if binding and binding[0] != "extension":
+                failure("operation_conflict", "Operation ID belongs to another write lane.")
+            row = self.db.execute("SELECT kind,digest,request FROM sdk_frozen WHERE robot=? AND op_id=?", key).fetchone()
+            if row:
+                if (row["kind"], row["digest"]) != (kind, digest):
+                    failure("operation_conflict", "This operation ID has different logical parameters.")
+                if binding and not self.db.execute("SELECT 1 FROM extension_ops WHERE robot=? AND op_id=?", key).fetchone():
+                    failure("operation_result_not_retained", "The original operation receipt expired; do not replay it.")
+                return json.loads(row["request"])
+            legacy = self.db.execute("SELECT 1 FROM extension_ops WHERE robot=? AND op_id=?", key).fetchone() if self.db.execute("SELECT 1 FROM sqlite_master WHERE name='extension_ops'").fetchone() else None
+            if legacy:
+                failure("operation_result_not_retained", "Legacy management request cannot be reconstructed safely.")
+            if request is None:
+                return None
+            if kind != "group_ban" or not isinstance(request, dict):
+                failure("invalid_request", "Only validated derived management fields may be frozen.")
+            encoded = json.dumps(request, ensure_ascii=False, sort_keys=True)
+            if len(encoded.encode()) > 4096:
+                failure("invalid_request", "Frozen request exceeds the safe local bound.")
+            self.db.execute("INSERT INTO sdk_frozen VALUES(?,?,?,?,?,?)", (*key, kind, digest, encoded, self.now()))
+            return request
+
+
     def reserve(self, route, source, digest, op_id, *, allow_active=False, existing_only=False):
         text_id(op_id)
         key = route_key(route)
@@ -414,6 +511,8 @@ class MessageStore:
             now = self.now()
             self._prune(now, keep_source=(*key, source_key(source)) if source else None)
             old = self.db.execute("SELECT * FROM operations WHERE robot=? AND op_id=?", (key[0], op_id)).fetchone()
+            if old or not existing_only:
+                self._bind_operation(route.robot, op_id, "send", digest)
             if old:
                 if (old["scene"], old["target"], old["source"], old["digest"]) != (route.scene, route.target, source_key(source) if source else None, digest):
                     failure("operation_conflict", "A logical operation cannot change source, target or content.")
