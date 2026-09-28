@@ -50,6 +50,8 @@ await client.qq.put_menu({"items": []}, operation_id="menu-001")
 
 回调必须是异步函数；队列默认 64 项，单实例最多 32 个订阅和 16 MiB 待消费事件。每订阅顺序执行，默认 5 秒超时；异常隔离，队列满时关闭该句柄并报告 `subscription_gap`。`close()` 幂等、owner 卸载或平台重载撤销句柄。`events.stream(names, owner=...)` 返回同语义异步流；`include_recovered=True` 才观察启动时未被核心处置的旧收件，进程崩溃、未订阅期或跨分片不保证 exactly-once 或全局顺序。`NativeEvent.payload/d` 递归只读，`raw()` 返回隔离副本；`key` 优先取机器人+真实外层事件 ID，缺失时用本地实例代次/收件凭据（不保证跨重启等价）。`context` 分开记录代次、传输、分片、session 和收件凭据。连接 `RESUMED.d` 可以是空串，Webhook 没有 WS 游标；`reply_context` 仅真实且未过期的当前消息。宿主排队、观察者发布、核心处置、收件接受各有独立进度；共享收件箱仍保持有界背压。
 
+每个订阅的 `event.client` 独立绑定该订阅 owner；卸载后缓存的视图不能再读写，其他订阅与共享 client 不受影响。
+
 卸载后的 owner 即使持有旧 EventBus 也不能再订阅（`stale_owner`）；普通 `close_owner` 仅关闭当前订阅，仍可重订。
 
 RawInbox `core_state` 为 `pending → done/degraded/invalid`：`degraded` 保留容量错误并继续宿主聊天投递，`invalid` 进入可检索的留置区；过深原始数据仅推送留置凭据的最小诊断，完整内容留在操作员收件箱。非聊天有效通知由核心确认，聊天另由宿主交付确认。核心标记后/收件确认前崩溃时只补确认，不重复应用成员变化或 ACK；跨库中断时重做幂等资料合并，非聊天观察仍仅实时交付。

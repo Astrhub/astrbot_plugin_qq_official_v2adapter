@@ -236,7 +236,11 @@ class EventBus:
             if sub.queue.full() or self.queued_bytes + size > self.max_bytes:
                 sub._stop("subscription_gap")
                 continue
-            sub.queue.put_nowait((event, size))
+            delivered = event
+            if event.client is not None:
+                delivered = copy.copy(event)
+                delivered.client = event.client.with_options(owner=sub.owner)
+            sub.queue.put_nowait((delivered, size))
             sub.bytes += size
             self.queued_bytes += size
 
