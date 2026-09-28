@@ -79,7 +79,7 @@ Pages“实际网络状态与能力”及 `_qq_get_capabilities` 使用同一目
 `event.bot`、`client.api` 与 `client.call_action` 共用 OneBot 分派；即使可选网络关闭，进程内仍可调用。新增等价动作：`set_group_kick_members`（≤20、可部分成功）、`get_group_shut_list`、`_qq_get_group_blacklist`、`_qq_set_group_blacklist`、`_qq_get_join_approval_strategies`。这些动作在网络入口沿用显式允许表、只读/写开关及 `management_writes`；原生 `.qq` 的其余具名写接口不自动暴露为网络 action。QQ群名单单页和不具备当前成员事件连续性的历史记录不能混成当前完整名单。
 `_qq_get_join_approval_strategies` 原样返回官方 `strategies`、`next_cursor` 和额外字段；缺失必需分页字段时报 `pagination_incomplete`。
 
-`get_group_member_info` 默认缓存优先，`no_cache=true` 访问 QQ；`get_group_member_list` 默认复用有连续性的新鲜完整快照，否则重新逐页读取 QQ，明确刷新不返回旧缓存。成员 `_qq` 含来源、成员状态及观察时间；仅确认的昵称/role/bot/join_time 映射，离群的旧 role 不当作当前管理员。`get_stranger_info` 有真实聊天观察时为 `source=chat_cache`，保留原 `first_seen/last_seen/source_message_id`；只有历史资料时返回 `source=profile_cache`、历史 `as_of/stale/membership`，不产生聊天时间和消息 ID；二者皆无则 `identity_not_observed`。实例级查询必须给真实 `scope` 与 `id_kind`，`no_cache=true` 明确 unsupported，不能静默将历史当作实时。群名重名不自动选目标，明确成员 OpenID 或真实 @ 才可进行管理。
+`get_group_member_info` 默认缓存优先，`no_cache=true` 访问 QQ；`get_group_member_list` 仅复用启用成员事件位 24 且连续接收时的新鲜完整快照，默认未启位 24，查询可能每次逐页访问 QQ，历史资料仍可读取。明确刷新不返回旧缓存；成员 `_qq` 保留来源、状态及观察时间，标准 `role` 只在自身记录时间未过期且成员仍在群时输出，刷新昵称/头像不会续期旧管理员身份。`get_stranger_info` 有真实聊天观察时为 `source=chat_cache`，保留原 `first_seen/last_seen/source_message_id`；只有历史资料时返回 `source=profile_cache`，不造聊天时间或消息 ID；二者皆无则 `identity_not_observed`。查询必须给真实 `scope` 和 `id_kind`；`no_cache=true` 对陌生人明确 unsupported，群名重名不自动选择管理目标。
 
 
 ## 回退与验证边界

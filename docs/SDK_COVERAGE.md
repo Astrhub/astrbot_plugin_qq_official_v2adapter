@@ -4,6 +4,8 @@
 
 状态：96 行 `native` 为具名原生实际请求，2 行 `excluded` 有废弃依据。独立字面 URL／方法／参数／响应 fixture 位于 `tests/test_sdk_read_api.py`、`test_sdk_native_writes.py`、`test_sdk_admin_api.py`，详见 W003 覆盖验收表。GET 实时访问 QQ，缓存走 `.qq.profiles`；写操作沿用账本、`management_writes`、owner 和代次约束，QQ 权限由实际响应裁决。
 
+后续行为回归：资料字段时效/跨群隔离见 `tests/test_sdk_onebot_profiles.py`、`test_sdk_profiles.py`；Gateway 资料故障与无成员 Intent 见 `test_gateway_shards.py`；面板手改恢复/账本/并发见 `test_panel_resilience.py`；管理工具畸形页/故障见 `test_sdk_group_tools.py`；部分成功阶段见 `test_sdk_admin_api.py`；`since="0"` 传输请求体见 `test_sdk_read_api.py`；typing owner 生命周期见 `test_event_typing.py`。
+
 | ID | 官方方法及路径 | 原生方法/归属 | 类别/分页 | 首版状态 |
 | --- | --- | --- | --- | --- |
 | A001 | GET /gateway | get_gateway M4 | 读 | native |

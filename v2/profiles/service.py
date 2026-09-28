@@ -175,7 +175,8 @@ class Profiles:
         if status["revision"] != self.store.revision(self.identity.robot, "group", group_openid):
             status["complete"] = False
             status["reason"] = "roster_revision_changed"
-        scoped_error = self.store.scope_error(self.identity.robot, "group", group_openid)
+        scoped_error = (self.store.scope_error(self.identity.robot, "group", group_openid)
+                        or self.store.robot_gap(self.identity.robot, "group", group_openid))
         if scoped_error:
             status.update(complete=False, continuous=False, reason=scoped_error)
         elif not self.continuity_check():

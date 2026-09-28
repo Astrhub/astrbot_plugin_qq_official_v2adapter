@@ -1,4 +1,5 @@
 import asyncio
+import copy
 from types import SimpleNamespace
 
 import pytest
@@ -6,13 +7,30 @@ from test_messaging_help_panels import enable
 from test_messaging_help_panels import panel_env as panel_env
 from test_messaging_state import NOW, chat_payload
 
+from v2.client import ClientState, V2Client
 from v2.errors import V2Error
+from v2.extensions.management import Management
+from v2.extensions.state import ExtensionStore
 from v2.messaging.convert import convert_chat
 from v2.messaging.store import robot_key
 from v2.models import InstanceKey
 from v2.panels import PanelService
 from v2.protocol import RawEnvelope
 
+
+
+def native_panel_client(env):
+    extension = ExtensionStore(env.owner.messages)
+    state = ClientState(env.instance.identity)
+    state.http = env.instance.http
+    state.sender = SimpleNamespace()
+    state.guard = env.instance.check_generation
+    state.extension_state = env.owner.extension_state = extension
+    state.panels = env.owner.panels = env.service
+    manager = Management(env.instance.identity, env.instance.http, extension, env.owner.messages,
+                         settings=lambda: {"management_writes": True})
+    state.management = manager
+    return V2Client(env.instance.identity, state=state), manager, extension
 
 async def worker_ticks(env, service=None):
     service = service or env.service
@@ -169,3 +187,244 @@ async def test_confirmed_scope_cannot_authorize_unobserved_alternatives(panel_en
         e.service.plan(instance, "group", target_type="specific", targets=[target])
     assert exc.value.code == "identity_not_observed"
     assert sum(c[0] == "POST" for c in e.calls) == 1
+
+
+@pytest.mark.parametrize("action", ["update", "delete"])
+async def test_native_managed_panel_override_recovers_only_after_operator_confirmation(panel_env, action):
+    e = panel_env
+    client, manager, extension = native_panel_client(e)
+    try:
+        initial = await enable(e)
+        old_id = initial["panel_id"]
+        if action == "update":
+            panel = copy.deepcopy(e.records[old_id]["panel"])
+            panel["remark"] = "manual-baseline"
+            assert (await client.qq.update_panel(old_id, panel, operation_id="override-once"))["version"] == 2
+            assert e.records[old_id]["panel"]["remark"] == "manual-baseline"
+        else:
+            assert await client.qq.delete_panel(old_id, operation_id="delete-once") == {}
+            assert old_id not in e.records
+        paused = e.service.state(e.instance, "group")
+        assert not paused["enabled"] and paused["state"] == "paused"
+        before = len([row for row in e.calls if row[0] in {"POST", "PUT", "DELETE"}])
+        tick = await worker_ticks(e)
+        await tick()
+        assert len([row for row in e.calls if row[0] in {"POST", "PUT", "DELETE"}]) == before
+        await e.service.close()
+        e.service = PanelService(e.owner, clock=lambda: e.clock[0], stability_seconds=0,
+                                 catalog_provider=e.service.catalog_provider)
+        e.owner.panels = e.service
+        plan = e.service.plan(e.instance, "group")
+        with pytest.raises(V2Error) as unconfirmed:
+            await e.service.enable(e.instance, "group", plan["fingerprint"], confirm=False)
+        assert unconfirmed.value.code == "confirmation_required"
+        assert len([row for row in e.calls if row[0] in {"POST", "PUT", "DELETE"}]) == before
+        result = await e.service.enable(e.instance, "group", plan["fingerprint"], confirm=True)
+        assert result["state"] == "synced" and result["enabled"] is True
+        if action == "update":
+            assert result["panel_id"] == old_id and result["previous"]["panel"]["remark"] == "manual-baseline"
+            assert len([row for row in e.calls if row[0] in {"POST", "PUT"}]) == 2
+        else:
+            assert result["panel_id"] != old_id
+            assert len([row for row in e.calls if row[0] == "POST"]) == 2
+            assert len(e.records) == 1
+    finally:
+        await manager.close()
+        await extension.close()
+
+
+async def test_unknown_manual_panel_write_never_unlocks_through_confirmed_enable(panel_env):
+    e = panel_env
+    client, manager, extension = native_panel_client(e)
+    try:
+        owned = (await enable(e))["panel_id"]
+        panel = copy.deepcopy(e.records[owned]["panel"])
+        panel["remark"] = "unknown-remote"
+        e.modes.append("unknown")
+        with pytest.raises(V2Error) as unknown:
+            await client.qq.update_panel(owned, panel, operation_id="override-uncertain")
+        assert unknown.value.phase == "result_unknown"
+        paused = e.service.state(e.instance, "group")
+        assert paused["enabled"] is False
+        writes = len([row for row in e.calls if row[0] in {"POST", "PUT"}])
+        plan = e.service.plan(e.instance, "group")
+        with pytest.raises(V2Error) as blocked:
+            await e.service.enable(e.instance, "group", plan["fingerprint"], confirm=True)
+        assert blocked.value.code == "panel_result_unknown"
+        assert len([row for row in e.calls if row[0] in {"POST", "PUT"}]) == writes
+    finally:
+        await manager.close()
+        await extension.close()
+
+
+@pytest.mark.parametrize("action", ["update", "delete", "target"])
+@pytest.mark.parametrize("outcome", ["not_sent", "rejected"])
+@pytest.mark.parametrize("previously_disabled", [False, True])
+async def test_definite_failed_manual_panel_write_restores_only_unchanged_operator_intent(panel_env, action, outcome, previously_disabled):
+    e = panel_env
+    client, manager, extension = native_panel_client(e)
+    try:
+        owned = (await enable(e))["panel_id"]
+        if previously_disabled:
+            e.service.disable(e.instance, "group", confirm=True)
+        initial = e.service.state(e.instance, "group")
+        before = len(e.calls)
+        original = e.instance.http.request
+        async def failed(spec, *, before_send=None):
+            if outcome == "rejected":
+                before_send()
+            raise V2Error("qq_api_error" if outcome == "rejected" else "connect_failed",
+                          "definite fixture failure", phase=outcome, http_status=400 if outcome == "rejected" else None)
+        e.instance.http.request = failed
+        try:
+            with pytest.raises(V2Error) as exc:
+                if action == "update":
+                    await client.qq.update_panel(owned, copy.deepcopy(e.records[owned]["panel"]), operation_id="fail-update")
+                elif action == "delete":
+                    await client.qq.delete_panel(owned, operation_id="fail-delete")
+                else:
+                    await client.qq.set_panel_target(owned, "add", group_openids=["g"], operation_id="fail-target")
+            assert exc.value.phase == outcome
+        finally:
+            e.instance.http.request = original
+        current = e.service.state(e.instance, "group")
+        assert current["enabled"] == initial["enabled"] and current["state"] == initial["state"]
+        assert current["panel_id"] == owned and current.get("manual") is None
+        assert len(e.calls) == before and owned in e.records
+    finally:
+        await manager.close()
+        await extension.close()
+
+
+async def test_operator_disable_during_unattempted_manual_write_wins(panel_env):
+    e = panel_env
+    client, manager, extension = native_panel_client(e)
+    release, entered = asyncio.Event(), asyncio.Event()
+    try:
+        owned = (await enable(e))["panel_id"]
+        before = len(e.calls)
+        original = e.instance.http.request
+        async def failed(spec, *, before_send=None):
+            entered.set()
+            await release.wait()
+            raise V2Error("connect_failed", "fixture never sent", phase="not_sent")
+        e.instance.http.request = failed
+        write = asyncio.create_task(client.qq.update_panel(owned, copy.deepcopy(e.records[owned]["panel"]), operation_id="late-failure"))
+        try:
+            await asyncio.wait_for(entered.wait(), 2)
+            assert e.service.state(e.instance, "group")["enabled"] is False
+            disabled = e.service.disable(e.instance, "group", confirm=True)
+            assert disabled["enabled"] is False
+            release.set()
+            with pytest.raises(V2Error) as exc:
+                await write
+            assert exc.value.phase == "not_sent"
+            assert e.service.state(e.instance, "group")["enabled"] is False
+            assert len(e.calls) == before and owned in e.records
+        finally:
+            release.set()
+            e.instance.http.request = original
+            if not write.done():
+                write.cancel()
+                await asyncio.gather(write, return_exceptions=True)
+    finally:
+        await manager.close()
+        await extension.close()
+
+
+async def test_managed_panel_recovery_refuses_wrong_ledger_pending_and_foreign_ownership(panel_env):
+    e = panel_env
+    client, manager, extension = native_panel_client(e)
+    try:
+        owned = (await enable(e))["panel_id"]
+        e.records["third-party"] = {"scope": "c2c", "target_type": "all", "panel": {"items": [], "remark": "other"},
+                                    "panel_id": "third-party", "version": 1}
+        await client.qq.update_panel("third-party", {"items": [], "remark": "changed"}, operation_id="third-party-update")
+        current = e.service.state(e.instance, "group")
+        assert current["enabled"] and current["panel_id"] == owned and "manual" not in current
+        foreign = SimpleNamespace(identity=InstanceKey("foreign", e.instance.identity.robot), check=lambda: None)
+        with pytest.raises(V2Error) as conflict:
+            await e.service.manual_write(foreign, owned, lambda: asyncio.sleep(0))
+        assert conflict.value.code == "panel_owner_conflict"
+        current["pending"] = {"kind": "update", "payload": current["previous"]}
+        e.service._save(robot_key(e.instance.identity.robot), "group", current)
+        before = len(e.calls)
+        with pytest.raises(V2Error) as pending:
+            await client.qq.delete_panel(owned, operation_id="blocked-pending")
+        assert pending.value.code == "panel_result_unknown" and len(e.calls) == before
+        plan = e.service.plan(e.instance, "group")
+        with pytest.raises(V2Error) as pending_enable:
+            await e.service.enable(e.instance, "group", plan["fingerprint"], confirm=True)
+        assert pending_enable.value.code == "panel_result_unknown" and len(e.calls) == before
+    finally:
+        await manager.close()
+        await extension.close()
+
+
+async def test_managed_panel_recovery_does_not_adopt_success_from_colliding_operation(panel_env):
+    e = panel_env
+    client, manager, extension = native_panel_client(e)
+    try:
+        owned = (await enable(e))["panel_id"]
+        from v2.extensions.state import digest
+        robot = e.instance.identity.robot
+        collision = "foreign-op"
+        binding = digest(["DELETE", "/v2/panels/unrelated", None, None])
+        fresh, _ = extension.begin(robot, collision, "delete_panel", binding)
+        assert fresh
+        extension.attempt(robot, collision)
+        extension.finish(robot, collision, "succeeded", result={"state": "succeeded"})
+        before = len(e.calls)
+        with pytest.raises(V2Error) as wrong:
+            await client.qq.update_panel(owned, copy.deepcopy(e.records[owned]["panel"]), operation_id=collision)
+        assert wrong.value.code == "operation_conflict" and len(e.calls) == before
+        assert not e.service.state(e.instance, "group")["enabled"]
+        plan = e.service.plan(e.instance, "group")
+        with pytest.raises(V2Error) as disallowed:
+            await e.service.enable(e.instance, "group", plan["fingerprint"], confirm=True)
+        assert disallowed.value.code == "operation_conflict" and len(e.calls) == before
+        assert e.service.state(e.instance, "group")["panel_id"] == owned
+    finally:
+        await manager.close()
+        await extension.close()
+
+
+async def test_disable_during_manual_confirmation_cannot_be_overwritten(panel_env):
+    e = panel_env
+    client, manager, extension = native_panel_client(e)
+    entered, release = asyncio.Event(), asyncio.Event()
+    original = e.instance.http.request
+    task = None
+    try:
+        owned = (await enable(e))["panel_id"]
+        panel = copy.deepcopy(e.records[owned]["panel"])
+        panel["remark"] = "manual"
+        await client.qq.update_panel(owned, panel, operation_id="manual-before-disable")
+        assert not e.service.state(e.instance, "group")["enabled"]
+        plan = e.service.plan(e.instance, "group")
+
+        async def delayed(spec, **kwargs):
+            if spec.method == "GET" and spec.path == f"/v2/panels/{owned}":
+                entered.set()
+                await release.wait()
+            return await original(spec, **kwargs)
+
+        e.instance.http.request = delayed
+        task = asyncio.create_task(e.service.enable(e.instance, "group", plan["fingerprint"], confirm=True))
+        await asyncio.wait_for(entered.wait(), 2)
+        e.service.disable(e.instance, "group", confirm=True)
+        release.set()
+        with pytest.raises(V2Error) as exc:
+            await task
+        assert exc.value.code == "config_conflict"
+        state = e.service.state(e.instance, "group")
+        assert not state["enabled"] and state["manual"]["op_id"] == "manual-before-disable"
+        assert sum(c[0] == "PUT" for c in e.calls) == 1
+    finally:
+        release.set()
+        e.instance.http.request = original
+        if task is not None and not task.done():
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+        await manager.close()
+        await extension.close()

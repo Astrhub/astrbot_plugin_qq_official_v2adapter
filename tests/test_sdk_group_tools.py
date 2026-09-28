@@ -28,7 +28,7 @@ async def tool_env(native, tmp_path):
     roles = ["member"]
     enabled, session = [True], [True]
     mode = ["ok"]
-    requests = []
+    requests, overrides = [], {}
     async def request(spec, *, before_send=None):
         if before_send:
             before_send()
@@ -72,6 +72,8 @@ async def tool_env(native, tmp_path):
                         "next_cursor": "next&1", "extra": {"internal": "secret"}}
         else:
             raise AssertionError(parsed.path)
+        if spec.method == "GET" and parsed.path in overrides:
+            data = overrides[parsed.path]
         return SimpleNamespace(data=data, status=200, trace_id="fixture")
     m.http.request = request
     manager = Management(m.client.identity, m.http, m.extension, m.store,
@@ -96,7 +98,7 @@ async def tool_env(native, tmp_path):
         meta = PlatformMetadata(PLATFORM_TYPE, "fixture", m.client.identity.platform_id)
         return V2MessageEvent(chat.message, meta, m.client, chat.route)
     try:
-        yield SimpleNamespace(m=m, roles=roles, enabled=enabled, session=session, mode=mode,
+        yield SimpleNamespace(m=m, roles=roles, enabled=enabled, session=session, mode=mode, overrides=overrides,
                               requests=requests, owner=owner, tools=tools, event=event, profiles=profiles)
     finally:
         await manager.close()
@@ -219,6 +221,10 @@ async def test_write_frozen_relative_expiry_partial_and_unknown_replay_fences(to
     assert partial["state"] == "partial" and partial["removed"] == ["u"]
     again = await t.tools.call(event, "kick_members", member_openids=["u"], blacklist=True)
     assert again == partial and len([r for r in t.requests if r[3].endswith("batch_remove_members")]) == 1
+    with pytest.raises(V2Error) as native_partial:
+        await t.m.client.qq.batch_remove_group_members("g", ["u"], True, operation_id=partial["operation_id"])
+    assert native_partial.value.code == "operation_already_attempted" and native_partial.value.phase == "partial"
+    assert len([r for r in t.requests if r[3].endswith("batch_remove_members")]) == 1
     t.mode[0] = "unknown"
     unknown = await t.tools.call(event, "change_blacklist", op="add", member_openids=["u"])
     assert unknown["state"] == "unknown" and unknown["error"]["code"] == "qq_api_error"
@@ -226,6 +232,10 @@ async def test_write_frozen_relative_expiry_partial_and_unknown_replay_fences(to
     assert await t.tools.call(event, "change_blacklist", op="add", member_openids=["u"]) == unknown
     assert len([row for row in t.requests if row[0] == "POST"]) == before
     assert await t.tools.call(event, "get_operation_status", operation_id=unknown["operation_id"]) == unknown
+    with pytest.raises(V2Error) as native_unknown:
+        await t.m.client.qq.set_group_member_blacklist("g", "add", ["u"], operation_id=unknown["operation_id"])
+    assert native_unknown.value.code == "extension_result_unknown" and native_unknown.value.phase == "result_unknown"
+    assert len([row for row in t.requests if row[0] == "POST"]) == before
 
 
 async def test_application_flag_scope_and_one_shot_ack(tool_env):
@@ -241,3 +251,58 @@ async def test_application_flag_scope_and_one_shot_ack(tool_env):
     with pytest.raises(V2Error) as conflict:
         await t.tools.call(event, "approve_join_request", flag=flag, approve=False)
     assert conflict.value.code == "operation_conflict"
+
+
+
+async def test_malformed_later_join_request_does_not_persist_earlier_flag(tool_env):
+    t = tool_env
+    t.roles[0] = "admin"
+    t.overrides["/v2/groups/g/join_request_list"] = {
+        "list": [
+            {"member_openid": "u", "join_request_id": "request-one",
+             "apply_source": "self_apply", "apply_at": "1970-01-01T02:45:00+00:00"},
+            {"member_openid": "v", "join_request_id": "request-two",
+             "apply_source": "self_apply", "apply_at": "not-a-timestamp"},
+        ],
+        "next_cursor": "",
+    }
+    with pytest.raises(V2Error) as error:
+        await t.tools.call(t.event(), "list_join_requests")
+    assert error.value.code == "invalid_management_response"
+    assert t.m.store.db.execute("SELECT count(*) FROM join_flags").fetchone()[0] == 0
+
+@pytest.mark.parametrize("name,path,page", [
+    ("list_blacklist", "/v2/groups/g/member_blacklist", {"users": None, "next_cursor": ""}),
+    ("list_blacklist", "/v2/groups/g/member_blacklist", {"users": [], "next_cursor": None}),
+    ("list_blacklist", "/v2/groups/g/member_blacklist", {"users": ["malformed"], "next_cursor": ""}),
+    ("list_blacklist", "/v2/groups/g/member_blacklist", {"users": [{"member_openid": 42}], "next_cursor": ""}),
+    ("list_join_requests", "/v2/groups/g/join_request_list", {"list": [], "next_cursor": None}),
+    ("list_join_requests", "/v2/groups/g/join_request_list", {"list": None, "next_cursor": ""}),
+    ("list_join_requests", "/v2/groups/g/join_request_list", {"list": [None], "next_cursor": ""}),
+    ("list_join_requests", "/v2/groups/g/join_request_list", {"list": [{"member_openid": "u", "apply_source": "self_apply"}], "next_cursor": ""}),
+])
+async def test_management_tools_reject_malformed_200_pages_without_leaking_rows(tool_env, name, path, page):
+    t = tool_env
+    t.roles[0] = "admin"
+    t.overrides[path] = page
+    with pytest.raises(V2Error) as malformed:
+        await t.tools.call(t.event(), name)
+    assert malformed.value.code == "invalid_management_response"
+    assert [row[3] for row in t.requests if row[3] == path] == [path]
+
+
+@pytest.mark.parametrize("broken", ["closed", "sqlite_unreadable", "malformed_fields"])
+async def test_find_known_members_uses_checked_cache_without_network_on_storage_failure(tool_env, broken):
+    t = tool_env
+    event = t.event()
+    t.profiles.merge(t.m.client.identity.robot, "group", "g", "u", {"nickname": "Seen"}, source="chat", as_of=9999)
+    if broken == "closed":
+        t.profiles.close()
+    elif broken == "sqlite_unreadable":
+        t.profiles.db.close()
+    else:
+        t.profiles.db.execute("UPDATE profiles SET fields='[]' WHERE subject='u'")
+    with pytest.raises(V2Error) as fault:
+        await t.tools.call(event, "find_known_members", query="Missing")
+    assert fault.value.code == ("service_stopped" if broken == "closed" else "profile_storage_unavailable")
+    assert not t.requests

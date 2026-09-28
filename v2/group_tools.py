@@ -2,7 +2,6 @@
 
 import functools
 import hashlib
-import json
 from datetime import UTC, datetime
 
 from astrbot.core.provider.register import llm_tools
@@ -11,6 +10,7 @@ from astrbot.core.star.session_plugin_manager import SessionPluginManager
 from . import PLATFORM_TYPES, PLUGIN_NAME
 from .errors import V2Error
 from .event import V2MessageEvent
+from .extensions.management import timestamp
 from .extensions.state import digest
 from .models import text_id
 from .onebot_profiles import official_member
@@ -31,6 +31,30 @@ def bounded_members(values):
     if len(set(names)) != len(names):
         raise V2Error("invalid_members", "Duplicate member OpenIDs are not accepted.")
     return sorted(names)
+
+def management_page(page, field, *, cursor=None, limit=100, now=None):
+    if (not isinstance(page, dict) or not isinstance(page.get(field), list) or
+            len(page[field]) > limit or not isinstance(page.get("next_cursor"), str) or
+            len(page["next_cursor"]) > 2048 or cursor and page["next_cursor"] == cursor):
+        raise V2Error("invalid_management_response", "QQ returned an incomplete management page.", status=502)
+    for row in page[field]:
+        if not isinstance(row, dict):
+            raise V2Error("invalid_management_response", "QQ returned a malformed management record.", status=502)
+        for name in (("member_openid", "join_request_id", "apply_at") if field == "list" else ("member_openid",)):
+            try:
+                text_id(row.get(name))
+            except V2Error:
+                raise V2Error("invalid_management_response", "QQ omitted a required management identity.", status=502) from None
+        if field == "list" and row.get("apply_source") not in {"self_apply", "invited"}:
+            raise V2Error("invalid_management_response", "QQ returned an invalid application source.", status=502)
+        if field == "list" and row.get("auto_approved") is None and timestamp(row["apply_at"]) > now + 30:
+            raise V2Error("invalid_management_response", "QQ returned an application timestamp in the future.", status=502)
+        for name in ("username", "apply_at", "apply_source") if field == "list" else ("username", "banned_at"):
+            if row.get(name) is not None and not isinstance(row[name], str):
+                raise V2Error("invalid_management_response", "QQ returned an invalid management field.", status=502)
+        if field == "users" and row.get("bot") is not None and type(row["bot"]) is not bool:
+            raise V2Error("invalid_management_response", "QQ returned an invalid robot marker.", status=502)
+    return page[field]
 
 
 def compact_operation(row):
@@ -151,20 +175,7 @@ class GroupTools:
             term = args["query"]
             if not isinstance(term, str) or not 1 <= len(term) <= 100:
                 raise V2Error("invalid_query", "Supply a bounded name or OpenID fragment.")
-            result = []
-            rows = self.owner.profiles.db.execute("SELECT subject,fields FROM profiles WHERE robot=? AND scene='group' AND scope=? AND kind='member_openid' ORDER BY subject",
-                                                   (key_of(event.bot.identity.robot), group))
-            for row in rows:
-                fields = json.loads(row["fields"])
-                nickname = fields.get("nickname", {}).get("value")
-                if term.casefold() not in row["subject"].casefold() and (not isinstance(nickname, str) or term.casefold() not in nickname.casefold()):
-                    continue
-                if len(result) == 20:
-                    return {"candidates": result, "truncated": True, "source": "profile_cache"}
-                profile = self.owner.profiles.get_member(event.bot.identity.robot, "group", group, row["subject"])
-                result.append({"member_openid": row["subject"], "nickname": nickname,
-                               "membership": profile["membership"], "as_of": profile["as_of"]})
-            return {"candidates": result, "truncated": False, "source": "profile_cache"}
+            return self.owner.profiles.find_known_members(event.bot.identity.robot, group, term)
         if name == "list_mutes":
             data = await qq.get_group_restrict_chat_setting(group)
             members = data.get("members")
@@ -174,15 +185,19 @@ class GroupTools:
                 {key: row.get(key) for key in ("member_openid", "username", "mute_expire_at")}
                 for row in members[:100]], "truncated": len(members) > 100}
         if name == "list_blacklist":
-            page = await qq.get_group_member_blacklist(group, args.get("cursor"), args.get("limit", 20))
+            cursor = args.get("cursor")
+            page = await qq.get_group_member_blacklist(group, cursor, args.get("limit", 20))
+            users = management_page(page, "users", cursor=cursor)
             return {"users": [{key: row.get(key) for key in ("member_openid", "username", "banned_at", "bot")}
-                              for row in page["users"]], "next_cursor": page["next_cursor"]}
+                              for row in users], "next_cursor": page["next_cursor"]}
         if name == "list_join_requests":
-            page = await qq.get_group_join_requests(group, args.get("cursor"), args.get("limit", 20))
+            cursor = args.get("cursor")
+            page = await qq.get_group_join_requests(group, cursor, args.get("limit", 20))
             manager = event.bot._state.management
+            rows = management_page(page, "list", cursor=cursor, limit=50, now=manager.store.now())
             return {"list": [{"member_openid": row["member_openid"], "username": row.get("username"),
                               "apply_at": row.get("apply_at"), "apply_source": row.get("apply_source"),
-                              "flag": manager.observe_request(group, row, fresh_read=True)} for row in page["list"]],
+                              "flag": manager.observe_request(group, row, fresh_read=True)} for row in rows],
                     "next_cursor": page["next_cursor"]}
         if name == "list_join_strategies":
             page = await qq.get_join_approval_strategies(args.get("cursor"), args.get("limit", 20))

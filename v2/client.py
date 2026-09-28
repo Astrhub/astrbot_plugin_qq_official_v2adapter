@@ -267,12 +267,12 @@ class NativeView(NativeMenuMixin, NativeGuildAdminMixin, NativeGroupAdminMixin, 
 
     async def typing(self, scene, target, *, seconds=10):
         client = self._client
-        client.check()
+        self._check()
         route = client.route_for(scene, target)
         if client._state.typing is None:
             raise unsupported("Typing service is not attached.")
         source = client._source if client._source and route == client._source.route else None
-        return await client._state.typing.start(route, source, seconds=seconds)
+        return await client._state.typing.start(route, source, seconds=seconds, guard=self._check)
 
     def send_status(self, operation_id):
         self._check()

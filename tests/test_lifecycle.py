@@ -14,6 +14,7 @@ from astrbot.core.platform.register import (
     unregister_platform_adapters_by_module,
 )
 from astrbot.core.star.context import Context
+from host_display import display_service
 from test_onboarding import HostConfig
 
 from v2 import PLATFORM_TYPE, PLUGIN_NAME
@@ -89,20 +90,22 @@ async def test_registration_uses_bundled_qq_logo(plugin_module):
 
 
 async def test_platform_form_uses_chinese_labels_without_changing_config(plugin_module):
-    from astrbot.dashboard.services.config_service import ConfigDisplayService
-    baseline = await ConfigDisplayService(SimpleNamespace(astrbot_config={})).get_astrbot_config()
+    baseline = await display_service(SimpleNamespace(astrbot_config={})).get_astrbot_config()
     sandbox_metadata = dict(baseline["metadata"]["platform_group"]["metadata"]["platform"]["items"]["is_sandbox"])
     owner = plugin_module.QQOfficialV2(context(), {})
     await owner.initialize()
     try:
-        data = await ConfigDisplayService(
-            SimpleNamespace(astrbot_config={})
-        ).get_astrbot_config()
+        data = await display_service(SimpleNamespace(astrbot_config={})).get_astrbot_config()
         platform_meta = data["metadata"]["platform_group"]["metadata"]["platform"]
         items = platform_meta["items"]
         assert items["is_sandbox"] == sandbox_metadata and items["is_sandbox"]["type"] == "bool"
-        for key in ("environment", "transport", "intents", "shard", "shard_mode", "onebot", "logo_token"):
+        for key in ("environment", "transport", "intents", "shard", "shard_mode", "onebot"):
             assert items[key]["invisible"] is True
+        template = platform_meta["config_template"][PLATFORM_TYPE]
+        if "logo_token" in items:
+            assert items["logo_token"]["invisible"] is True
+        else:
+            assert template["logo_url"] == f"/api/v1/logos/platform/{PLATFORM_TYPE}"
         assert platform_meta["config_template"][PLATFORM_TYPE]["onebot"]["enable"] is False
         assert platform_meta["config_template"][PLATFORM_TYPE]["shard_mode"] == "auto"
         assert "shard" not in platform_meta["config_template"][PLATFORM_TYPE]

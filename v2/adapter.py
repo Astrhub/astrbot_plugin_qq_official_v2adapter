@@ -1,8 +1,10 @@
 """Owned QQ connections; transport readiness is separate from P3 message delivery."""
 
 import asyncio
+import sqlite3
 import uuid
 
+from astrbot.api import logger
 from astrbot.core.platform.platform import Platform, PlatformStatus
 from astrbot.core.platform.platform_metadata import PlatformMetadata
 
@@ -107,7 +109,7 @@ class V2Adapter(Platform):
                     raise V2Error("identify_capacity", "At most 256 robot Identify budgets per plugin lifetime.", status=503)
                 budgets[identity.robot] = IdentifyBudget()
             self.gateway = GatewayGroup(self.http, self.ingress, budgets[identity.robot], guard=self.check_generation,
-                                        on_fresh=lambda: self.owner.profiles.mark_gap(identity.robot, reason="ws_identify_required"))
+                                        on_fresh=self._profile_fresh)
         self.webhook = Webhook(identity.robot.appid, platform_config["secret"], self.ingress, guard=self.check_generation) if identity.transport == "webhook" else None
         self.media = MediaService(identity, self.http, self.owner.extension_state, self.owner.media_pool,
             settings=lambda: self.owner.store.get(identity.settings_key)["applied"].get("extensions", {}), guard=self.check_generation)
@@ -130,6 +132,14 @@ class V2Adapter(Platform):
         self.client._state.network = self.network
         self.core = CoreConsumer(self)
         self.owner.instances.add(self)
+
+    def _profile_fresh(self):
+        self.check_generation()
+        try:
+            self.owner.profiles.mark_gap(self.identity.robot, reason="ws_identify_required")
+        except sqlite3.Error:
+            self.owner.profiles.remember_robot_gap(self.identity.robot, "profile_storage_unavailable")
+            logger.warning("QQ V2 profile gap could not be persisted; cached rosters for this robot need a fresh read.")
 
     def check_generation(self):
         current = [c for c in self.owner.context.get_config().get("platform", []) if c.get("id") == self.identity.platform_id]

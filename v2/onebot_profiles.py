@@ -18,7 +18,7 @@ def join_seconds(value):
         return None
 
 
-def profile_member(group, member):
+def profile_member(group, member, *, role_stale_at):
     fields = member["fields"]
     def value(name):
         return fields[name]["value"] if name in fields else None
@@ -27,9 +27,11 @@ def profile_member(group, member):
         result["nickname"] = value("nickname")
     if value("bot") is not None:
         result["bot"] = value("bot")
-    role = value("last_known_role")
-    if member["membership"] == "present" and not member["stale"] and role in ("member", "admin", "owner"):
-        result["role"] = role
+    role = fields.get("last_known_role", {})
+    as_of = role.get("as_of")
+    if (member["membership"] == "present" and type(as_of) in (int, float) and
+            as_of > role_stale_at and role.get("value") in ("member", "admin", "owner")):
+        result["role"] = role["value"]
     stamp = join_seconds(value("joined_at"))
     if stamp is not None:
         result["join_time"] = stamp
@@ -71,13 +73,14 @@ class OneBotProfiles:
             row = await self.client.qq.get_group_member_info(group, user)
             return official_member(group, row, at=self.profiles.store.clock())
         data = await self.profiles.get_member(group, user, mode="prefer_cache")
-        return profile_member(group, data)
+        return profile_member(group, data, role_stale_at=self.profiles.store.clock() - self.profiles.store.stale_seconds)
 
     async def members(self, group, *, refresh=False):
         group = text_id(group)
         cached = None if refresh else self.profiles.cached_roster(group)
         if cached is not None:
-            return [profile_member(group, member) for member in cached]
+            cutoff = self.profiles.store.clock() - self.profiles.store.stale_seconds
+            return [profile_member(group, member, role_stale_at=cutoff) for member in cached]
         snapshot = await self.profiles.refresh_roster(group, with_rows=True)
         if not snapshot["complete"] or len(snapshot["rows"]) != snapshot["count"]:
             raise V2Error("pagination_incomplete", "A concurrent change prevented a complete member list.", status=409)

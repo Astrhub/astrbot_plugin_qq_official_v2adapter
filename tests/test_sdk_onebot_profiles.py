@@ -75,6 +75,49 @@ async def test_onebot_member_cache_refresh_and_confirmed_empty_roster(history):
     assert old["nickname"] and "role" not in old and old["_qq"]["membership"] == "left"
 
 
+async def test_onebot_role_freshness_is_field_scoped_and_roster_cache_isolated(history):
+    h = history
+    robot = h.identity.robot
+    h.profiles.merge(robot, "group", "g", "001", {"last_known_role": "admin", "nickname": "Old"},
+                     source="official_query", as_of=9000)
+    h.profiles.set_continuity(robot, "group", "g", True)
+    revision = h.profiles.revision(robot, "group", "g")
+    assert h.profiles.record_roster(robot, "group", "g", [{"member_openid": "001", "username": "Fresh"}],
+                                    started_revision=revision, started_at=9999)
+    cached = await h.client.call_action("get_group_member_info", group_id="g", user_id="001")
+    listed = await h.client.call_action("get_group_member_list", group_id="g")
+    assert cached["nickname"] == listed[0]["nickname"] == "Fresh"
+    assert "role" not in cached and "role" not in listed[0] and not h.calls
+    assert cached["_qq"]["field_sources"]["last_known_role"]["as_of"] == 9000
+    current = await h.client.call_action("get_group_member_info", group_id="g", user_id="001", no_cache=True)
+    assert current["role"] == "member" and h.calls == [("member", "g", "001")]
+    h.profiles.merge(robot, "group", "g", "002", {"last_known_role": "owner"},
+                     source="legacy_chat", as_of=None)
+    h.profiles.merge(robot, "group", "g", "002", {"nickname": "Known"},
+                     source="chat", as_of=9999)
+    h.profiles.member_event(robot, "group", "g", "002", "present", 9999)
+    untimed = await h.client.call_action("get_group_member_info", group_id="g", user_id="002")
+    assert untimed["nickname"] == "Known" and "role" not in untimed
+    h.profiles.merge(robot, "group", "g", "001", {"last_known_role": "member"},
+                     source="official_query", as_of=10000)
+    h.profiles.merge(robot, "group", "g", "001", {"last_known_role": "admin"},
+                     source="chat_history", as_of=9001)
+    assert (await h.client.call_action("get_group_member_info", group_id="g", user_id="001"))["role"] == "member"
+    h.profiles.merge(robot, "group", "other", "001", {"nickname": "Other", "last_known_role": "owner"},
+                     source="official_query", as_of=10000)
+    h.profiles.member_event(robot, "group", "other", "001", "present", 10000)
+    assert (await h.client.call_action("get_group_member_info", group_id="other", user_id="001"))["role"] == "owner"
+    h.profiles.merge(RobotKey("another"), "group", "g", "001", {"nickname": "Alien", "last_known_role": "admin"},
+                     source="official_query", as_of=10000)
+    assert (await h.client.call_action("get_group_member_info", group_id="g", user_id="001"))["nickname"] == "From QQ"
+    h.now[0] = 10002
+    h.profiles.member_event(robot, "group", "g", "001", "left", 10001)
+    h.profiles.member_event(robot, "group", "g", "002", "left", 9999)
+    assert "role" not in await h.client.call_action("get_group_member_info", group_id="g", user_id="001")
+    assert "role" not in await h.client.call_action("get_group_member_info", group_id="g", user_id="002")
+    assert h.calls == [("member", "g", "001")]
+
+
 async def test_stranger_chat_fields_survive_profile_overlay_and_historical_fallback(history):
     h = history
     key = robot_key(h.identity.robot)

@@ -121,6 +121,11 @@ async def test_native_read_reaches_literal_https_destination(client, name, args,
         assert len(session.calls) == 1
         assert session.calls[0][0:2] == ("GET", url)
         assert session.calls[0][2]["headers"]["Authorization"] == "QQBot fixture-token"
+        if name == "get_schedules":
+            if args == ("c", "0"):
+                assert session.calls[0][2]["json"] == {"since": 0}
+            else:
+                assert "json" not in session.calls[0][2]
     finally:
         await transport.close()
 

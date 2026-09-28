@@ -12,7 +12,7 @@ from astrbot.core.platform.register import (
     register_platform_adapter,
     unregister_platform_adapters_by_module,
 )
-from astrbot.dashboard.services.config_service import ConfigDisplayService
+from host_display import display_service
 from test_lifecycle import context
 from test_lifecycle import plugin_module as plugin_module
 from test_onboarding import HostConfig
@@ -52,7 +52,7 @@ def test_conflicting_aliases_and_invalid_topology_reject_without_side_effects(fi
 
 
 async def test_both_registered_forms_leave_shared_host_management_metadata_unchanged(plugin_module):
-    service = ConfigDisplayService(SimpleNamespace(astrbot_config={}))
+    service = display_service(SimpleNamespace(astrbot_config={}))
     before = (await service.get_astrbot_config())["metadata"]["platform_group"]["metadata"]["platform"]["items"]
     before = copy.deepcopy(before)
     owner = plugin_module.QQOfficialV2(context(), {})
@@ -65,7 +65,9 @@ async def test_both_registered_forms_leave_shared_host_management_metadata_uncha
             meta = next(m for m in platform_registry if m.name == kind)
             template = form["config_template"][kind]
             visible = {k for k in template if not form["items"].get(k, {}).get("invisible")}
-            assert visible == {"id", "enable", "appid", "secret", "is_sandbox"}
+            assert visible - {"logo_url"} == {"id", "enable", "appid", "secret", "is_sandbox"}
+            if "logo_url" in template:
+                assert template["logo_url"] == f"/api/v1/logos/platform/{kind}"
             assert meta.adapter_display_name == title and meta.logo_path == "assets/qq.png"
             assert template["is_sandbox"] is False and template["shard_mode"] == "auto"
             assert form["items"]["secret"]["secret"] is True

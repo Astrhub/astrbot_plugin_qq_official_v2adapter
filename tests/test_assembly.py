@@ -136,14 +136,23 @@ async def test_real_astrbot_assembly(config, monkeypatch, qq_reject_server, qq_p
             config_response = await client.get("/api/config/get", headers=headers)
             assert config_response.status_code == 200
             platform_form = config_response.json()["data"]["metadata"]["platform_group"]["metadata"]["platform"]
-            logo_token = platform_form["config_template"][PLATFORM_TYPE]["logo_token"]
+            template = platform_form["config_template"][PLATFORM_TYPE]
+            webhook_template = platform_form["config_template"]["qq_official_v2_webhook"]
             assert platform_form["items"]["is_sandbox"]["type"] == "bool"
             assert platform_form["items"]["onebot"]["invisible"] is True
-            assert platform_form["items"]["logo_token"]["invisible"] is True
-            icon = await client.get(f"/api/v1/files/tokens/{logo_token}")
-            assert icon.status_code == 200 and icon.content == (plugin_dir / "assets" / "qq.png").read_bytes()
-            webhook_logo = platform_form["config_template"]["qq_official_v2_webhook"]["logo_token"]
-            assert (await client.get(f"/api/v1/files/tokens/{webhook_logo}")).content == icon.content
+            if "logo_url" in template:
+                assert template["logo_url"] == f"/api/v1/logos/platform/{PLATFORM_TYPE}"
+                assert webhook_template["logo_url"] == "/api/v1/logos/platform/qq_official_v2_webhook"
+                assert "logo_token" not in template
+                assert (await client.get(template["logo_url"])).status_code == 401
+                icon = await client.get(template["logo_url"], headers=headers)
+                webhook_icon = await client.get(webhook_template["logo_url"], headers=headers)
+            else:
+                assert platform_form["items"]["logo_token"]["invisible"] is True
+                icon = await client.get(f"/api/v1/files/tokens/{template['logo_token']}")
+                webhook_icon = await client.get(f"/api/v1/files/tokens/{webhook_template['logo_token']}")
+            assert icon.status_code == webhook_icon.status_code == 200
+            assert icon.content == webhook_icon.content == (plugin_dir / "assets" / "qq.png").read_bytes()
             boot = (await client.get(prefix + "/bootstrap", headers=headers)).json()
             assert boot["instances"][0]["id"] == config["id"]
             view = (await client.get(prefix + "/config", params={"platform_id": config["id"]}, headers=headers)).json()

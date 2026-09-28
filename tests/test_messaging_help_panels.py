@@ -74,7 +74,7 @@ async def panel_env(config, tmp_path):
         if request.path == "/app/getAppAccessToken":
             return web.json_response({"access_token": "panel-fixture", "expires_in": 7200})
         assert request.headers["Authorization"] == "QQBot panel-fixture"
-        body = await request.json() if request.method != "GET" else dict(request.query)
+        body = await request.json() if request.method in {"POST", "PUT"} else dict(request.query) if request.method == "GET" else None
         calls.append((request.method, request.path, body))
         if request.method == "GET" and request.path == "/v2/panels":
             assert set(body) <= {"scope", "limit", "cursor"} and body["limit"] == "50"
@@ -83,7 +83,7 @@ async def panel_env(config, tmp_path):
             return web.json_response(records[request.path.rsplit("/", 1)[-1]])
         mode = modes.pop(0) if modes else "ok"
         if request.method == "POST":
-            panel_id = "owned-" + str(len(records))
+            panel_id = "owned-" + str(sum(method == "POST" and path == "/v2/panels" for method, path, _ in calls) - 1)
             records[panel_id] = {**copy.deepcopy(body), "panel_id": panel_id, "version": 1}
             if mode == "unknown":
                 return web.Response(status=500, text="unknown")
@@ -91,8 +91,13 @@ async def panel_env(config, tmp_path):
         panel_id = request.path.rsplit("/", 1)[-1]
         if mode == "reject":
             return web.json_response({"code": 40030020})
+        if request.method == "DELETE":
+            records.pop(panel_id, None)
+            return web.Response(status=500, text="unknown") if mode == "unknown" else web.json_response({})
         records[panel_id]["panel"] = copy.deepcopy(body["panel"])
         records[panel_id]["version"] += 1
+        if mode == "unknown":
+            return web.Response(status=500, text="unknown")
         return web.json_response({"version": records[panel_id]["version"]})
     async with upstream(handle) as base:
         http = HTTPTransport(identity, config["secret"], session_factory=lambda: MappedSession(base))

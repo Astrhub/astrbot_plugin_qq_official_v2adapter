@@ -14,9 +14,10 @@ class TypingCore:
         self.sender, self.settings = sender, settings
         self.jobs, self.closed = {}, False
 
-    async def start(self, route, source, *, seconds=10):
+    async def start(self, route, source, *, seconds=10, guard=lambda: None):
         if self.closed:
             raise V2Error("service_stopped", "Typing is stopped.", status=503)
+        guard()
         self.sender.check(route, source)
         if route.scene != "c2c" or not self.settings().get("typing_enabled", False):
             raise unsupported("Typing requires C2C and the explicit advanced setting.")
@@ -30,7 +31,7 @@ class TypingCore:
         if key not in self.jobs:
             if len(self.jobs) >= 32:
                 raise V2Error("typing_capacity", "Too many typing leases.", status=429)
-            task = asyncio.create_task(self._notify(route, source, seconds), name="qq-v2-typing")
+            task = asyncio.create_task(self._notify(route, source, seconds, guard=guard), name="qq-v2-typing")
             task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
             self.jobs[key] = task, min(source.expires, now + seconds)
         task = self.jobs[key][0]
@@ -40,7 +41,8 @@ class TypingCore:
             await self.stop(route, source=source)
             raise
 
-    async def _notify(self, route, source, seconds):
+    async def _notify(self, route, source, seconds, *, guard):
+        guard()
         store = self.sender.store
         op_id = "typing-" + digest([route.encode(), source.message_id, source.event_id if source.message_id is None else None])
         operation = store.reserve(route, source, digest(["typing", seconds]), op_id)
@@ -56,6 +58,7 @@ class TypingCore:
             body["msg_id" if source.message_id is not None else "event_id"] = source.message_id if source.message_id is not None else source.event_id
             def prepare():
                 nonlocal attempted
+                guard()
                 self.sender.check(route, source)
                 self.sender.connected(route)
                 remaining = int(deadline - store.now())

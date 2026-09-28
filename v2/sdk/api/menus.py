@@ -1,6 +1,10 @@
 """Official menu and panel writes coordinated with managed panel synchronization."""
 
+from copy import deepcopy
+from uuid import uuid4
+
 from ...errors import V2Error, not_ready
+from ...extensions.state import digest
 from ..identifiers import text_id
 from .group_admin import ids
 from .messages import segment
@@ -24,10 +28,15 @@ class NativeMenuMixin:
         if state.panels is None or state.management is None:
             raise not_ready()
         state.management.check(write=True)
+        body = deepcopy(body)
+        op_id = text_id(self._operation_id(operation_id) or uuid4().hex)
+        mutation = ({"op_id": op_id, "kind": kind, "binding": digest([method, path, None, body]),
+                     "method": method, "path": path, "panel_id": panel_id,
+                     "panel": body["panel"] if kind == "update_panel" else None} if panel_id is not None else None)
         async def write():
-            return await self._native_write(method, path, body, kind=kind, operation_id=operation_id,
+            return await self._native_write(method, path, body, kind=kind, operation_id=op_id,
                                             response_check=response_check)
-        return await state.panels.manual_write(self._client, panel_id, write)
+        return await state.panels.manual_write(self._client, panel_id, write, mutation=mutation)
 
     async def put_menu(self, menu: dict, *, operation_id=None) -> dict:
         """Replace the full official menu under the robot's panel coordinator."""

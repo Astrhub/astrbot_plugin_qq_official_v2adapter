@@ -79,7 +79,7 @@ async def admin(native):
         return SimpleNamespace(data=next_response[0], status=200, trace_id="test-trace")
     m.http.request = request
     class Panels:
-        async def manual_write(self, client, panel_id, write):
+        async def manual_write(self, client, panel_id, write, *, mutation=None):
             assert client is m.client and (panel_id is None or isinstance(panel_id, str))
             return await write()
     m.client._state.panels = Panels()
@@ -121,8 +121,9 @@ async def test_partial_group_removal_and_batch_mute_are_not_retried(admin):
         await m.client.qq.batch_remove_group_members("g", ["u"], True, operation_id="kick-once")
     assert partial.value.phase == "partial" and partial.value.details["removed"] == ["u"]
     assert m.extension.operation(m.client.identity.robot, "kick-once")["state"] == "partial"
-    with pytest.raises(V2Error):
+    with pytest.raises(V2Error) as replay:
         await m.client.qq.batch_remove_group_members("g", ["u"], True, operation_id="kick-once")
+    assert replay.value.code == "operation_already_attempted" and replay.value.phase == "partial"
     assert len(m.calls) == 1
     m.response[0] = {"user_ids": []}
     with pytest.raises(V2Error) as muted:

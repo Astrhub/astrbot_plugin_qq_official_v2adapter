@@ -47,6 +47,7 @@ class ProfileStore:
         self.closed = False
         self.last_error = None
         self._scope_errors = {}
+        self._robot_gaps = {}
         self.migration_skipped = 0
         path = Path(path)
         if path.is_symlink() or path.exists() and not path.is_file():
@@ -100,6 +101,19 @@ class ProfileStore:
 
     def scope_error(self, robot, scene, scope):
         return self._scope_errors.get(self._scope(robot, scene, scope))
+
+    def remember_robot_gap(self, robot, reason):
+        """Keep failed receiver invalidation in memory until each roster is rechecked."""
+        self._checked()
+        self.last_error = reason
+        self._robot_gaps[key_of(robot)] = {"reason": reason, "recovered": set()}
+
+    def robot_gap(self, robot, scene, scope):
+        self._checked()
+        gap = self._robot_gaps.get(key_of(robot))
+        if gap and (scene, scene_scope(scene, scope)) not in gap["recovered"]:
+            return gap["reason"]
+        return None
 
     def revision(self, robot, scene, scope):
         key = self._scope(robot, scene, scope)
@@ -242,6 +256,9 @@ class ProfileStore:
             self.db.execute("UPDATE scopes SET continuity=0,revision=revision+1,reason=?" + where, (reason, *params))
             self.db.execute("UPDATE rosters SET continuous=0" + where, params)
 
+        if robot is not None and scene is None and scope is None and self._robot_gaps.pop(key_of(robot), None):
+            if not self._scope_errors and not self._robot_gaps:
+                self.last_error = None
     def set_continuity(self, robot, scene, scope, value, *, reason=None):
         key = self._scope(robot, scene, scope)
         with self.db:
@@ -287,10 +304,15 @@ class ProfileStore:
             continuous = bool(continuity and continuity[0])
             self.db.execute("INSERT INTO rosters VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(robot,scene,scope) DO UPDATE SET revision=excluded.revision,complete=excluded.complete,continuous=excluded.continuous,started=excluded.started,finished=excluded.finished,count=excluded.count",
                             (*key, snapshot_revision, 1, int(continuous), started_at, self.clock(), len(members)))
-        if continuous:
-            self._scope_errors.pop(key, None)
-            if not self._scope_errors:
-                self.last_error = None
+        self._scope_errors.pop(key, None)
+        gap = self._robot_gaps.get(key[0])
+        if gap is not None:
+            gap["recovered"].add((scene, scope))
+            remaining = self.db.execute("SELECT scene,scope FROM rosters WHERE robot=?", (key[0],))
+            if all((row[0], row[1]) in gap["recovered"] for row in remaining):
+                self._robot_gaps.pop(key[0], None)
+        if not self._scope_errors and not self._robot_gaps:
+            self.last_error = None
         return continuous
 
     def get_member(self, robot, scene, scope, user_id, *, kind=None):
@@ -318,6 +340,30 @@ class ProfileStore:
         users = users[:limit]
         return {"members": [self.get_member(robot, scene, scope, user) for user in users],
                 "next_cursor": users[-1] if more else "", "roster": self.roster_status(robot, scene, scope)}
+
+    def find_known_members(self, robot, group, term):
+        """Search scoped historical identities without querying QQ or leaking raw profile rows."""
+        key = self._scope(robot, "group", group)
+        result = []
+        needle = term.casefold()
+        try:
+            rows = self.db.execute("SELECT subject,fields FROM profiles WHERE robot=? AND scene=? AND scope=? AND kind='member_openid' ORDER BY subject", key)
+            for row in rows:
+                fields = json.loads(row["fields"])
+                if not isinstance(fields, dict) or not isinstance(fields.get("nickname", {}), dict):
+                    raise ValueError("Invalid profile field structure")
+                nickname = fields.get("nickname", {}).get("value")
+                if needle not in row["subject"].casefold() and (not isinstance(nickname, str) or needle not in nickname.casefold()):
+                    continue
+                if len(result) == 20:
+                    return {"candidates": result, "truncated": True, "source": "profile_cache"}
+                profile = self.get_member(robot, "group", group, row["subject"])
+                result.append({"member_openid": row["subject"], "nickname": nickname,
+                               "membership": profile["membership"], "as_of": profile["as_of"]})
+        except (sqlite3.Error, ValueError, TypeError, KeyError):
+            raise V2Error("profile_storage_unavailable", "Scoped profile history cannot be read.", status=503) from None
+        return {"candidates": result, "truncated": False, "source": "profile_cache"}
+
 
     def migrate_identities(self, messages):
         """Copy only this plugin's proven legacy scoped observations, never delete them."""
