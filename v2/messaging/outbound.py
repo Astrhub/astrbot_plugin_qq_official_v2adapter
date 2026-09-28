@@ -256,7 +256,8 @@ class SendingCore:
         elif not self.is_online():
             raise V2Error("transport_not_ready", "No authenticated transport is ready to send.", status=503)
 
-    async def send(self, route, message, *, source=None, onebot=False, auto_escape=False, markdown=None, operation_id=None, keyboard=None):
+    async def send(self, route, message, *, source=None, onebot=False, auto_escape=False, markdown=None, operation_id=None, keyboard=None, guard=lambda: None):
+        guard()
         self.check(route, source)
         if len(self.tasks) >= 32:
             raise V2Error("send_capacity", "Too many pending sends.", status=429)
@@ -303,6 +304,7 @@ class SendingCore:
         attempted, wire_started, prepared, upload = False, None, None, None
         published_here = False
         def check_source():
+            guard()
             self.check(route, source)
             if prepared:
                 self.media.check(route)

@@ -7,6 +7,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from v2.adapter import V2Adapter
 from v2.client import ClientState, V2Client
 from v2.errors import V2Error
 from v2.models import InstanceKey, RobotKey
@@ -244,6 +245,73 @@ async def test_scoped_profile_fault_recovers_without_member_intent_from_public_r
         await view_b.close()
         store.close()
 
+
+@pytest.mark.parametrize("online_at_start", [False, True])
+async def test_failed_fresh_gap_requires_roster_to_span_one_stable_connection(tmp_path, online_at_start):
+    identity = InstanceKey("p", RobotKey("a"), intents=1 << 24)
+    other = InstanceKey("q", RobotKey("b"), intents=1 << 24)
+    store = ProfileStore(tmp_path / "profiles.sqlite3", clock=lambda: 10000.0)
+    for robot in (identity.robot, other.robot):
+        store.set_continuity(robot, "group", "g", True)
+        assert store.record_roster(robot, "group", "g", [{"member_openid": "u", "username": "Known"}],
+                                   started_revision=store.revision(robot, "group", "g"), started_at=9999)
+    gateway = SimpleNamespace(identity=identity, owner=SimpleNamespace(profiles=store), check_generation=lambda: None)
+    store.db.execute("PRAGMA query_only=ON")
+    V2Adapter._profile_fresh(gateway)
+    assert store.robot_gap(identity.robot, "group", "g") == "profile_storage_unavailable"
+    connection, requests = ["new-session" if online_at_start else None], []
+    class Reads:
+        async def get_group_member_list(self, group, cursor):
+            requests.append((group, cursor, connection[0]))
+            connection[0] = "new-session"
+            store.db.execute("PRAGMA query_only=OFF")
+            return {"members": [{"member_openid": "u", "username": "Known"}], "next_cursor": ""}
+    view = Profiles(identity, store, Reads(), continuity_check=lambda: connection[0] if identity.intents & (1 << 24) else None)
+    other_view = Profiles(other, store, Reads(), continuity_check=lambda: "other-session")
+    try:
+        first = await view.refresh_roster("g", with_rows=True)
+        assert first["complete"] and [row["member_openid"] for row in first["rows"]] == ["u"]
+        assert first["continuous"] is online_at_start
+        assert (view.cached_roster("g") is not None) is online_at_start
+        assert other_view.cached_roster("g") is not None
+        assert requests == [("g", "", "new-session" if online_at_start else None)]
+        if not online_at_start:
+            next_roster = await view.refresh_roster("g")
+            assert next_roster["complete"] and next_roster["continuous"]
+            assert view.cached_roster("g") is not None
+            assert requests[-1] == ("g", "", "new-session") and len(requests) == 2
+    finally:
+        store.db.execute("PRAGMA query_only=OFF")
+        await view.close()
+        await other_view.close()
+        store.close()
+
+
+async def test_failed_roster_commit_cannot_resurrect_previous_continuity(tmp_path, monkeypatch):
+    identity = InstanceKey("p", RobotKey("a"), intents=1 << 24)
+    store = ProfileStore(tmp_path / "profiles.sqlite3", clock=lambda: 10000.0)
+    store.set_continuity(identity.robot, "group", "g", True)
+    assert store.record_roster(identity.robot, "group", "g", [{"member_openid": "u", "username": "Old"}],
+                               started_revision=store.revision(identity.robot, "group", "g"), started_at=9999)
+    connection = [None]
+    class Reads:
+        async def get_group_member_list(self, group, cursor):
+            assert (group, cursor) == ("g", "")
+            connection[0] = "new-session"
+            return {"members": [{"member_openid": "u", "username": "New"}], "next_cursor": ""}
+    view = Profiles(identity, store, Reads(), continuity_check=lambda: connection[0])
+    def failed_commit(*args, **kwargs):
+        raise sqlite3.OperationalError("fixture disk full")
+    monkeypatch.setattr(store, "record_roster", failed_commit)
+    try:
+        with pytest.raises(sqlite3.Error):
+            await view.refresh_roster("g")
+        assert store.roster_status(identity.robot, "group", "g")["continuous"] is False
+        assert view.get_roster_status("g")["continuous"] is False
+        assert view.cached_roster("g") is None
+    finally:
+        await view.close()
+        store.close()
 
 
 async def test_profile_status_never_masks_closed_or_unreadable_sqlite(tmp_path):

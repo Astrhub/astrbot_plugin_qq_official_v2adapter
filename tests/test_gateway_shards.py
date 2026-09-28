@@ -6,7 +6,8 @@ from types import SimpleNamespace
 
 import pytest
 from aiohttp import web
-from test_lifecycle import context, plugin_module as plugin_module
+from test_lifecycle import context
+from test_lifecycle import plugin_module as plugin_module
 from test_transport_http import MappedSession, upstream
 from test_transport_receive import (
     HELLO,

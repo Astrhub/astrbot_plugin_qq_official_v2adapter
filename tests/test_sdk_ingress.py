@@ -304,17 +304,23 @@ async def test_oversized_sdk_structure_is_quarantined_without_poisoning_chat(rec
 async def test_call_view_is_scoped_without_mutating_shared_client(receiver, monkeypatch):
     owner, instance = receiver
     calls = []
-    async def fake_send(route, message, **options):
+    async def fake_send(route, message, options, *, guard):
+        guard()
         calls.append((route, message, options))
         return {"state": "fixture"}
-    monkeypatch.setattr(instance.client, "send", fake_send)
-    view = instance.client.qq.with_options(operation_id="one", owner=object())
+    monkeypatch.setattr(instance.client, "_send_owned", fake_send)
+    plugin = object()
+    view = instance.client.qq.with_options(operation_id="one", owner=plugin)
     await view.send("group", "g", "hello")
     assert calls[0][2]["operation_id"] == "one"
     assert instance.client.qq._options.operation_id is None
     with pytest.raises(RuntimeError) as exc:
         await view.send("group", "g", "different", operation_id="two")
     assert exc.value.code == "operation_conflict" and len(calls) == 1
+    instance.client._state.revoke_owner(plugin)
+    with pytest.raises(RuntimeError) as stale:
+        await view.send("group", "g", "blocked")
+    assert stale.value.code == "stale_owner" and len(calls) == 1
 
 
 async def test_plugin_owner_unload_and_platform_revoke_close_subscriptions(receiver):

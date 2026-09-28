@@ -263,6 +263,8 @@ class ProfileStore:
         key = self._scope(robot, scene, scope)
         with self.db:
             self.db.execute("INSERT INTO scopes(robot,scene,scope,continuity,reason) VALUES(?,?,?,?,?) ON CONFLICT(robot,scene,scope) DO UPDATE SET continuity=excluded.continuity,reason=excluded.reason", (*key, int(value), reason))
+            if not value:
+                self.db.execute("UPDATE rosters SET continuous=0 WHERE robot=? AND scene=? AND scope=?", key)
 
     def roster_status(self, robot, scene, scope):
         key = self._scope(robot, scene, scope)

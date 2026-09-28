@@ -40,8 +40,11 @@ class StreamingCore:
         else:
             self.sender.store.reply_mode(route, source)
 
-    async def send(self, route, generator, *, source=None, use_fallback=False, input_mode="append", operation_id=None):
-        self.check(route, source)
+    async def send(self, route, generator, *, source=None, use_fallback=False, input_mode="append", operation_id=None, guard=lambda: None):
+        def check_owned(*, allow_active=True):
+            guard()
+            self.check(route, source, allow_active=allow_active)
+        check_owned()
         mode = self.mode(route, use_fallback)
         if input_mode not in {"append", "replace"} or not hasattr(generator, "__aiter__"):
             raise V2Error("invalid_stream", "Use an asynchronous message-chain generator and append or replace mode.")
@@ -67,7 +70,7 @@ class StreamingCore:
         async def fragment(raw, final=False):
             nonlocal index, last_id, last_result, attempted
             for _ in range(2):
-                self.check(route, source, allow_active=last_id is None or delivery.wire_source is None)
+                check_owned(allow_active=last_id is None or delivery.wire_source is None)
                 body = delivery.apply({"input_mode": input_mode, "input_state": 10 if final else 1, "index": index,
                     "content_type": "markdown" if format_md else "text", "content_raw": raw})
                 if last_id:
@@ -76,7 +79,7 @@ class StreamingCore:
                 frame_attempted = False
                 def before_send():
                     nonlocal attempted, first_wire_started, frame_attempted
-                    self.check(route, source, allow_active=last_id is None or delivery.wire_source is None)
+                    check_owned(allow_active=last_id is None or delivery.wire_source is None)
                     delivery.before_send(continuation=index > 0, retried_auth=frame_attempted)
                     attempted = frame_attempted = True
                     if index == 0:
@@ -128,7 +131,7 @@ class StreamingCore:
                     count += 1
                     if count > 4096:
                         raise V2Error("stream_too_large", "Stream fragment count exceeded its bound.")
-                    self.check(route, source, allow_active=last_id is None or delivery.wire_source is None)
+                    check_owned(allow_active=last_id is None or delivery.wire_source is None)
                     if not isinstance(chain, MessageChain):
                         raise V2Error("invalid_stream", "AstrBot streaming must yield MessageChain values.")
                     if chain.type not in (None, "plain", "break"):
@@ -170,7 +173,7 @@ class StreamingCore:
                 if not total.strip():
                     raise V2Error("stream_empty", "The generator produced no sendable content.")
                 if mode == "aggregate":
-                    result = await self.sender.send(route, MessageChain([Plain(total)]).use_markdown(format_md), source=source, operation_id=op_id)
+                    result = await self.sender.send(route, MessageChain([Plain(total)]).use_markdown(format_md), source=source, operation_id=op_id, guard=guard)
                     complete = True
                     result = {**result, "mode": "aggregate"}
                     return result

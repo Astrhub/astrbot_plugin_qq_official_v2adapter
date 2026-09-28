@@ -80,6 +80,7 @@ Pages“实际网络状态与能力”及 `_qq_get_capabilities` 使用同一目
 `_qq_get_join_approval_strategies` 原样返回官方 `strategies`、`next_cursor` 和额外字段；缺失必需分页字段时报 `pagination_incomplete`。
 
 `get_group_member_info` 默认缓存优先，`no_cache=true` 访问 QQ；`get_group_member_list` 仅复用启用成员事件位 24 且连续接收时的新鲜完整快照，默认未启位 24，查询可能每次逐页访问 QQ，历史资料仍可读取。明确刷新不返回旧缓存；成员 `_qq` 保留来源、状态及观察时间，标准 `role` 只在自身记录时间未过期且成员仍在群时输出，刷新昵称/头像不会续期旧管理员身份。`get_stranger_info` 有真实聊天观察时为 `source=chat_cache`，保留原 `first_seen/last_seen/source_message_id`；只有历史资料时返回 `source=profile_cache`，不造聊天时间或消息 ID；二者皆无则 `identity_not_observed`。查询必须给真实 `scope` 和 `id_kind`；`no_cache=true` 对陌生人明确 unsupported，群名重名不自动选择管理目标。
+离线起查、返回时才重连的完整名单仍标 `continuous=false`，不能作当前缓存；后续同一稳定连接上的重查才恢复连续性。
 
 
 ## 回退与验证边界

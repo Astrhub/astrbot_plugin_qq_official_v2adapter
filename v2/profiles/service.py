@@ -142,8 +142,10 @@ class Profiles:
         current_connection = self.continuity_check()
         if continuity and current_connection != continuity:
             self.store.mark_gap(robot, "group", group, reason="receiver_changed_during_roster")
-        if continuity and current_connection == continuity and self.store.revision(robot, "group", group) == revision:
-            self.store.set_continuity(robot, "group", group, True)
+        if self.store.revision(robot, "group", group) == revision:
+            verified = bool(continuity and current_connection == continuity)
+            self.store.set_continuity(robot, "group", group, verified,
+                                      reason=None if verified else "receiver_unavailable")
         self.store.record_roster(robot, "group", group, rows, started_revision=revision, started_at=started)
         return {**self.get_roster_status(group), "rows": rows}
 

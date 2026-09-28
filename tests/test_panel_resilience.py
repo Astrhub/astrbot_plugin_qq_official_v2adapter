@@ -18,7 +18,6 @@ from v2.panels import PanelService
 from v2.protocol import RawEnvelope
 
 
-
 def native_panel_client(env):
     extension = ExtensionStore(env.owner.messages)
     state = ClientState(env.instance.identity)
@@ -426,5 +425,119 @@ async def test_disable_during_manual_confirmation_cannot_be_overwritten(panel_en
         if task is not None and not task.done():
             task.cancel()
             await asyncio.gather(task, return_exceptions=True)
+        await manager.close()
+        await extension.close()
+
+
+@pytest.mark.parametrize("phase", ["not_sent", "rejected"])
+async def test_failed_target_after_disable_requires_confirmed_enable_with_original_scope(panel_env, phase):
+    e = panel_env
+    client, manager, extension = native_panel_client(e)
+    entered, release = asyncio.Event(), asyncio.Event()
+    original = e.instance.http.request
+    work = None
+    try:
+        owned = (await enable(e))["panel_id"]
+        before = len([call for call in e.calls if call[0] in {"POST", "PUT", "DELETE"}])
+        async def fail(spec, *, before_send=None):
+            assert spec.method == "PUT" and spec.path == f"/v2/panels/{owned}/target"
+            entered.set()
+            await release.wait()
+            if phase == "rejected":
+                before_send()
+            raise V2Error("qq_api_error" if phase == "rejected" else "connect_failed",
+                          "fixture definite failure", phase=phase, http_status=400 if phase == "rejected" else None)
+        e.instance.http.request = fail
+        work = asyncio.create_task(client.qq.set_panel_target(owned, "add", group_openids=["g"], operation_id="target-override"))
+        await asyncio.wait_for(entered.wait(), 2)
+        e.service.disable(e.instance, "group", confirm=True)
+        release.set()
+        with pytest.raises(V2Error) as error:
+            await work
+        assert error.value.phase == phase
+        assert extension.operation(e.instance.identity.robot, "target-override")["state"] == phase
+        paused = e.service.state(e.instance, "group")
+        assert not paused["enabled"] and paused["manual"]["kind"] == "set_panel_target"
+        assert len([call for call in e.calls if call[0] in {"POST", "PUT", "DELETE"}]) == before
+        e.instance.http.request = original
+        plan = e.service.plan(e.instance, "group")
+        result = await e.service.enable(e.instance, "group", plan["fingerprint"], confirm=True)
+        assert result["enabled"] and result["state"] == "synced" and result["panel_id"] == owned
+        assert "manual" not in result and result["previous"] == e.service.state(e.instance, "group")["previous"]
+        assert len([call for call in e.calls if call[0] in {"POST", "PUT", "DELETE"}]) == before
+    finally:
+        release.set()
+        e.instance.http.request = original
+        if work is not None and not work.done():
+            work.cancel()
+            await asyncio.gather(work, return_exceptions=True)
+        await manager.close()
+        await extension.close()
+
+
+@pytest.mark.parametrize("mode", ["ok", "unknown"])
+async def test_successful_or_unknown_target_change_cannot_resume_original_managed_scope(panel_env, mode):
+    e = panel_env
+    client, manager, extension = native_panel_client(e)
+    try:
+        owned = (await enable(e))["panel_id"]
+        e.modes.append(mode)
+        if mode == "unknown":
+            with pytest.raises(V2Error) as error:
+                await client.qq.set_panel_target(owned, "add", group_openids=["g"], operation_id="changed-target")
+            assert error.value.phase == "result_unknown"
+        else:
+            assert await client.qq.set_panel_target(owned, "add", group_openids=["g"], operation_id="changed-target") == {}
+        assert e.records[owned]["group_openids"] == ["g"]
+        paused = e.service.state(e.instance, "group")
+        assert not paused["enabled"] and paused["manual"]["kind"] == "set_panel_target"
+        writes = len([call for call in e.calls if call[0] in {"POST", "PUT", "DELETE"}])
+        plan = e.service.plan(e.instance, "group")
+        with pytest.raises(V2Error) as blocked:
+            await e.service.enable(e.instance, "group", plan["fingerprint"], confirm=True)
+        assert blocked.value.code == ("panel_result_unknown" if mode == "unknown" else "panel_scope_locked")
+        assert not e.service.state(e.instance, "group")["enabled"]
+        assert len([call for call in e.calls if call[0] in {"POST", "PUT", "DELETE"}]) == writes
+    finally:
+        await manager.close()
+        await extension.close()
+
+
+@pytest.mark.parametrize("ledger", ["missing", "different_binding", "partial", "remote_drift"])
+async def test_failed_target_resume_requires_matching_terminal_ledger(panel_env, ledger):
+    e = panel_env
+    client, manager, extension = native_panel_client(e)
+    original = e.instance.http.request
+    try:
+        owned = (await enable(e))["panel_id"]
+        async def failed(spec, *, before_send=None):
+            e.service.disable(e.instance, "group", confirm=True)
+            raise V2Error("connect_failed", "fixture never sent", phase="not_sent")
+        e.instance.http.request = failed
+        with pytest.raises(V2Error) as error:
+            await client.qq.set_panel_target(owned, "add", group_openids=["g"], operation_id="target-ledger")
+        assert error.value.phase == "not_sent"
+        e.instance.http.request = original
+        assert e.service.state(e.instance, "group")["manual"]["op_id"] == "target-ledger"
+        if ledger == "remote_drift":
+            e.records[owned]["group_openids"] = ["external"]
+        else:
+            with e.owner.messages.transaction():
+                if ledger == "missing":
+                    extension.db.execute("DELETE FROM extension_ops WHERE op_id=?", ("target-ledger",))
+                elif ledger == "different_binding":
+                    extension.db.execute("UPDATE extension_ops SET binding=? WHERE op_id=?", ("another-request", "target-ledger"))
+                else:
+                    extension.db.execute("UPDATE extension_ops SET state='partial' WHERE op_id=?", ("target-ledger",))
+        writes = len([call for call in e.calls if call[0] in {"POST", "PUT", "DELETE"}])
+        plan = e.service.plan(e.instance, "group")
+        with pytest.raises(V2Error) as blocked:
+            await e.service.enable(e.instance, "group", plan["fingerprint"], confirm=True)
+        assert blocked.value.code == ("operation_conflict" if ledger == "different_binding" else
+                                      "panel_drift" if ledger == "remote_drift" else "panel_result_unknown")
+        assert not e.service.state(e.instance, "group")["enabled"]
+        assert len([call for call in e.calls if call[0] in {"POST", "PUT", "DELETE"}]) == writes
+    finally:
+        e.instance.http.request = original
         await manager.close()
         await extension.close()

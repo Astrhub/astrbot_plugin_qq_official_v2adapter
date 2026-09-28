@@ -250,7 +250,8 @@ class NativeView(NativeMenuMixin, NativeGuildAdminMixin, NativeGroupAdminMixin, 
 
     async def send(self, scene, target, message, *, markdown=None, operation_id=None):
         route = self._client.route_for(scene, target)
-        return await self._client.send(route, message, markdown=markdown, operation_id=self._operation_id(operation_id))
+        return await self._client._send_owned(route, message,
+            {"markdown": markdown, "operation_id": self._operation_id(operation_id)}, guard=self._check)
 
     def streaming_mode(self, scene, target, *, use_fallback=False):
         self._check()
@@ -259,7 +260,8 @@ class NativeView(NativeMenuMixin, NativeGuildAdminMixin, NativeGroupAdminMixin, 
         return self._client._state.streaming.mode(self._client.route_for(scene, target), use_fallback)
 
     async def send_streaming(self, scene, target, generator, *, input_mode="append", use_fallback=False, operation_id=None):
-        return await self._client.stream(self._client.route_for(scene, target), generator, input_mode=input_mode, use_fallback=use_fallback, operation_id=self._operation_id(operation_id))
+        return await self._client._stream_owned(self._client.route_for(scene, target), generator,
+            {"input_mode": input_mode, "use_fallback": use_fallback, "operation_id": self._operation_id(operation_id)}, guard=self._check)
 
     async def send_file(self, scene, target, file, *, name="upload", kind="file", allow_file_fallback=True, operation_id=None):
         from .media.types import MediaInput
@@ -524,26 +526,34 @@ class V2Client:
         return SessionRoute(self.identity.robot, scene, target, user)
 
     async def stream(self, route, generator, **options):
+        return await self._stream_owned(route, generator, options, guard=self.check)
+
+    async def _stream_owned(self, route, generator, options, *, guard):
+        guard()
         self.check()
         if self._state.streaming is None:
             raise unsupported("Streaming service is not attached.")
         source = self._source if self._source and route == self._source.route else None
         try:
-            return await self._state.streaming.send(route, generator, source=source, **options)
+            return await self._state.streaming.send(route, generator, source=source, guard=guard, **options)
         finally:
             if self._state.typing and source is not None:
                 await self._state.typing.stop(route, source=source)
 
     async def send(self, route, message, **options):
+        return await self._send_owned(route, message, options, guard=self.check)
+
+    async def _send_owned(self, route, message, options, *, guard):
         if options.keys() - {"onebot", "auto_escape", "markdown", "operation_id", "keyboard"}:
             raise V2Error("invalid_params", "Unsupported send options.")
+        guard()
         self.check()
         if route.robot != self.identity.robot:
             raise V2Error("identity_mismatch", "Cannot send into another robot's session.", status=409)
         if self._state.sender:
             source = self._source if self._source and route == self._source.route else None
             try:
-                return await self._state.sender.send(route, message, source=source, **options)
+                return await self._state.sender.send(route, message, source=source, guard=guard, **options)
             finally:
                 if self._state.typing and source is not None:
                     await self._state.typing.stop(route, source=source)

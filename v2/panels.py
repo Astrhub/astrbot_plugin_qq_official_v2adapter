@@ -239,11 +239,18 @@ class PanelService:
         manual = value.get("manual")
         if not isinstance(manual, dict) or manual.get("panel_id") != value.get("panel_id") or manual.get("scene") != scene:
             raise V2Error("panel_owner_conflict", "The paused panel no longer matches its manual operation.", status=409)
-        if manual.get("kind") not in {"update_panel", "delete_panel"}:
+        if manual.get("kind") not in {"update_panel", "delete_panel", "set_panel_target"}:
             raise V2Error("panel_scope_locked", "Changed panel targets cannot be adopted as the original scope.", status=409)
         outcome = self.owner.extension_state.panel_write_result(instance.identity.robot, manual["op_id"],
             manual["kind"], manual["binding"])
-        if manual["kind"] == "update_panel":
+        if manual["kind"] == "set_panel_target":
+            if outcome not in {"not_sent", "rejected"}:
+                raise V2Error("panel_scope_locked", "Confirmed target changes cannot be adopted as the original scope.", status=409)
+            if not isinstance(value.get("previous"), dict):
+                raise V2Error("panel_result_unknown", "The original panel baseline is unavailable.", status=409)
+            if await self._detail(instance, value["panel_id"]) != value["previous"]:
+                raise V2Error("panel_drift", "Remote panel targets changed despite the rejected manual write.", status=409)
+        elif manual["kind"] == "update_panel":
             previous = value.get("previous")
             if not isinstance(previous, dict) or not isinstance(manual.get("panel"), dict):
                 raise V2Error("panel_result_unknown", "The manual panel baseline is unavailable.", status=409)
