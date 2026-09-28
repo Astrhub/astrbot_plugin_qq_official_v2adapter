@@ -123,11 +123,16 @@ class ExtensionDispatcher:
     async def reply_interaction(self, interaction_id, code, *, operation_id=None, guard=lambda: None):
         """ACK only non-managed interactions through the existing durable ACK lane."""
         self.adapter.check_generation()
+        guard()
+        if self.closed or self.state.closed or self.store.closed:
+            raise V2Error("service_stopped", "Interaction ACK lane is stopped.", status=503)
         interaction_id = text_id(interaction_id)
         if interaction_id.startswith("INTERACTION_CREATE:") or type(code) is not int or code not in range(6):
             raise V2Error("invalid_interaction", "Use d.id and one official result code 0..5.")
         key = "interaction:" + interaction_id
         op_id = text_id(operation_id) if operation_id is not None else "ack-" + digest(interaction_id)
+        spec = RequestSpec(self.adapter.identity.robot.environment, "PUT",
+                           "/interactions/" + quote(interaction_id, safe=""), json_body={"code": code})
         with self.store.transaction():
             row = self.store.db.execute("SELECT ack,metadata FROM extension_events WHERE robot=? AND event_key=?", (self.robot, key)).fetchone()
             if not row:
@@ -141,6 +146,11 @@ class ExtensionDispatcher:
                     raise V2Error("operation_conflict", "An interaction cannot change its ACK code.", status=409)
                 if row["ack"] == "succeeded":
                     return {}
+                if row["ack"] in ("pending", "unknown") and self.state.confirmed_ack(
+                        self.adapter.identity.robot, prior["operation_id"], spec, code):
+                    self.store.db.execute("UPDATE extension_events SET ack='succeeded',error=NULL,updated=? "
+                                          "WHERE robot=? AND event_key=?", (self.store.now(), self.robot, key))
+                    return {}
                 raise V2Error("extension_result_unknown" if row["ack"] in ("pending", "unknown") else "operation_already_attempted",
                               "The retained interaction ACK cannot be replayed.", status=409)
             if row["ack"] != "not_required":
@@ -151,8 +161,6 @@ class ExtensionDispatcher:
             metadata["native_ack"] = {"code": code, "operation_id": op_id}
             self.store.db.execute("UPDATE extension_events SET metadata=?,ack='pending',updated=? WHERE robot=? AND event_key=?",
                                   (json.dumps(metadata), self.store.now(), self.robot, key))
-        spec = RequestSpec(self.adapter.identity.robot.environment, "PUT",
-                           "/interactions/" + quote(interaction_id, safe=""), json_body={"code": code})
         captured = []
         def validate(data):
             if data not in (None, {}):

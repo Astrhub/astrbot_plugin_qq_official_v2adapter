@@ -1,13 +1,16 @@
 """Durable membership and profile merge rules remain independent of chat delivery."""
 
 import asyncio
+import sqlite3
 import time
 from types import SimpleNamespace
 
 import pytest
 
+from v2.client import ClientState, V2Client
 from v2.errors import V2Error
 from v2.models import InstanceKey, RobotKey
+from v2.onebot_profiles import OneBotProfiles
 from v2.profiles.service import Profiles
 from v2.profiles.store import ProfileStore
 from v2.protocol import RequestSpec
@@ -110,6 +113,87 @@ def test_capacity_and_restart_keep_existing_history(tmp_path):
         reopened.close()
     with pytest.raises(V2Error, match="schema"):
         ProfileStore(path)
+
+
+async def test_profile_capacity_error_is_scoped_across_robots_and_groups(tmp_path):
+    now = 10_000.0
+    store = ProfileStore(tmp_path / "profiles.sqlite3", max_profiles=2, clock=lambda: now)
+    a = InstanceKey("a", RobotKey("robot-a"))
+    b = InstanceKey("b", RobotKey("robot-b"))
+    calls, expanded = [], [False]
+    class Reads:
+        def __init__(self, label):
+            self.label = label
+        async def get_group_member_list(self, group, cursor):
+            calls.append((self.label, group, cursor))
+            assert cursor == ""
+            members = [{"member_openid": self.label + "-" + group, "username": "Known"}]
+            if self.label == "a" and group == "g" and expanded[0]:
+                members.append({"member_openid": "g-two", "username": "Recovered"})
+            return {"members": members, "next_cursor": ""}
+    view_a = Profiles(a, store, Reads("a"), continuity_check=lambda: "a-connected")
+    view_b = Profiles(b, store, Reads("b"), continuity_check=lambda: "b-connected")
+    try:
+        for group in ("g", "h"):
+            assert (await view_a.refresh_roster(group))["continuous"]
+        assert (await view_b.refresh_roster("g"))["continuous"]
+        assert view_a.cached_roster("h") and view_b.cached_roster("g")
+        a_revision = store.revision(a.robot, "group", "g")
+        b_revision = store.revision(b.robot, "group", "g")
+        with pytest.raises(V2Error) as full:
+            store.merge(a.robot, "group", "g", "g-two", {"nickname": "Unstored"}, source="chat", as_of=now)
+        assert full.value.code == "cache_capacity" and store.last_error == "cache_capacity"
+        status = view_a.get_roster_status("g")
+        assert not status["complete"] and not status["continuous"] and status["reason"] == "cache_capacity"
+        assert store.revision(a.robot, "group", "g") > a_revision
+        assert store.revision(b.robot, "group", "g") == b_revision
+        assert view_a.get_roster_status("h")["continuous"] and view_a.cached_roster("h")
+        assert view_b.get_roster_status("g")["continuous"]
+        before = list(calls)
+        state = ClientState(b)
+        state.profiles = view_b
+        members = await OneBotProfiles(V2Client(b, state=state)).members("g")
+        assert [row["user_id"] for row in members] == ["b-g"] and calls == before
+        with pytest.raises(V2Error) as member_full:
+            store.member_event(a.robot, "group", "g", "g-extra", "present", int(now))
+        assert member_full.value.code == "cache_capacity" and not view_a.get_roster_status("g")["continuous"]
+        assert view_a.get_roster_status("h")["continuous"] and view_b.get_roster_status("g")["continuous"]
+        store.max_profiles = 4
+        expanded[0] = True
+        recovered = await view_a.refresh_roster("g")
+        assert recovered["complete"] and recovered["continuous"] and len(view_a.cached_roster("g")) == 2
+        store.db.execute("""CREATE TRIGGER fail_specific_profile BEFORE INSERT ON profiles
+            WHEN NEW.subject='faulty' BEGIN SELECT RAISE(FAIL,'disk failure'); END""")
+        with pytest.raises(sqlite3.Error):
+            store.merge(a.robot, "group", "g", "faulty", {"nickname": "Lost"}, source="chat", as_of=now)
+        assert view_a.get_roster_status("g")["reason"] == "profile_storage_unavailable"
+        assert view_b.get_roster_status("g")["continuous"] and view_a.get_roster_status("h")["continuous"]
+        store.db.execute("DROP TRIGGER fail_specific_profile")
+        assert (await view_a.refresh_roster("g"))["continuous"]
+        store.mark_gap(b.robot, "group", "g", reason="receiver_disconnected")
+        assert store.revision(b.robot, "group", "g") > b_revision
+        assert not view_b.get_roster_status("g")["continuous"] and view_b.cached_roster("g") is None
+        assert view_a.get_roster_status("h")["continuous"]
+    finally:
+        await view_a.close()
+        await view_b.close()
+        store.close()
+
+
+async def test_profile_status_never_masks_closed_or_unreadable_sqlite(tmp_path):
+    store = ProfileStore(tmp_path / "profiles.sqlite3")
+    view = Profiles(InstanceKey("p", RobotKey("app")), store, object(), continuity_check=lambda: "ready")
+    store.db.close()
+    try:
+        with pytest.raises(sqlite3.Error):
+            view.get_roster_status("g")
+        store.close()
+        with pytest.raises(V2Error) as closed:
+            view.get_roster_status("g")
+        assert closed.value.code == "service_stopped"
+    finally:
+        await view.close()
+        store.close()
 
 
 async def test_refresh_coalesces_and_late_event_wins(profiles):

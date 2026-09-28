@@ -46,6 +46,7 @@ class ProfileStore:
         self.max_profiles, self.max_bytes = max_profiles, max_bytes
         self.closed = False
         self.last_error = None
+        self._scope_errors = {}
         self.migration_skipped = 0
         path = Path(path)
         if path.is_symlink() or path.exists() and not path.is_file():
@@ -92,6 +93,14 @@ class ProfileStore:
         scene_scope(scene, scope)
         return key_of(robot), scene, scope
 
+    def _note_scope_error(self, key, reason):
+        self.last_error = reason
+        if self.db.execute("SELECT 1 FROM rosters WHERE robot=? AND scene=? AND scope=?", key).fetchone():
+            self._scope_errors[key] = reason
+
+    def scope_error(self, robot, scene, scope):
+        return self._scope_errors.get(self._scope(robot, scene, scope))
+
     def revision(self, robot, scene, scope):
         key = self._scope(robot, scene, scope)
         row = self.db.execute("SELECT revision FROM scopes WHERE robot=? AND scene=? AND scope=?", key).fetchone()
@@ -133,17 +142,30 @@ class ProfileStore:
                 self.db.execute("INSERT INTO profiles VALUES(?,?,?,?,?,?,?) ON CONFLICT(robot,scene,scope,kind,subject) DO UPDATE SET fields=excluded.fields,updated=excluded.updated",
                                 (*key, json.dumps(saved, ensure_ascii=False), received))
             return True
+        except V2Error as exc:
+            if exc.code == "cache_capacity":
+                self.mark_gap(robot, scene, scope, reason=exc.code)
+            raise
         except sqlite3.Error as exc:
             if getattr(exc, "sqlite_errorcode", None) in {sqlite3.SQLITE_FULL, sqlite3.SQLITE_TOOBIG}:
-                self.last_error = "cache_capacity"
+                self._note_scope_error(key[:3], "cache_capacity")
+                try:
+                    self.mark_gap(robot, scene, scope, reason="cache_capacity")
+                except sqlite3.Error as gap_error:
+                    if getattr(gap_error, "sqlite_errorcode", None) not in {sqlite3.SQLITE_FULL, sqlite3.SQLITE_TOOBIG}:
+                        raise
                 raise V2Error("cache_capacity", "Profile byte limit reached; history was retained.", status=503) from None
+            try:
+                self.mark_gap(robot, scene, scope, reason="profile_storage_unavailable")
+            except sqlite3.Error:
+                self.last_error = "profile_storage_unavailable"
             raise
 
     def _member_room(self, key):
         if self.db.execute("SELECT 1 FROM membership WHERE robot=? AND scene=? AND scope=? AND kind=? AND subject=?", key).fetchone():
             return
         if self.db.execute("SELECT count(*) FROM membership WHERE robot=?", (key[0],)).fetchone()[0] >= self.max_profiles:
-            self.last_error = "cache_capacity"
+            self._note_scope_error(key[:3], "cache_capacity")
             raise V2Error("cache_capacity", "Member-state capacity reached; no status was fabricated.", status=503)
 
 
@@ -207,6 +229,9 @@ class ProfileStore:
 
     def mark_gap(self, robot=None, scene=None, scope=None, reason="intake_gap"):
         self._checked()
+        if (robot is not None and scene is not None and scope is not None
+                and reason in {"cache_capacity", "cache_storage_unavailable", "profile_storage_unavailable"}):
+            self._note_scope_error(self._scope(robot, scene, scope), reason)
         filters, params = [], []
         for name, value in (("robot", key_of(robot) if robot else None), ("scene", scene), ("scope", scope)):
             if value is not None:
@@ -262,9 +287,11 @@ class ProfileStore:
             continuous = bool(continuity and continuity[0])
             self.db.execute("INSERT INTO rosters VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(robot,scene,scope) DO UPDATE SET revision=excluded.revision,complete=excluded.complete,continuous=excluded.continuous,started=excluded.started,finished=excluded.finished,count=excluded.count",
                             (*key, snapshot_revision, 1, int(continuous), started_at, self.clock(), len(members)))
-            if continuous:
+        if continuous:
+            self._scope_errors.pop(key, None)
+            if not self._scope_errors:
                 self.last_error = None
-            return continuous
+        return continuous
 
     def get_member(self, robot, scene, scope, user_id, *, kind=None):
         key = (*self._scope(robot, scene, scope), kind or ("member_openid" if scene == "group" else "channel_user_id" if scene in {"guild", "channel", "dm"} else "user_openid"), text_id(user_id))

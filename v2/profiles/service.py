@@ -175,10 +175,13 @@ class Profiles:
         if status["revision"] != self.store.revision(self.identity.robot, "group", group_openid):
             status["complete"] = False
             status["reason"] = "roster_revision_changed"
-        if self.store.last_error or not self.continuity_check():
+        scoped_error = self.store.scope_error(self.identity.robot, "group", group_openid)
+        if scoped_error:
+            status.update(complete=False, continuous=False, reason=scoped_error)
+        elif not self.continuity_check():
             status["continuous"] = False
             if status["complete"]:
-                status["reason"] = self.store.last_error or "receiver_unavailable"
+                status["reason"] = "receiver_unavailable"
         return status
 
     def diagnostics(self) -> dict:

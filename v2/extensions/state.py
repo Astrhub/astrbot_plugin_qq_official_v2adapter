@@ -120,6 +120,18 @@ class ExtensionStore:
         return {**dict(row), "result": json.loads(row["result"]) if row["result"] else None,
                 "error": json.loads(row["error"]) if row["error"] else None, "context": json.loads(row["context"]) if row["context"] else None}
 
+    def confirmed_ack(self, robot, op_id, spec, code):
+        """Read only a successful ACK with the exact original robot, request and result."""
+        if self.closed or self.messages.closed:
+            raise V2Error("service_stopped", "Extension operations are stopped.", status=503)
+        if self.storage_failed:
+            raise V2Error("extension_storage_unavailable", "ACK state is not reliable.", status=503)
+        binding = digest([spec.method, spec.path, spec.params, spec.json_body])
+        result = json.dumps({"code": code}, ensure_ascii=False, allow_nan=False)
+        return self.db.execute("SELECT 1 FROM extension_ops WHERE robot=? AND op_id=? AND kind='interaction_ack' "
+                               "AND binding=? AND state='succeeded' AND result=?",
+                               (robot_key(robot), text_id(op_id), binding, result)).fetchone() is not None
+
     def claim_tool(self, robot, op_id, platform, scope, actor, umo, kind, request, *, logical=None):
         """Freeze a caller-visible tool request before any management side effect."""
         key = robot_key(robot), text_id(op_id)
