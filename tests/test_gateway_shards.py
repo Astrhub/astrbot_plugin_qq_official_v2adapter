@@ -439,7 +439,9 @@ async def test_fresh_identify_survives_optional_sqlite_write_failure_without_res
         store.db.execute("PRAGMA query_only=OFF")
         store.mark_gap = original_gap
         rows = []
-        async def refresh(group, cursor):
+        async def refresh(group, cursor, *, guard=None):
+            if guard is not None:
+                guard()
             rows.append((group, cursor))
             return {"members": [{"member_openid": "member", "username": "now"}], "next_cursor": ""}
         a.profiles.reads.get_group_member_list = refresh

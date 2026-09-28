@@ -53,6 +53,8 @@ RawInbox `core_state` 为 `pending → done/degraded/invalid`：`degraded` 保�
 `client.qq.events.progress(event.context.receipt)` 可在同实例查询 core/host/raw 进度；确认后 tombstone 保留最多 300 秒且受容量裁剪，过期返回 `event_not_found`，不代表 QQ 端业务已完成。
 `NativeEvent.typed` 按 `t` 提供隔离的 TypedDict 判别视图；只有 `schema_valid=True` 才可消费，缺字段/错类型分别列于 `schema_missing/schema_invalid`，原始 `d/raw()` 不被裁掉。事件形状、当前来源与位 18/19 未确认的说明见 [覆盖台账](SDK_COVERAGE.md)；已知 3 种频道删除事件仅按 SDK 1.2.1 注册名称，现行负载专页未确认，不伪造必填字段。SDK 本地订阅不会改变 WS Intents 或 Webhook 管理端监听。
 
+`with_options(owner=...).profiles` 的缓存句柄在卸载后返回 `stale_owner`；共用原资料查询，关闭单个绑定视图不关闭共享服务。
+
 资料独立存 `profiles.sqlite3`：`cache_only` 绝不联网，`prefer_cache` 在有昵称时复用（stale 仅作提示），`refresh` 总是明确访问 QQ；确定性失败冷却时缓存回退附 `refresh_error`，权限不足/限流不会变成退群。字段含 `source/as_of/received`，成员状态 `present/left/unknown` 与 `last_known_role` 分开，历史昵称不授予当前管理员权限。`list_known_members(group_openid, cursor="", limit=100)` 列历史已知资料，`refresh_roster(group_openid)` 显式拉取完整名单，`get_roster_status(group_openid)` 表示当前名单完整性，不把历史成员冒充当前名单。未启用成员 Intent、Webhook 未配置监听、Identify/离线缺口或库写失败时 `continuous=False`；重启后保留资料，当前名单须重新核实。入站内容不按消息逐条补查 QQ。
 容量或存储写故障只使实际机器人/群的当前名单降级，`last_error` 仅作共享诊断；其他群可复用已验证的完整快照，数据库不可读或关闭则明确失败。
 

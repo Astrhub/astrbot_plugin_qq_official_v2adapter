@@ -135,6 +135,7 @@ class NativeView(NativeMenuMixin, NativeGuildAdminMixin, NativeGroupAdminMixin, 
         self._client = client
         self._actor = actor
         self._options = options or CallOptions()
+        self._profile_view = None
 
     def _check(self):
         self._client.check()
@@ -166,9 +167,15 @@ class NativeView(NativeMenuMixin, NativeGuildAdminMixin, NativeGroupAdminMixin, 
     @property
     def profiles(self):
         self._check()
-        if self._client._state.profiles is None:
+        service = self._client._state.profiles
+        if service is None:
             raise not_ready()
-        return self._client._state.profiles
+        if self._options.owner is None:
+            return service
+        if self._profile_view is None:
+            from .profiles.service import ProfileView
+            self._profile_view = ProfileView(service, self._check)
+        return self._profile_view
 
     async def get_group_member_info(self, group_openid: str, member_openid: str) -> dict:
         """Read current QQ member data and merge scoped profile evidence."""

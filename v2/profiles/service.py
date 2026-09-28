@@ -4,6 +4,7 @@ import asyncio
 import json
 
 from ..errors import V2Error
+from ..sdk.api.groups import GroupReads
 from ..sdk.identifiers import text_id
 
 
@@ -14,6 +15,8 @@ class Profiles:
         self.cooldown = cooldown
         self.pending = {}
         self.roster_pending = {}
+        self.pending_callers = {}
+        self.roster_callers = {}
         self.closed = False
 
     def _check(self):
@@ -22,9 +25,28 @@ class Profiles:
         self.guard()
         self.store._checked()
 
-    async def get_member(self, group_openid: str, member_openid: str, *, mode="prefer_cache") -> dict:
+    def _active(self, callers):
+        """Keep a coalesced read while at least one waiter is authorized."""
+        self._check()
+        inactive = None
+        for guard in tuple(callers.values()):
+            try:
+                guard()
+            except V2Error as exc:
+                if exc.code not in {"stale_owner", "service_stopped"}:
+                    raise
+                inactive = exc
+            else:
+                return
+        if inactive is not None:
+            raise inactive
+        raise V2Error("service_stopped", "No profile caller remains.", status=503)
+
+    async def get_member(self, group_openid: str, member_openid: str, *, mode="prefer_cache", _guard=None) -> dict:
         """Read historical cache or explicitly query an official current member."""
         self._check()
+        if _guard is not None:
+            _guard()
         group, member = text_id(group_openid), text_id(member_openid)
         if mode not in {"cache_only", "prefer_cache", "refresh"}:
             raise V2Error("invalid_profile_mode", "Use cache_only, prefer_cache or refresh.")
@@ -45,32 +67,52 @@ class Profiles:
                     return {**cached, "refresh_error": row[0]}
                 raise V2Error(row[0], "QQ profile lookup is cooling down after an earlier response.", status=503)
         future = self.pending.get(key)
+        if future is None and len(self.pending) >= 256:
+            raise V2Error("profile_capacity", "Too many profile refreshes are pending.", status=503)
+        callers = self.pending_callers.setdefault(key, {})
+        ticket = object()
+        callers[ticket] = _guard or self._check
         if future is None:
-            if len(self.pending) >= 256:
-                raise V2Error("profile_capacity", "Too many profile refreshes are pending.", status=503)
-            future = asyncio.create_task(self._refresh(group, member), name="qq-v2-profile-refresh")
+            future = asyncio.create_task(self._refresh(group, member,
+                ensure=lambda: self._active(callers), guarded=isinstance(self.reads, GroupReads)),
+                name="qq-v2-profile-refresh")
             self.pending[key] = future
             def settled(completed):
                 if self.pending.get(key) is completed:
                     self.pending.pop(key, None)
+                    self.pending_callers.pop(key, None)
                 if not completed.cancelled():
                     completed.exception()
             future.add_done_callback(settled)
-        # Keep a coalesced request alive if one waiter cancels.
-        await asyncio.shield(future)
-        return self.store.get_member(self.identity.robot, "group", group, member)
+        try:
+            # Keep a coalesced request alive if one waiter cancels.
+            try:
+                await asyncio.shield(future)
+            except Exception:
+                if _guard is not None:
+                    _guard()
+                raise
+            if _guard is not None:
+                _guard()
+            return self.store.get_member(self.identity.robot, "group", group, member)
+        finally:
+            callers.pop(ticket, None)
 
     def _robot_key(self):
         from .store import key_of
         return key_of(self.identity.robot)
 
-    async def _refresh(self, group, member):
+    async def _refresh(self, group, member, *, ensure, guarded):
+        ensure()
         robot = self.identity.robot
         revision = self.store.revision(robot, "group", group)
         started = self.store.clock()
         try:
-            data = await self.reads.get_group_member_info(group, member)
+            data = await (self.reads.get_group_member_info(group, member, guard=ensure) if guarded
+                          else self.reads.get_group_member_info(group, member))
+            ensure()
         except V2Error as exc:
+            ensure()
             if exc.business_code == 11253 or exc.code in {"qq_rate_limited", "passive_quota_exhausted"}:
                 from ..transport.http import retry_after_seconds
                 delay = retry_after_seconds(exc.retry_after) if exc.code == "qq_rate_limited" else None
@@ -86,28 +128,46 @@ class Profiles:
             self.store.db.execute("DELETE FROM refresh_state WHERE robot=? AND scene='group' AND scope=? AND kind='member_openid' AND subject=?",
                                   (self._robot_key(), group, member))
 
-    async def refresh_roster(self, group_openid: str, *, with_rows=False) -> dict:
+    async def refresh_roster(self, group_openid: str, *, with_rows=False, _guard=None) -> dict:
         """Coalesce a full native roster read for this bot and group."""
         self._check()
+        if _guard is not None:
+            _guard()
         group = text_id(group_openid)
         key = (self.identity.robot, group)
         future = self.roster_pending.get(key)
+        if future is None and len(self.roster_pending) >= 32:
+            raise V2Error("profile_capacity", "Too many roster reads are pending.", status=503)
+        callers = self.roster_callers.setdefault(key, {})
+        ticket = object()
+        callers[ticket] = _guard or self._check
         if future is None:
-            if len(self.roster_pending) >= 32:
-                raise V2Error("profile_capacity", "Too many roster reads are pending.", status=503)
-            future = asyncio.create_task(self._refresh_roster(group), name="qq-v2-roster-refresh")
+            future = asyncio.create_task(self._refresh_roster(group,
+                ensure=lambda: self._active(callers), guarded=isinstance(self.reads, GroupReads)),
+                name="qq-v2-roster-refresh")
             self.roster_pending[key] = future
             def settled(completed):
                 if self.roster_pending.get(key) is completed:
                     self.roster_pending.pop(key, None)
+                    self.roster_callers.pop(key, None)
                 if not completed.cancelled():
                     completed.exception()
             future.add_done_callback(settled)
-        result = await asyncio.shield(future)
-        return result if with_rows else {key: value for key, value in result.items() if key != "rows"}
+        try:
+            try:
+                result = await asyncio.shield(future)
+            except Exception:
+                if _guard is not None:
+                    _guard()
+                raise
+            if _guard is not None:
+                _guard()
+            return result if with_rows else {name: value for name, value in result.items() if name != "rows"}
+        finally:
+            callers.pop(ticket, None)
 
-    async def _refresh_roster(self, group):
-        self._check()
+    async def _refresh_roster(self, group, *, ensure, guarded):
+        ensure()
         robot = self.identity.robot
         revision = self.store.revision(robot, "group", group)
         started = self.store.clock()
@@ -116,7 +176,10 @@ class Profiles:
         try:
             async with asyncio.timeout(120):
                 for _ in range(200):
-                    page = await self.reads.get_group_member_list(group, cursor)
+                    ensure()
+                    page = await (self.reads.get_group_member_list(group, cursor, guard=ensure) if guarded
+                                  else self.reads.get_group_member_list(group, cursor))
+                    ensure()
                     size += len(json.dumps(page, ensure_ascii=False).encode())
                     if size > 4 * 1024 * 1024:
                         raise V2Error("pagination_incomplete", "Member roster exceeds 4 MiB.", status=413)
@@ -139,6 +202,7 @@ class Profiles:
                     raise V2Error("pagination_incomplete", "Member roster exceeded 200 pages.", status=502)
         except TimeoutError:
             raise V2Error("pagination_incomplete", "Member roster timed out.", status=504) from None
+        ensure()
         current_connection = self.continuity_check()
         if continuity and current_connection != continuity:
             self.store.mark_gap(robot, "group", group, reason="receiver_changed_during_roster")
@@ -200,3 +264,47 @@ class Profiles:
             task.cancel()
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
+
+
+class ProfileView:
+    """Owner-bound operations over one shared profile service."""
+
+    def __init__(self, service, guard):
+        self._service, self._guard = service, guard
+        self._closed = False
+
+    def _check(self):
+        if self._closed:
+            raise V2Error("service_stopped", "Profile view has closed.", status=503)
+        self._guard()
+
+    async def get_member(self, group_openid: str, member_openid: str, *, mode="prefer_cache") -> dict:
+        self._check()
+        result = await self._service.get_member(group_openid, member_openid, mode=mode, _guard=self._check)
+        self._check()
+        return result
+
+    async def refresh_roster(self, group_openid: str, *, with_rows=False) -> dict:
+        self._check()
+        result = await self._service.refresh_roster(group_openid, with_rows=with_rows, _guard=self._check)
+        self._check()
+        return result
+
+    def list_known_members(self, group_openid: str, *, cursor="", limit=100) -> dict:
+        self._check()
+        return self._service.list_known_members(group_openid, cursor=cursor, limit=limit)
+
+    def get_roster_status(self, group_openid: str) -> dict:
+        self._check()
+        return self._service.get_roster_status(group_openid)
+
+    def cached_roster(self, group_openid: str):
+        self._check()
+        return self._service.cached_roster(group_openid)
+
+    def diagnostics(self) -> dict:
+        self._check()
+        return self._service.diagnostics()
+
+    async def close(self):
+        self._closed = True
