@@ -86,6 +86,7 @@ class V2Adapter(Platform):
         self.session_isolated = platform_settings.get("unique_session", False) is True
         self.client._state.cache = IdentityView(self.owner.messages, identity.robot)
         self.client._state.events = EventBus(self.check_generation,
+            owner_guard=self.client._state.check_owner,
             progress=lambda receipt: self.owner.inbox.progress(identity.settings_key, receipt))
         self.consumer = ChatConsumer(self)
         self.client._state.guard = self.check_generation

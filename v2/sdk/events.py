@@ -182,8 +182,8 @@ class Subscription:
 class EventBus:
     """Instance-scoped, bounded real-time subscriber delivery."""
 
-    def __init__(self, guard=lambda: None, *, capacity=32, max_bytes=16 * 1024 * 1024, progress=None):
-        self.guard, self._progress = guard, progress
+    def __init__(self, guard=lambda: None, *, owner_guard=lambda owner: None, capacity=32, max_bytes=16 * 1024 * 1024, progress=None):
+        self.guard, self.owner_guard, self._progress = guard, owner_guard, progress
         self.capacity, self.max_bytes = capacity, max_bytes
         self.subscriptions = set()
         self.queued_bytes = 0
@@ -211,6 +211,7 @@ class EventBus:
                 or type(include_recovered) is not bool
                 or callback is not None and not asyncio.iscoroutinefunction(callback)):
             raise V2Error("invalid_subscription", "Use an owner, known event names and an async callback.")
+        self.owner_guard(owner)
         if len(self.subscriptions) >= self.capacity:
             raise V2Error("subscription_capacity", "SDK subscription limit reached.", status=503)
         sub = Subscription(self, names, callback, owner, capacity, timeout, include_recovered)

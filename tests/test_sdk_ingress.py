@@ -1,12 +1,17 @@
 """SDK core progress is distinct from host delivery and historical observation."""
 
 import asyncio
+import gc
 import sqlite3
+import weakref
+from types import SimpleNamespace
 
 import pytest
 from test_messaging_state import NOW, chat_payload
 
+from v2.client import ClientState
 from v2.protocol import RawEnvelope
+from v2.sdk.events import EventBus
 from v2.transport.inbox import RawInbox
 
 pytest_plugins = ("test_lifecycle", "test_messaging_delivery")
@@ -324,7 +329,6 @@ async def test_call_view_is_scoped_without_mutating_shared_client(receiver, monk
 
 
 async def test_plugin_owner_unload_and_platform_revoke_close_subscriptions(receiver):
-    from types import SimpleNamespace
     owner, instance = receiver
     plugin = object()
     ours = instance.client.qq.events.subscribe({"GROUP_MEMBER_ADD"}, owner=plugin)
@@ -337,8 +341,113 @@ async def test_plugin_owner_unload_and_platform_revoke_close_subscriptions(recei
     assert stale.value.code == "stale_owner"
     instance.revoke()
     assert other.closed and instance.client._state.events.closed
+    with pytest.raises(RuntimeError) as stopped:
+        instance.client._state.events.subscribe({"GROUP_MEMBER_ADD"}, owner=object())
+    assert stopped.value.code == "stale_generation"
     await ours.close()
     await other.close()
+
+
+@pytest.mark.parametrize("kind", ["callback", "subscribe", "stream"])
+@pytest.mark.parametrize("weak_owner", [True, False])
+async def test_cached_event_bus_cannot_resubscribe_unloaded_owner(receiver, kind, weak_owner):
+    owner, instance = receiver
+    bus = instance.client.qq.events
+    class PluginOwner:
+        pass
+    plugin = PluginOwner() if weak_owner else object()
+    valid_owner = object()
+    old_seen, active_seen = [], []
+    active_done = asyncio.Event()
+    async def old_callback(notice):
+        old_seen.append(notice)
+    async def active_callback(notice):
+        active_seen.append(notice)
+        active_done.set()
+    old = bus.subscribe({"GROUP_MEMBER_ADD"}, callback=old_callback, owner=plugin)
+    active = bus.subscribe({"GROUP_MEMBER_ADD"}, callback=active_callback, owner=valid_owner)
+    gate, proceed = asyncio.Event(), asyncio.Event()
+    async def delayed_registration():
+        gate.set()
+        await proceed.wait()
+        if kind == "callback":
+            return bus.subscribe({"GROUP_MEMBER_ADD"}, callback=old_callback, owner=plugin)
+        if kind == "stream":
+            return bus.stream({"GROUP_MEMBER_ADD"}, owner=plugin)
+        return bus.subscribe({"GROUP_MEMBER_ADD"}, owner=plugin)
+    task = asyncio.create_task(delayed_registration())
+    replacement = reopened = None
+    try:
+        await asyncio.wait_for(gate.wait(), 2)
+        await owner.catalog_unloaded(SimpleNamespace(star_cls=plugin))
+        assert old.closed and not active.closed
+        proceed.set()
+        with pytest.raises(RuntimeError) as revoked:
+            await task
+        assert revoked.value.code == "stale_owner"
+        assert bus.diagnostics() == {"subscriptions": 1, "queued_bytes": 0, "gaps": 0, "failures": 0}
+        assert instance.http.session is None
+        key = instance.identity.settings_key
+        owner.inbox.accept(key, RawEnvelope({"op": 0, "s": 1, "id": "after-unload", "t": "GROUP_MEMBER_ADD",
+             "d": {"group_openid": "group-one", "member_openid": "user-one", "timestamp": int(NOW)}}, NOW))
+        assert instance.core.step()
+        await asyncio.wait_for(active_done.wait(), 2)
+        assert len(active_seen) == 1 and not old_seen and instance.http.session is None
+        fresh_owner = PluginOwner() if weak_owner else object()
+        replacement = bus.stream({"GROUP_MEMBER_ADD"}, owner=fresh_owner)
+        bus.publish(active_seen[0])
+        assert replacement.queue.qsize() == 1
+        await replacement.close()
+        bus.close_owner(valid_owner)
+        assert active.closed
+        reopened = bus.subscribe({"GROUP_MEMBER_ADD"}, owner=valid_owner)
+        bus.publish(active_seen[0])
+        assert reopened.queue.qsize() == 1 and not old_seen
+    finally:
+        proceed.set()
+        result = (await asyncio.gather(task, return_exceptions=True))[0]
+        if hasattr(result, "close"):
+            await result.close()
+        for sub in (old, active, replacement, reopened):
+            if sub is not None:
+                await sub.close()
+
+
+async def test_event_bus_owner_revocation_is_instance_scoped_and_weak(receiver):
+    _, instance = receiver
+    bus = instance.client.qq.events
+    other_state = ClientState(instance.identity)
+    other_bus = EventBus(instance.check_generation, owner_guard=other_state.check_owner)
+    class PluginOwner:
+        pass
+    plugin = PluginOwner()
+    still_active = object()
+    active = bus.subscribe({"GROUP_MEMBER_ADD"}, owner=still_active)
+    bus.capacity = 1
+    instance.client._state.revoke_owner(plugin)
+    try:
+        with pytest.raises(RuntimeError) as revoked:
+            bus.subscribe({"GROUP_MEMBER_ADD"}, owner=plugin)
+        assert revoked.value.code == "stale_owner" and bus.diagnostics()["subscriptions"] == 1
+        del revoked
+        with pytest.raises(RuntimeError) as invalid_name:
+            bus.subscribe({"UNKNOWN_EVENT"}, owner=plugin)
+        assert invalid_name.value.code == "invalid_subscription"
+        with pytest.raises(RuntimeError) as invalid_callback:
+            bus.subscribe({"GROUP_MEMBER_ADD"}, owner=plugin, callback=lambda notice: None)
+        assert invalid_callback.value.code == "invalid_subscription"
+        del invalid_name, invalid_callback
+        other = other_bus.subscribe({"GROUP_MEMBER_ADD"}, owner=plugin)
+        assert not other.closed and other_bus.diagnostics()["subscriptions"] == 1
+        await other.close()
+        del other
+        ref = weakref.ref(plugin)
+        del plugin
+        gc.collect()
+        assert ref() is None
+    finally:
+        await active.close()
+        await other_bus.close()
 
 
 def test_schema3_raw_inbox_migrates_context_without_erasing_pending(tmp_path):

@@ -118,6 +118,10 @@ class ClientState:
                 return owner
         self.revoked_owners.append(ref)
 
+    def check_owner(self, owner):
+        if owner is not None and any(ref() is owner for ref in self.revoked_owners):
+            raise V2Error("stale_owner", "The owning plugin was unloaded.", status=409)
+
 
     def check(self, generation):
         if self.closed or generation != self.identity.generation:
@@ -134,8 +138,7 @@ class NativeView(NativeMenuMixin, NativeGuildAdminMixin, NativeGroupAdminMixin, 
 
     def _check(self):
         self._client.check()
-        if self._options.owner is not None and any(ref() is self._options.owner for ref in self._client._state.revoked_owners):
-            raise V2Error("stale_owner", "The owning plugin was unloaded.", status=409)
+        self._client._state.check_owner(self._options.owner)
 
 
     def with_options(self, *, operation_id=None, owner=None):
