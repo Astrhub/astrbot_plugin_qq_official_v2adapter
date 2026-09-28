@@ -43,6 +43,7 @@ await client.qq.put_menu({"items": []}, operation_id="menu-001")
 
 `client.qq.with_options(owner=self).typing("c2c", openid)` 同时在调用和发送前校验 owner 生命周期；已卸载插件的视图不能借共享输入提示任务发起新通知。
 `with_options(owner=...)` 的便捷 `send/send_file/send_streaming` 在异步媒体、令牌和每次实际发送前复核 owner；撤销后不再上线，已确认的部分流只保留账本，不补发。
+旧式 `client.qq.with_options(owner=...).guild_mute` 等管理写操作也在预查询与实际写出前复核 owner；已写出后的成功/部分成功保留真实账本结果。
 
 原生撤回、`create_dms`、`patch_guild_message` 需显式启用既有 `management_writes`；非托管互动经 `on_interaction_result(d.id, code)` 共享 ACK 台账，相同 code 查询原结果、不同 code 冲突，已由核心持有的按钮／菜单 ACK 即使票据无效也不能被 SDK 接管。权限与限流只以 QQ 本次响应为准。
 崩溃后仅当原 `operation_id` 的同机器人、同互动、同请求及 ACK 结果均已确认成功才修复摘要并返回成功；未知、缺失或历史淘汰的回执不会重发。

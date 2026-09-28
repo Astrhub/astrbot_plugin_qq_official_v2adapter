@@ -306,8 +306,7 @@ class NativeView(NativeMenuMixin, NativeGuildAdminMixin, NativeGroupAdminMixin, 
             if self._options.operation_id is not None and "operation_id" in inspect.signature(method).parameters:
                 kwargs = dict(kwargs)
                 kwargs["operation_id"] = self._operation_id(kwargs.get("operation_id"))
-            if name in NATIVE_READ_ACTIONS:
-                kwargs = {**kwargs, "guard": self._check}
+            kwargs = {**kwargs, "guard": self._check}
             try:
                 inspect.signature(method).bind(*args, **kwargs)
             except TypeError:
