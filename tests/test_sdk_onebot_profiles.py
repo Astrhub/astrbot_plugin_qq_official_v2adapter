@@ -28,10 +28,14 @@ async def history(tmp_path):
     rows = [[{"member_openid": "001", "username": "One", "member_role": "admin", "bot": False,
               "joined_at": "2026-09-28T10:00:00+08:00"}]]
     class Reads:
-        async def get_group_member_info(self, group, member):
+        async def get_group_member_info(self, group, member, *, guard=None):
+            if guard is not None:
+                guard()
             calls.append(("member", group, member))
             return {"member_openid": member, "username": "From QQ", "member_role": "member", "bot": False}
-        async def get_group_member_list(self, group, cursor):
+        async def get_group_member_list(self, group, cursor, *, guard=None):
+            if guard is not None:
+                guard()
             calls.append(("page", group, cursor))
             return {"members": rows[0], "next_cursor": ""}
     service = Profiles(identity, profiles, Reads(), continuity_check=lambda: "ws-session")

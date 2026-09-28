@@ -70,7 +70,9 @@ async def test_native_read_has_literal_origin_and_raw_response(client, name, arg
     calls = []
     payload = shape if shape is not None else {"official_extra": {"opaque": "001"}}
     class HTTP:
-        async def request(self, spec):
+        async def request(self, spec, *, before_send=None):
+            if before_send is not None:
+                before_send()
             calls.append(spec)
             return SimpleNamespace(data=payload)
     client._state.http = HTTP()
@@ -143,7 +145,9 @@ async def test_native_reads_stay_outside_network_onebot_action_list(client):
 
 async def test_native_read_propagates_qq_errors_and_preserves_onebot_collisions(client):
     class HTTP:
-        async def request(self, spec):
+        async def request(self, spec, *, before_send=None):
+            if before_send is not None:
+                before_send()
             raise V2Error("qq_api_error", "fixture", business_code=11253, phase="rejected")
     client._state.http = HTTP()
     with pytest.raises(V2Error) as exc:
@@ -165,7 +169,9 @@ async def test_native_read_propagates_qq_errors_and_preserves_onebot_collisions(
 async def test_native_reads_propagate_denial_rate_and_server_failure(client, status, code, phase):
     calls = []
     class HTTP:
-        async def request(self, spec):
+        async def request(self, spec, *, before_send=None):
+            if before_send is not None:
+                before_send()
             calls.append((spec.method, spec.url))
             raise V2Error(code, "fixture", status=status, phase=phase, http_status=status)
     client._state.http = HTTP()
@@ -177,7 +183,9 @@ async def test_native_reads_propagate_denial_rate_and_server_failure(client, sta
 
 async def test_native_read_cancellation_does_not_return_cached_state(client):
     class HTTP:
-        async def request(self, spec):
+        async def request(self, spec, *, before_send=None):
+            if before_send is not None:
+                before_send()
             raise asyncio.CancelledError
     client._state.http = HTTP()
     with pytest.raises(asyncio.CancelledError):
@@ -191,7 +199,9 @@ async def test_official_strategy_page_and_two_page_iterator_preserve_cursor_and_
     second = {"strategies": last, "next_cursor": "", "official_extra": False}
     calls = []
     class HTTP:
-        async def request(self, spec):
+        async def request(self, spec, *, before_send=None):
+            if before_send is not None:
+                before_send()
             calls.append((spec.method, spec.url, spec.json_body))
             return SimpleNamespace(data=second if spec.params and spec.params.get("cursor") == "next&1" else first)
     client._state.http = HTTP()
@@ -209,7 +219,9 @@ async def test_official_strategy_page_and_two_page_iterator_preserve_cursor_and_
     {"strategies": []},
 ])
 async def test_strategy_page_missing_official_fields_fails_explicitly(client, malformed):
-    async def request(spec):
+    async def request(spec, *, before_send=None):
+        if before_send is not None:
+            before_send()
         assert spec.method == "GET" and spec.url.startswith("https://api.bot.qq.com/v2/groups/join_approval_strategy")
         return SimpleNamespace(data=malformed)
     client._state.http = SimpleNamespace(request=request)
@@ -225,7 +237,9 @@ async def test_cursor_pagination_detects_repetition_without_partial_list(client)
     pages = [{"users": [{"member_openid": "u1"}], "next_cursor": "repeat"},
              {"users": [{"member_openid": "u2"}], "next_cursor": "repeat"}]
     class HTTP:
-        async def request(self, spec):
+        async def request(self, spec, *, before_send=None):
+            if before_send is not None:
+                before_send()
             assert spec.method == "GET" and spec.url.startswith("https://api.bot.qq.com/v2/groups/g/member_blacklist")
             return SimpleNamespace(data=pages.pop(0))
     client._state.http = HTTP()
@@ -239,7 +253,9 @@ async def test_cursor_pagination_detects_repetition_without_partial_list(client)
 async def test_role_and_guild_member_iterators_keep_string_cursors(client):
     urls = []
     class HTTP:
-        async def request(self, spec):
+        async def request(self, spec, *, before_send=None):
+            if before_send is not None:
+                before_send()
             urls.append(spec.url)
             if "/roles/" in spec.url:
                 data = {"data": [{"user": {"id": "001"}}], "next": "opaque"} if len(urls) == 1 else {"data": [], "next": "0"}
@@ -256,7 +272,11 @@ async def test_role_and_guild_member_iterators_keep_string_cursors(client):
 
 
 async def test_threads_do_not_claim_complete_when_qq_does_not_supply_cursor(client):
-    client._state.http = SimpleNamespace(request=lambda spec: asyncio.sleep(0, result=SimpleNamespace(data={"threads": [], "is_finish": 0})))
+    async def request(spec, *, before_send=None):
+        if before_send is not None:
+            before_send()
+        return SimpleNamespace(data={"threads": [], "is_finish": 0})
+    client._state.http = SimpleNamespace(request=request)
     assert (await client.qq.get_threads("c"))["is_finish"] == 0
     with pytest.raises(V2Error, match="continuation"):
         await client.qq.complete_threads("c")

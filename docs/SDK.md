@@ -12,6 +12,7 @@ history = await client.qq.profiles.get_member("群 OpenID", "成员 OpenID", mod
 ```
 
 原生只读用 `await client.qq.get_guild(guild_id)`、`await client.qq.get_panels("group", limit=20)` 请求 QQ；无冲突方法也可经 `client.api.get_guild` 调用，`call_action` 与网络动作表不随之扩权。带 `cursor/after/cookie` 的单次方法保留原始返回；`get_schedules(since)` 用 GET JSON 的 uint64 毫秒数，`get_threads` 仅 `is_finish`、无续页游标。`iter_*` 有 200 页／5000 项／4 MiB／120 秒上限，途中失败会抛错，不能把已 yield 的部分名单当作完整快照；`complete_threads` 对未完成回复报错。A011/A013/A060 属 SDK 1.2.1 兼容路径，现行专页与账号权限未确认。
+绑定 owner 的原生 GET/HEAD 在令牌、排队与重试后的实际 HTTP 发送前再次核验；已卸载视图不会启动新的只读请求。
 ```python
 view = client.qq.with_options(operation_id="my-send", owner=self)
 sent = await view.post_group_message("群 OpenID", content="你好", msg_id="入站消息 ID")
@@ -20,6 +21,7 @@ await client.qq.post_group_message("群 OpenID", msg_type=7, media={"file_info":
 ```
 原生发送保留官方 JSON 字段和原始响应，`operation_id`/`owner` 仅是本地 SDK 选项，不进入 QQ 请求；同一操作 ID 的不同来源、目标或内容冲突，已确认但含敏感字段的原生回执重复查询不重放。`msg_id`/`event_id` 二选一；有来源时自动序号与显式正整数共用发送账本，已知错机器人／错目标来源拒绝，未知 caller-supplied 来源由 QQ 判定有效期和权限。显式原生目标不会暗改主动/被动模式；原有 `client.qq.send` 和 OneBot 便捷发送保留 QQ 明确被动过期/次数拒绝后最多一次主动降级，超时、5xx、unknown 与已发部分流绝不从头补发。
 原生 C2C 流单片 `post_c2c_stream_message` 要求 index 从 0 递增、续片带 QQ 首片返回的 `stream_msg_id`，全流复用同一来源序号；未知片或重启中的不确定结果阻止续发。频道可用 `post_message(file_image=bytes_or_stream)`，SDK 只关闭自建临时副本，调用者的流自行管理。本机路径通过宿主 MediaResolver；HTTP(S) 图片/富媒体 URL 只交 QQ 转存，本机不 GET/HEAD；`begin_upload(...)` 返回需要 `put_part(server_index) → finish_part(server_index) → complete()` 的可关闭句柄，预签名 PUT 没有 QQ 鉴权、Cookie 或跳转，服务端索引保留 0/1 起点。`post_group_file/post_c2c_file(..., srv_send_msg=True)` 是真实发送，进入消息账本。
+上传组合与 `begin_upload` 的父 `operation_id` 最长 512 字符；子操作 ID 对短 ID 保留原拼接格式，超长时按父 ID 与步骤确定性派生，重复操作仍按原账本状态查询。
 ```python
 async with await client.qq.begin_upload("group", "群 OpenID", local_path, kind="image", name="photo.png") as task:
     for part in task.parts:

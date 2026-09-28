@@ -367,3 +367,65 @@ async def test_unowned_cache_and_official_denial_cooldown_remain_shared(profile_
     fresh = p.instance.client.qq.with_options(owner=object()).profiles
     assert (await fresh.get_member("g", "v", mode="refresh"))["fields"]["nickname"]["value"] == "Official"
     assert p.calls == [("GET", "/v2/groups/g/members/v", {}), ("GET", "/v2/groups/g/members/v", {})]
+
+
+@pytest.mark.parametrize("read_kind", ["member", "roster"])
+@pytest.mark.parametrize("new_kind", ["owned", "unowned"])
+async def test_finished_failed_shared_read_is_not_joined_by_new_owner_before_settled(
+    profile_wire, monkeypatch, read_kind, new_kind,
+):
+    p = profile_wire
+    p.hold_token[0] = True
+    root = p.instance.profiles
+    stale = object()
+    first = p.instance.client.qq.with_options(owner=stale).profiles
+    second = (p.instance.client.qq.with_options(owner=object()).profiles if new_kind == "owned"
+              else p.instance.client.qq.profiles)
+    key = ((p.instance.identity.robot, "g", "u") if read_kind == "member"
+           else (p.instance.identity.robot, "g"))
+    pending = root.pending if read_kind == "member" else root.roster_pending
+    callers = root.pending_callers if read_kind == "member" else root.roster_callers
+    task_name = "qq-v2-profile-refresh" if read_kind == "member" else "qq-v2-roster-refresh"
+    def query(view):
+        return view.get_member("g", "u", mode="refresh") if read_kind == "member" else view.refresh_roster("g", with_rows=True)
+    actual_create = asyncio.create_task
+    second_task = [None]
+    snapshot = []
+    def created(coro, *, name=None, context=None):
+        task = actual_create(coro, name=name, context=context)
+        if name == task_name and not snapshot:
+            def before_settled(completed):
+                fact = (completed.done(), completed.exception().code, pending.get(key) is completed)
+                second_task[0] = asyncio.Task(query(second), loop=asyncio.get_running_loop(), eager_start=True)
+                snapshot.append((fact, pending.get(key) is completed, len(callers.get(key, {}))))
+            task.add_done_callback(before_settled)
+        return task
+    first_task = None
+    try:
+        with monkeypatch.context() as patch:
+            patch.setattr(asyncio, "create_task", created)
+            first_task = asyncio.create_task(query(first))
+            await asyncio.wait_for(p.token_entered.wait(), 2)
+        await p.owner.catalog_unloaded(SimpleNamespace(star_cls=stale))
+        p.token_release.set()
+        with pytest.raises(RuntimeError) as revoked:
+            await first_task
+        assert revoked.value.code == "stale_owner"
+        assert len(snapshot) == 1 and snapshot[0][0] == (True, "stale_owner", True)
+        assert snapshot[0][1:] == (False, 1)
+        assert second_task[0] is not None
+        result = await second_task[0]
+        if read_kind == "member":
+            assert result["fields"]["nickname"]["value"] == "Official"
+            assert p.calls == [("GET", "/v2/groups/g/members/u", {})]
+        else:
+            assert result["complete"] and [row["member_openid"] for row in result["rows"]] == ["u", "v"]
+            assert p.calls == [("GET", "/v2/groups/g/members", {"cursor": ""}),
+                               ("GET", "/v2/groups/g/members", {"cursor": "opaque&1"})]
+        assert not root.store.db.execute("SELECT 1 FROM refresh_state").fetchone()
+    finally:
+        p.token_release.set()
+        for task in (first_task, second_task[0]):
+            if task is not None and not task.done():
+                task.cancel()
+                await asyncio.gather(task, return_exceptions=True)

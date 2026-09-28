@@ -74,7 +74,9 @@ async def test_event_get_group_uses_verified_current_data_and_denied_event_fallb
     class Management:
         def __init__(self):
             self.denied = False
-        async def group_info(self, group):
+        async def group_info(self, group, *, guard=None):
+            if guard is not None:
+                guard()
             if self.denied:
                 raise V2Error("qq_forbidden", "fixture", status=403, phase="rejected")
             return {"group_openid": group, "group_name": "Actual Group", "group_member_num": 19}

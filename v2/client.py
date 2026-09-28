@@ -5,7 +5,7 @@ import weakref
 
 from . import PLATFORM_TYPE, VERSION
 from .errors import V2Error, not_ready, unsupported
-from .extensions.management import MANAGEMENT_ACTIONS, NATIVE_ACTIONS
+from .extensions.management import MANAGEMENT_ACTIONS, NATIVE_ACTIONS, NATIVE_READ_ACTIONS
 from .messaging.reply import ACTIVE_FALLBACK_CODES
 from .models import SessionRoute, text_id
 from .protocol import avatar_url
@@ -185,7 +185,7 @@ class NativeView(NativeMenuMixin, NativeGuildAdminMixin, NativeGroupAdminMixin, 
         profiles = self._client._state.profiles
         revision = profiles.store.revision(self._client.identity.robot, "group", group_openid) if profiles else 0
         started = profiles.store.clock() if profiles else None
-        data = await self._client._state.reads.get_group_member_info(group_openid, member_openid)
+        data = await self._client._state.reads.get_group_member_info(group_openid, member_openid, guard=self._check)
         self._check()
         if profiles:
             try:
@@ -208,7 +208,7 @@ class NativeView(NativeMenuMixin, NativeGuildAdminMixin, NativeGroupAdminMixin, 
             raise not_ready()
         profiles = self._client._state.profiles
         started = profiles.store.clock() if profiles else None
-        page = await self._client._state.reads.get_group_member_list(group_openid, cursor)
+        page = await self._client._state.reads.get_group_member_list(group_openid, cursor, guard=self._check)
         self._check()
         if profiles:
             for member in page["members"]:
@@ -240,7 +240,7 @@ class NativeView(NativeMenuMixin, NativeGuildAdminMixin, NativeGroupAdminMixin, 
         self._check()
         if self._client._state.management is None:
             raise not_ready()
-        response = await self._client._state.management.group_info(group_openid)
+        response = await self._client._state.management.group_info(group_openid, guard=self._check)
         self._check()
         return response
 
@@ -306,11 +306,16 @@ class NativeView(NativeMenuMixin, NativeGuildAdminMixin, NativeGroupAdminMixin, 
             if self._options.operation_id is not None and "operation_id" in inspect.signature(method).parameters:
                 kwargs = dict(kwargs)
                 kwargs["operation_id"] = self._operation_id(kwargs.get("operation_id"))
+            if name in NATIVE_READ_ACTIONS:
+                kwargs = {**kwargs, "guard": self._check}
             try:
                 inspect.signature(method).bind(*args, **kwargs)
             except TypeError:
                 raise V2Error("invalid_params", "Unknown or missing named operation parameters.") from None
-            return await method(*args, **kwargs)
+            result = await method(*args, **kwargs)
+            if name in NATIVE_READ_ACTIONS:
+                self._check()
+            return result
         return call
 
     def extension_events(self, limit=32):
@@ -332,7 +337,9 @@ class NativeView(NativeMenuMixin, NativeGuildAdminMixin, NativeGroupAdminMixin, 
             raise not_ready()
         if spec.method not in {"GET", "HEAD"}:
             raise unsupported("Arbitrary native writes cannot bypass the shared send/menu policy.")
-        return await http.request(spec)
+        result = await http.request(spec, before_send=self._check)
+        self._check()
+        return result
 
 
 class V2Client:

@@ -5,7 +5,7 @@ import math
 from uuid import uuid4
 
 from ...errors import V2Error, not_ready
-from ..identifiers import text_id
+from ..identifiers import child_operation_id, text_id
 from .messages import fields, segment
 
 
@@ -100,7 +100,7 @@ class NativeUploadHandle:
                 md5.update(chunk)
             method = self.view.post_group_upload_part_finish if self.route.scene == "group" else self.view.post_c2c_upload_part_finish
             await method(self.route.target, self.upload_id, index, str(actual), md5.hexdigest(),
-                         operation_id=f"{self.parent_id}:finish:{index}")
+                         operation_id=child_operation_id(self.parent_id, f"finish:{index}"))
             self.finish_done.add(index)
         except BaseException:
             self.close()
@@ -115,7 +115,7 @@ class NativeUploadHandle:
         try:
             return await method(self.route.target, file_type(self.media_kind), None, srv_send_msg,
                                 file_name=self.prepared.input.name, upload_id=self.upload_id,
-                                operation_id=f"{self.parent_id}:files")
+                                operation_id=child_operation_id(self.parent_id, "files"))
         finally:
             self.close()
 
@@ -239,18 +239,18 @@ class NativeMediaMixin:
         if scene not in {"group", "c2c"} or self._client._state.sender is None or self._client._state.sender.media is None:
             raise not_ready()
         route = self._client.route_for(scene, target)
+        parent_id = text_id(self._operation_id(operation_id) or uuid4().hex)
         media = self._client._state.sender.media
         prepared = await media.prepare(route, MediaInput(kind, file, name))
         try:
             if prepared.blob is None:
                 raise V2Error("invalid_media_input", "External URLs use the direct files endpoint; no local download is attempted.")
-            parent_id = self._operation_id(operation_id) or uuid4().hex
             work = self.with_options(owner=self._options.owner)
             hashes = prepared.blob.hashes()
             method = work.post_group_upload_prepare if scene == "group" else work.post_c2c_upload_prepare
             response = await method(target, file_type({"image": 1, "video": 2, "record": 3, "file": 4}[prepared.kind]),
                                     str(prepared.blob.size), prepared.input.name, hashes["md5"], hashes["sha1"],
-                                    hashes["md5_10m"], operation_id=f"{parent_id}:prepare")
+                                    hashes["md5_10m"], operation_id=child_operation_id(parent_id, "prepare"))
             return NativeUploadHandle(work, route, prepared, parent_id, response)
         except BaseException:
             prepared.close()

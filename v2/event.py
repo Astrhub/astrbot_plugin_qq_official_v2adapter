@@ -12,6 +12,7 @@ from .errors import V2Error, unsupported
 from .media.service import FILE_TYPES
 from .media.types import MediaInput
 from .models import text_id
+from .sdk.identifiers import child_operation_id
 
 
 @dataclass(frozen=True)
@@ -148,6 +149,9 @@ class V2MessageEvent(AstrMessageEvent):
             raise unsupported("This instance has no media service.")
         kind = next(kind for kind, code in FILE_TYPES.items() if code == file_type)
         name = file_name or (Path(file_source).name if isinstance(file_source, str) and not file_source.startswith(("http:", "https:", "base64:", "data:")) else "upload")
+        if operation_id is not None:
+            operation_id = text_id(operation_id)
+        send_id = child_operation_id(operation_id, "send") if srv_send_msg and operation_id is not None else None
         prepared = await media.prepare(route, MediaInput(kind, file_source, name))
         try:
             receipt = await media.upload(route, prepared, operation_id=operation_id, check=self.bot.check)
@@ -157,7 +161,7 @@ class V2MessageEvent(AstrMessageEvent):
         if srv_send_msg:
             sender = self.qq.post_group_message if scene == "group" else self.qq.post_c2c_message
             sent = await sender(target, msg_type=7, media={"file_info": receipt["file_info"]},
-                                operation_id=(text_id(operation_id) + ":send") if operation_id else None)
+                                operation_id=send_id)
         return V2MediaReceipt(receipt["file_info"], receipt["ttl"], receipt.get("file_uuid"),
                               receipt["operation_id"], sent)
 

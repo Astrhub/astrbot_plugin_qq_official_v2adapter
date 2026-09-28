@@ -37,7 +37,7 @@ class NativeReadMixin:
         if http is None:
             raise not_ready()
         result = await http.request(RequestSpec(self._client.identity.robot.environment, "GET", path,
-                                                params=params, json_body=json_body))
+                                                params=params, json_body=json_body), before_send=self._check)
         self._check()
         return result.data
 

@@ -23,6 +23,9 @@ NATIVE_ACTIONS = {"group_info", "bot_state", "group_member", "group_members", "g
                   "join_requests", "approve", "login_info", "share", "delete_message", "guild_info", "channels",
                   "channel_info", "channel_create", "channel_update", "channel_delete", "guild_member", "guild_members",
                   "guild_kick", "guild_mute", "guild_mute_batch"}
+NATIVE_READ_ACTIONS = frozenset({"group_info", "bot_state", "group_member", "group_members", "group_mutes",
+                                 "join_requests", "login_info", "guild_info", "channels", "channel_info",
+                                 "guild_member", "guild_members"})
 
 
 def ident(value):
@@ -78,15 +81,22 @@ class Management:
         if write and not self.settings().get("management_writes", False):
             raise V2Error("management_disabled", "Enable named management writes in the advanced WebUI first.", status=403)
 
-    async def _read(self, path, *, params=None):
+    async def _read(self, path, *, params=None, guard=None):
         self.check()
         task = asyncio.current_task()
         if task not in self.tasks and len(self.tasks) >= 16:
             raise V2Error("management_capacity", "Too many management requests.", status=429)
         self.tasks.add(task)
         try:
+            def before():
+                self.check()
+                if guard is not None:
+                    guard()
             async with read_deadline():
-                return (await self.http.request(RequestSpec(self.identity.robot.environment, "GET", path, params=params), before_send=self.check)).data
+                result = await self.http.request(RequestSpec(self.identity.robot.environment, "GET", path, params=params), before_send=before)
+                if guard is not None:
+                    guard()
+                return result.data
         finally:
             self.tasks.discard(task)
 
@@ -107,14 +117,14 @@ class Management:
         finally:
             self.tasks.discard(task)
 
-    async def group_info(self, group):
-        data = await self._read(f"/v2/groups/{ident(group)}/info")
+    async def group_info(self, group, *, guard=None):
+        data = await self._read(f"/v2/groups/{ident(group)}/info", guard=guard)
         if not isinstance(data, dict) or data.get("group_openid") != group or not isinstance(data.get("group_name"), str) or type(data.get("group_member_num")) is not int or data["group_member_num"] < 0:
             invalid()
         return data
 
-    async def bot_state(self, group):
-        data = await self._read(f"/v2/groups/{ident(group)}/bot_state")
+    async def bot_state(self, group, *, guard=None):
+        data = await self._read(f"/v2/groups/{ident(group)}/bot_state", guard=guard)
         if not isinstance(data, dict) or data.get("member_role") not in ("member", "admin", "owner"):
             invalid()
         text_id(data.get("member_openid"))
@@ -133,14 +143,14 @@ class Management:
             invalid("Member response belongs to another requested identity.")
         return data
 
-    async def group_member(self, group, user):
-        return self._member(await self._read(f"/v2/groups/{ident(group)}/members/{ident(user)}"), user)
+    async def group_member(self, group, user, *, guard=None):
+        return self._member(await self._read(f"/v2/groups/{ident(group)}/members/{ident(user)}", guard=guard), user)
 
-    async def _pages(self, path, *, field, page_limit, key):
+    async def _pages(self, path, *, field, page_limit, key, guard=None):
         cursor, cursors, rows, seen, size = "", set(), [], set(), 0
         async with read_deadline():
             for _ in range(200):
-                data = await self._read(path, params={"cursor": cursor})
+                data = await self._read(path, params={"cursor": cursor}, guard=guard)
                 if not isinstance(data, dict) or not isinstance(data.get(field), list) or len(data[field]) > page_limit or not isinstance(data.get("next_cursor"), str) or len(data["next_cursor"]) > 4096:
                     invalid()
                 size += len(json.dumps(data).encode())
@@ -163,12 +173,12 @@ class Management:
                 cursors.add(cursor)
         raise V2Error("pagination_incomplete", "Complete listing exceeded the page budget.", status=502)
 
-    async def group_members(self, group):
-        rows = await self._pages(f"/v2/groups/{ident(group)}/members", field="members", page_limit=30, key="member_openid")
+    async def group_members(self, group, *, guard=None):
+        rows = await self._pages(f"/v2/groups/{ident(group)}/members", field="members", page_limit=30, key="member_openid", guard=guard)
         return [self._member(row) for row in rows]
 
-    async def group_mutes(self, group):
-        data = await self._read(f"/v2/groups/{ident(group)}/restrict_chat_setting")
+    async def group_mutes(self, group, *, guard=None):
+        data = await self._read(f"/v2/groups/{ident(group)}/restrict_chat_setting", guard=guard)
         if not isinstance(data, dict) or not isinstance(data.get("members"), list):
             invalid()
         return data
@@ -256,8 +266,8 @@ class Management:
             self.store.db.execute("INSERT OR REPLACE INTO join_flags VALUES(?,?,?,?,?,?,?,?,?)", (*key, hashlib.sha256(flag.encode()).hexdigest(), received + 300, received, "pending", None))
         return flag
 
-    async def join_requests(self, group):
-        rows = await self._pages(f"/v2/groups/{ident(group)}/join_request_list", field="list", page_limit=50, key="join_request_id")
+    async def join_requests(self, group, *, guard=None):
+        rows = await self._pages(f"/v2/groups/{ident(group)}/join_request_list", field="list", page_limit=50, key="join_request_id", guard=guard)
         return [{**row, "flag": self.observe_request(group, row, fresh_read=True)} for row in rows]
 
     async def approve(self, flag, *, approve, reason="", blacklist=False):
@@ -291,8 +301,8 @@ class Management:
             self.store.db.execute("UPDATE join_flags SET state='succeeded' WHERE robot=? AND flag_hash=? AND state='attempted'", (robot, row["flag_hash"]))
         return result
 
-    async def login_info(self):
-        data = await self._read("/users/@me")
+    async def login_info(self, *, guard=None):
+        data = await self._read("/users/@me", guard=guard)
         if not isinstance(data, dict) or data.get("bot") is not True or not isinstance(data.get("username"), str) or not data["username"]:
             invalid("A complete real bot ID and username are required for login_info.")
         return {"user_id": text_id(data.get("id")), "nickname": data["username"], "id_kind": "channel_user_id", "source": "official_profile"}
@@ -355,14 +365,14 @@ class Management:
             return await self.group_ban(group, user, params.get("duration", 1800), operation_id=params.get("_qq_operation_id"))
         return await self.group_kick(group, [user], blacklist=params.get("reject_add_request", False), operation_id=params.get("_qq_operation_id"))
 
-    async def guild_info(self, guild):
-        data = await self._read(f"/guilds/{ident(guild)}")
+    async def guild_info(self, guild, *, guard=None):
+        data = await self._read(f"/guilds/{ident(guild)}", guard=guard)
         if not isinstance(data, dict) or data.get("id") != guild:
             invalid()
         return data
 
-    async def channels(self, guild):
-        data = await self._read(f"/guilds/{ident(guild)}/channels")
+    async def channels(self, guild, *, guard=None):
+        data = await self._read(f"/guilds/{ident(guild)}/channels", guard=guard)
         rows = data.get("channels") if isinstance(data, dict) else data
         if not isinstance(rows, list) or len(rows) > 5000:
             invalid()
@@ -372,8 +382,8 @@ class Management:
             text_id(row.get("id"))
         return rows
 
-    async def channel_info(self, channel):
-        data = await self._read(f"/channels/{ident(channel)}")
+    async def channel_info(self, channel, *, guard=None):
+        data = await self._read(f"/channels/{ident(channel)}", guard=guard)
         if not isinstance(data, dict) or data.get("id") != channel:
             invalid()
         return data
@@ -422,17 +432,17 @@ class Management:
     async def channel_delete(self, channel, *, operation_id=None):
         return await self._write("DELETE", f"/channels/{ident(channel)}", None, kind="channel_delete", operation_id=operation_id)
 
-    async def guild_member(self, guild, user):
-        data = await self._read(f"/guilds/{ident(guild)}/members/{ident(user)}")
+    async def guild_member(self, guild, user, *, guard=None):
+        data = await self._read(f"/guilds/{ident(guild)}/members/{ident(user)}", guard=guard)
         if not isinstance(data, dict) or not isinstance(data.get("user"), dict) or data["user"].get("id") != user:
             invalid()
         return data
 
-    async def guild_members(self, guild):
+    async def guild_members(self, guild, *, guard=None):
         after, cursors, seen, rows, size = "0", set(), set(), [], 0
         async with read_deadline():
             for _ in range(200):
-                page = await self._read(f"/guilds/{ident(guild)}/members", params={"after": after, "limit": 400})
+                page = await self._read(f"/guilds/{ident(guild)}/members", params={"after": after, "limit": 400}, guard=guard)
                 if not isinstance(page, list) or len(page) > 400:
                     invalid()
                 if not page:

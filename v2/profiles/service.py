@@ -42,6 +42,15 @@ class Profiles:
             raise inactive
         raise V2Error("service_stopped", "No profile caller remains.", status=503)
 
+    @staticmethod
+    def _live_future(pending, callers, key):
+        future = pending.get(key)
+        if future is not None and future.done():
+            if pending.get(key) is future:
+                pending.pop(key, None)
+                callers.pop(key, None)
+            return None
+        return future
     async def get_member(self, group_openid: str, member_openid: str, *, mode="prefer_cache", _guard=None) -> dict:
         """Read historical cache or explicitly query an official current member."""
         self._check()
@@ -66,7 +75,7 @@ class Profiles:
                 if cached:
                     return {**cached, "refresh_error": row[0]}
                 raise V2Error(row[0], "QQ profile lookup is cooling down after an earlier response.", status=503)
-        future = self.pending.get(key)
+        future = self._live_future(self.pending, self.pending_callers, key)
         if future is None and len(self.pending) >= 256:
             raise V2Error("profile_capacity", "Too many profile refreshes are pending.", status=503)
         callers = self.pending_callers.setdefault(key, {})
@@ -135,7 +144,7 @@ class Profiles:
             _guard()
         group = text_id(group_openid)
         key = (self.identity.robot, group)
-        future = self.roster_pending.get(key)
+        future = self._live_future(self.roster_pending, self.roster_callers, key)
         if future is None and len(self.roster_pending) >= 32:
             raise V2Error("profile_capacity", "Too many roster reads are pending.", status=503)
         callers = self.roster_callers.setdefault(key, {})
