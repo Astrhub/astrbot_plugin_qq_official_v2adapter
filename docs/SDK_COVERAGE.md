@@ -1,10 +1,4 @@
-# QQ V2 SDK 覆盖台账（首版候选）
-
-口径：QQ 官方 v2 [目录](https://bot.q.qq.com/wiki/develop/api-v2/)（本地镜像抓取于 2026-09-19）、AstrBot 4.28.1 所用 `qq-botpy==1.2.1` 的 `BotAPI` 公开签名（64 个）；2026-09-28 在线复核了成员及消息事件。路径中的 `{...}` 为独立 URL 路径段，调用前编码。镜像抓取日期不等于页面更新时间；实际账号权限未验证。
-
-状态：96 行 `native` 为具名原生实际请求，2 行 `excluded` 有废弃依据。独立字面 URL／方法／参数／响应 fixture 位于 `tests/test_sdk_read_api.py`、`test_sdk_native_writes.py`、`test_sdk_admin_api.py`，详见 W003 覆盖验收表。GET 实时访问 QQ，缓存走 `.qq.profiles`；写操作沿用账本、`management_writes`、owner 和代次约束，QQ 权限由实际响应裁决。
-
-后续行为回归：资料字段时效/跨群隔离见 `tests/test_sdk_onebot_profiles.py`、`test_sdk_profiles.py`；Gateway 资料故障与无成员 Intent 见 `test_gateway_shards.py`；面板手改恢复/账本/并发见 `test_panel_resilience.py`；管理工具畸形页/故障见 `test_sdk_group_tools.py`；部分成功阶段见 `test_sdk_admin_api.py`；`since="0"` 传输请求体见 `test_sdk_read_api.py`；typing owner 生命周期见 `test_event_typing.py`。
+# QQ V2 SDK 覆盖范围
 
 | ID | 官方方法及路径 | 原生方法/归属 | 类别/分页 | 首版状态 |
 | --- | --- | --- | --- | --- |
