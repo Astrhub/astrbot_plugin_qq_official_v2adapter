@@ -73,6 +73,13 @@ async def test_real_astrbot_assembly(config, monkeypatch, qq_reject_server, qq_p
         assert metadata is not None
         owner = metadata.star_cls
         assert owner and not owner.stopping
+        from astrbot.core.provider.register import llm_tools
+        from data.plugins.astrbot_plugin_qq_official_v2adapter.v2.group_tools import TOOL_NAMES
+        owned_tools = [tool for tool in llm_tools.func_list if tool.name in {"qq_v2_" + name for name in TOOL_NAMES}]
+        assert len(owned_tools) == 13
+        assert all(tool.active and type(tool.handler) is partial and tool.handler.args == (owner,)
+                   and tool.handler_module_path == metadata.module_path for tool in owned_tools)
+        assert all(owner.group_tools._registered_tool_active(tool.name) for tool in owned_tools)
         from astrbot.core.star.star_handler import star_handlers_registry
         other_star = lifecycle.star_context.get_registered_star("fixture_button_star")
         assert other_star and other_star.star_cls and other_star.activated

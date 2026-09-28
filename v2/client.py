@@ -9,6 +9,9 @@ from .extensions.management import MANAGEMENT_ACTIONS, NATIVE_ACTIONS
 from .sdk.api.reads import NativeReadMixin
 from .sdk.api.messages import NativeMessageMixin
 from .sdk.api.media import NativeMediaMixin
+from .sdk.api.group_admin import NativeGroupAdminMixin
+from .sdk.api.guild_admin import NativeGuildAdminMixin
+from .sdk.api.menus import NativeMenuMixin
 from .messaging.reply import ACTIVE_FALLBACK_CODES
 from .models import SessionRoute, text_id
 from .protocol import avatar_url
@@ -17,6 +20,8 @@ REMOTE_ACTIONS = {
     "send_group_msg", "send_private_msg", "send_msg", "delete_msg", "get_msg",
     "get_login_info", "get_group_info", "get_group_member_info", "get_group_member_list",
     "set_group_ban", "set_group_kick", "set_group_add_request",
+    "set_group_kick_members", "get_group_shut_list", "_qq_get_group_blacklist",
+    "_qq_set_group_blacklist", "_qq_get_join_approval_strategies",
 }
 UNSUPPORTED_ACTIONS = {
     "get_friend_list", "get_group_list", "set_group_whole_ban", "set_friend_add_request",
@@ -26,11 +31,14 @@ UNSUPPORTED_ACTIONS = {
 NATIVE_READ_ALIASES = frozenset(name for name in vars(NativeReadMixin) if not name.startswith("_")) - REMOTE_ACTIONS | {"iter_group_members"}
 NATIVE_WRITE_ALIASES = frozenset(name for name in vars(NativeMessageMixin) if not name.startswith("_")) - REMOTE_ACTIONS
 NATIVE_WRITE_ALIASES |= frozenset(name for name in vars(NativeMediaMixin) if not name.startswith("_"))
+NATIVE_WRITE_ALIASES |= frozenset(name for mixin in (NativeGroupAdminMixin, NativeGuildAdminMixin, NativeMenuMixin)
+                                for name in vars(mixin) if not name.startswith("_"))
 
 LOCAL_ACTIONS = {"get_status", "get_version_info", "get_stranger_info", "_qq_get_avatar",
                  "_qq_get_capabilities", "can_send_image", "can_send_record"}
 SEND_ACTIONS = {"send_group_msg", "send_private_msg", "send_msg"}
-WRITE_ACTIONS = SEND_ACTIONS | {"delete_msg", "set_group_ban", "set_group_kick", "set_group_add_request"}
+WRITE_ACTIONS = SEND_ACTIONS | {"delete_msg", "set_group_ban", "set_group_kick", "set_group_add_request",
+                                "set_group_kick_members", "_qq_set_group_blacklist"}
 LOCAL_ACTIONS |= {"_qq_get_send_status", "_qq_get_extension_status"}
 # Shared descriptors are used by the network normalizer and capability projection, not a second dispatcher.
 ACTION_PARAMS = {
@@ -42,10 +50,15 @@ ACTION_PARAMS = {
     "get_login_info": {},
     "get_group_info": {"group_id": "id", "no_cache": "bool"},
     "get_group_member_info": {"group_id": "id", "user_id": "id", "no_cache": "bool"},
-    "get_group_member_list": {"group_id": "id"},
+    "get_group_member_list": {"group_id": "id", "no_cache": "bool"},
     "set_group_ban": {"group_id": "id", "user_id": "id", "duration": "int", "_qq_operation_id": "id"},
     "set_group_kick": {"group_id": "id", "user_id": "id", "reject_add_request": "bool", "_qq_operation_id": "id"},
     "set_group_add_request": {"flag": "id", "sub_type": "str", "approve": "bool", "reason": "str"},
+    "set_group_kick_members": {"group_id": "id", "user_ids": "list", "reject_add_request": "bool", "_qq_operation_id": "id"},
+    "get_group_shut_list": {"group_id": "id"},
+    "_qq_get_group_blacklist": {"group_id": "id", "cursor": "str", "limit": "int"},
+    "_qq_set_group_blacklist": {"group_id": "id", "op": "str", "user_ids": "list", "_qq_operation_id": "id"},
+    "_qq_get_join_approval_strategies": {"cursor": "str", "limit": "int"},
     "delete_msg": {"message_id": "id", "_qq_operation_id": "id"},
     "_qq_get_send_status": {"operation_id": "id"}, "_qq_get_extension_status": {"operation_id": "id"},
 }
@@ -54,7 +67,7 @@ ACTION_RETURNS = {
     "get_status": ["online", "good", "state", "platform_id", "generation", "network"],
     "get_version_info": ["app_name", "app_version", "protocol_version"],
     "get_login_info": ["user_id", "nickname", "id_kind", "source"],
-    "get_stranger_info": ["user_id", "id_kind", "scope", "nickname?", "source", "partial", "first_seen", "last_seen", "source_message_id"],
+    "get_stranger_info": ["user_id", "id_kind", "scope", "nickname?", "source", "partial", "first_seen?", "last_seen?", "source_message_id?", "_qq?"],
     "get_group_info": ["group_id", "group_name", "member_count", "partial", "permission"],
     "get_group_member_info": ["group_id", "user_id", "nickname", "role", "bot", "partial", "id_kind"],
     "get_group_member_list": ["array of get_group_member_info"],
@@ -64,6 +77,11 @@ ACTION_RETURNS = {
     "_qq_get_capabilities": ["actions", "network_api", "compatibility"],
     "set_group_ban": ["state"], "delete_msg": ["state"], "set_group_add_request": ["state"],
     "set_group_kick": ["state", "removed"],
+    "set_group_kick_members": ["state", "removed", "blacklist_failed?"],
+    "get_group_shut_list": ["array of real member mutes"],
+    "_qq_get_group_blacklist": ["users", "next_cursor"],
+    "_qq_set_group_blacklist": ["fail_openids"],
+    "_qq_get_join_approval_strategies": ["list", "next_cursor"],
     "can_send_image": ["yes", "implemented", "permission", "reason"],
     "can_send_record": ["yes", "implemented", "permission", "reason"],
 }
@@ -84,6 +102,7 @@ class ClientState:
         self.extensions = None
         self.extension_state = None
         self.network = None
+        self.panels = None
         self.revoked_owners = []
         self.events = None
         self.profiles = None
@@ -105,7 +124,7 @@ class ClientState:
         self.guard()
 
 
-class NativeView(NativeMediaMixin, NativeMessageMixin, NativeReadMixin):
+class NativeView(NativeMenuMixin, NativeGuildAdminMixin, NativeGroupAdminMixin, NativeMediaMixin, NativeMessageMixin, NativeReadMixin):
     def __init__(self, client, *, actor=None, options=None):
         from .sdk.types import CallOptions
         self._client = client
@@ -399,6 +418,34 @@ class V2Client:
                     raise V2Error("invalid_params", "Message type does not match target.")
             route = self.route_for(scene, params.get("group_id" if scene == "group" else "user_id"))
             return await self.send(route, params["message"], onebot=True, auto_escape=params.get("auto_escape", False), operation_id=params.get("_qq_operation_id"))
+        if action in {"get_group_member_info", "get_group_member_list"} and self._state.profiles is not None:
+            from .onebot_profiles import OneBotProfiles
+            if params.keys() - ACTION_PARAMS[action] or type(params.get("no_cache", False)) is not bool:
+                raise V2Error("invalid_params", "Group profile options must match the declared action.")
+            compat = OneBotProfiles(self)
+            group = params.get("group_id")
+            if action == "get_group_member_info":
+                return await compat.member(group, params.get("user_id"), refresh=params.get("no_cache", False))
+            return await compat.members(group, refresh=params.get("no_cache", False))
+        if action in {"set_group_kick_members", "get_group_shut_list", "_qq_get_group_blacklist",
+                      "_qq_set_group_blacklist", "_qq_get_join_approval_strategies"}:
+            if params.keys() - ACTION_PARAMS[action] or self._state.management is None:
+                raise V2Error("invalid_params", "Unknown management parameters or unavailable service.")
+            group = text_id(params.get("group_id")) if "group_id" in ACTION_PARAMS[action] else None
+            if action == "set_group_kick_members":
+                return await self._state.management.group_kick(group, params.get("user_ids"),
+                    blacklist=params.get("reject_add_request", False), operation_id=params.get("_qq_operation_id"))
+            if action == "get_group_shut_list":
+                data = await self._state.management.group_mutes(group)
+                return [{"group_id": group, "user_id": text_id(row.get("member_openid")),
+                         "nickname": row.get("username"), "mute_expire_at": row.get("mute_expire_at"),
+                         "_qq": {"source": "official_query"}} for row in data["members"]]
+            if action == "_qq_get_group_blacklist":
+                return await self.qq.get_group_member_blacklist(group, params.get("cursor"), params.get("limit"))
+            if action == "_qq_set_group_blacklist":
+                return await self.qq.set_group_member_blacklist(group, params.get("op"), params.get("user_ids"),
+                    operation_id=params.get("_qq_operation_id"))
+            return await self.qq.get_join_approval_strategies(params.get("cursor"), params.get("limit"))
         if action in MANAGEMENT_ACTIONS and self._state.management is not None:
             return await self._state.management.onebot(action, params)
         if action in REMOTE_ACTIONS:
@@ -444,6 +491,9 @@ class V2Client:
             scope = f"{self._route.scene}:{self._route.target}"
         if not isinstance(kind, str) or not isinstance(scope, str):
             raise V2Error("identity_scope_required", "Explicit id_kind and scope are required outside a bound chat route.")
+        if action == "get_stranger_info" and self._state.profiles is not None:
+            from .onebot_profiles import OneBotProfiles
+            return OneBotProfiles(self).stranger(user_id, kind, scope)
         if self._state.cache is None:
             raise not_ready()
         record = self._state.cache.lookup(self.identity.robot, kind, scope, user_id)

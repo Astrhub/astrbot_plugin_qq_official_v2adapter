@@ -39,9 +39,12 @@ def plugin_module(monkeypatch):
         if name.startswith(package.__name__ + "."):
             sys.modules.pop(name)
     from astrbot.core.star.star import star_map, star_registry
+    from astrbot.core.provider.register import llm_tools
     from astrbot.core.star.star_handler import star_handlers_registry
     star_map.pop(module.__name__, None)
     star_registry[:] = [m for m in star_registry if m.module_path != module.__name__]
+    llm_tools.func_list[:] = [tool for tool in llm_tools.func_list
+        if getattr(tool.handler, "__module__", None) != module.__name__ and tool.handler_module_path != module.__name__]
     for h in list(star_handlers_registry):
         if h.handler_module_path == module.__name__:
             star_handlers_registry.remove(h)

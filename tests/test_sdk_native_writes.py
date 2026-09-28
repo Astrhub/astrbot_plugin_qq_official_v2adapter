@@ -56,6 +56,7 @@ async def native(tmp_path):
     policy = {"management_writes": True}
     class Management:
         def check(self, *, write=False):
+            http.check()
             if write and not policy["management_writes"]:
                 raise V2Error("management_disabled", "fixture", status=403)
     state = ClientState(identity)
@@ -269,6 +270,37 @@ async def test_native_mutations_are_scoped_and_reuse_extension_ledger(native, na
     with pytest.raises(V2Error) as disabled:
         await getattr(m.client.qq, name)(*args, operation_id="action")
     assert disabled.value.code == "management_disabled" and len(m.calls) == 1
+
+@pytest.mark.parametrize("name,args,url,body", [
+    ("recall_group_message", ("g", "m"), "https://api.bot.qq.com/v2/groups/g/messages/m", None),
+    ("recall_c2c_message", ("u", "m"), "https://api.bot.qq.com/v2/users/u/messages/m", None),
+    ("recall_message", ("c", "m"), "https://api.bot.qq.com/channels/c/messages/m?hidetip=false", None),
+    ("recall_dms", ("dm", "m"), "https://api.bot.qq.com/dms/dm/messages/m?hidetip=false", None),
+    ("patch_guild_message", ("c", "m"), "https://api.bot.qq.com/channels/c/messages/m", {}),
+])
+async def test_offline_receiver_does_not_block_rest_recall_or_patch(native, name, args, url, body):
+    m = native
+    m.client._state.sender.is_online = lambda: False
+    m.client._state.sender.ws_online = lambda: False
+    result = await getattr(m.client.qq, name)(*args, operation_id="offline-rest")
+    assert result == {}
+    assert m.calls == [("PATCH" if name == "patch_guild_message" else "DELETE", url, body, None)]
+    with pytest.raises(V2Error) as sending:
+        await m.client.qq.post_group_message("g", content="offline", operation_id="offline-send")
+    assert sending.value.code == "transport_not_ready" and len(m.calls) == 1
+    with pytest.raises(V2Error) as channel_send:
+        await m.client.qq.post_message("c", content="offline", operation_id="offline-channel")
+    assert channel_send.value.code == "channel_ws_required" and len(m.calls) == 1
+    m.policy["management_writes"] = False
+    with pytest.raises(V2Error) as disabled:
+        await getattr(m.client.qq, name)(*args, operation_id="disabled")
+    assert disabled.value.code == "management_disabled" and len(m.calls) == 1
+    m.policy["management_writes"] = True
+    m.http.check = lambda: (_ for _ in ()).throw(V2Error("service_stopped", "fixture", status=503))
+    with pytest.raises(V2Error) as stopped:
+        await getattr(m.client.qq, name)(*args, operation_id="http-closed")
+    assert stopped.value.code == "service_stopped" and len(m.calls) == 1
+
 
 
 async def test_native_write_alias_conflict_and_unknown_result_never_replayed(native):

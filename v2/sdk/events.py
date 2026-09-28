@@ -5,12 +5,14 @@ import copy
 import json
 import math
 from dataclasses import dataclass
+from typing import cast
 from types import MappingProxyType
 from typing import Any
 
 from ..errors import V2Error
 from .catalog import EVENT_INTENTS, EVENT_NAMES
 
+from .event_types import SHAPES, TypedNotice, invalid_fields, missing_fields
 
 def validate_event(payload):
     if not isinstance(payload, dict):
@@ -75,9 +77,22 @@ class NativeEvent:
         self.known = diagnostic is None and self.op == 0 and self.t in EVENT_NAMES
         self.intent = EVENT_INTENTS.get(self.t) if self.op == 0 else None
 
+        self.shape = SHAPES.get(self.t) if self.known else None
+        self.schema_missing = missing_fields(self.t, payload.get("d")) if self.shape else ()
+        self.schema_invalid = invalid_fields(self.t, payload.get("d")) if self.shape else ()
+        self.schema_valid = self.known and not self.schema_missing and not self.schema_invalid
     @property
     def payload(self):
         return self._payload
+
+    @property
+    def typed(self) -> TypedNotice | None:
+        """Return a detached typed dispatch only when documented shape checks pass."""
+        if not self.schema_valid:
+            return None
+        payload = self.raw()
+        return cast(TypedNotice, {"t": self.t, "d": payload["d"]})
+
 
     def raw(self):
         return copy.deepcopy(self._thaw(self._payload))

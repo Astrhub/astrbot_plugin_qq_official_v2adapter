@@ -55,7 +55,7 @@ class NativeMessageMixin:
             raise
 
     async def _native_write(self, method, path, body, *, kind, operation_id=None, scene=None, target=None,
-                            params=None, allow_message=False):
+                            params=None, allow_message=False, response_check=None):
         self._check()
         state = self._client._state
         if state.extension_state is None or state.http is None or state.sender is None:
@@ -65,15 +65,16 @@ class NativeMessageMixin:
             if manager is None:
                 raise not_ready()
             manager.check(write=True)
-        route = self._client.route_for(scene, target) if scene is not None else None
+        route = self._client.route_for(scene, target) if scene is not None and (allow_message or kind.startswith("recall_") or kind == "patch_guild_message") else None
         if route is not None:
             state.sender.check(route, None)
-            state.sender.connected(route)
         op_id = self._operation_id(operation_id) or uuid4().hex
         op_id = text_id(op_id)
         captured = []
         def validate(result):
             captured.append(result)
+            if response_check is not None:
+                response_check(result)
             if kind == "create_dms":
                 if not isinstance(result, dict) or not isinstance(result.get("guild_id"), str):
                     raise V2Error("invalid_native_response", "QQ returned no usable DM guild ID.", phase="result_unknown", status=502)
@@ -96,7 +97,6 @@ class NativeMessageMixin:
                 state.management.check(write=True)
             if route is not None:
                 state.sender.check(route, None)
-                state.sender.connected(route)
         await state.extension_state.execute(state.http,
             RequestSpec(self._client.identity.robot.environment, method, path, params=params, json_body=body),
             op_id=op_id, kind=kind, validate=validate, before_send=before_send,

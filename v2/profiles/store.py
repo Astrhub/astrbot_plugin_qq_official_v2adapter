@@ -199,6 +199,7 @@ class ProfileStore:
             self._member_room(key)
             self.db.execute("INSERT INTO membership VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(robot,scene,scope,kind,subject) DO UPDATE SET state='present',confirmed='present',at=excluded.at,received=excluded.received,connection=NULL,sequence=NULL,revision=excluded.revision,conflict=NULL",
                             (*key, "present", "present", started_at, self.clock(), None, None, revision, None))
+            self._invalidate_roster(key[:3])
             return True
 
     def _invalidate_roster(self, key):
@@ -250,7 +251,7 @@ class ProfileStore:
         with self.db:
             if self.revision(robot, scene, scope) != started_revision:
                 return False
-            snapshot_revision = self._bump(key) if members else started_revision
+            snapshot_revision = self._bump(key)
             for member in members:
                 user_id = member["member_openid"] if scene == "group" else member["user"]["id"]
                 self._member_room((*key, "member_openid" if scene == "group" else "channel_user_id", user_id))

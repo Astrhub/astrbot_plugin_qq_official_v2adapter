@@ -37,14 +37,16 @@ import v2.sdk, v2.sdk.api.groups, v2.profiles
     assert proc.returncode == 0, proc.stderr
 
 
-def test_catalog_does_not_turn_pending_writes_into_network_actions():
+def test_catalog_excludes_only_documented_deprecated_announces():
     assert len(HTTP_TARGETS) == 98
     assert sum(entry.support != "excluded" for entry in HTTP_TARGETS.values()) == 96
     assert HTTP_TARGETS["A026"].path == "/v2/groups/{group_openid}/members/{member_openid}"
     assert HTTP_TARGETS["A027"].pagination == "cursor"
     assert HTTP_TARGETS["A058"].effect == "write"
     assert HTTP_TARGETS["A041"].support == "native"
-    assert HTTP_TARGETS["A047"].support == HTTP_TARGETS["A048"].support == "pending"
+    assert HTTP_TARGETS["A047"].support == HTTP_TARGETS["A048"].support == "native"
+    assert {item.identifier for item in HTTP_TARGETS.values() if item.support == "excluded"} == {"A079", "A080"}
+    assert all(item.support == "native" for item in HTTP_TARGETS.values() if item.identifier not in {"A079", "A080"})
 
 
 def test_event_names_and_payload_are_defensive():

@@ -5,6 +5,7 @@ import sqlite3
 from ..errors import V2Error
 from ..models import text_id
 from ..protocol import CHAT_EVENTS, RawEnvelope
+from ..profiles.display import enrich_chat
 from .convert import convert_chat
 
 
@@ -115,6 +116,8 @@ class ChatConsumer:
                 self.inbox.retain(self.owner_key, receipt, exc.code, invalid=True)
                 self.last_error, self.state = exc.code, "chat_quarantined"
                 return True
+            if profiles := getattr(self.adapter.owner, "profiles", None):
+                enrich_chat(chat, profiles)
             event = self.adapter.create_event(chat.message)
             self.slots.admit(event)
             unpin = self.store.pin_delivery(chat)

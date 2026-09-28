@@ -255,6 +255,34 @@ class PanelService:
         value.update(enabled=True, platform_id=instance.identity.platform_id, intent=plan["intent"])
         self._save(robot_key(instance.identity.robot), scene, value, control=True)
         return await self.sync(instance, scene)
+    async def manual_write(self, client, panel_id, write):
+        """Serialize native writes with auto-sync and pause only an owned panel."""
+        if self.closed or self.owner.stopping:
+            raise V2Error("service_stopped", "Panel coordinator is stopped.", status=503)
+        client.check()
+        robot = robot_key(client.identity.robot)
+        if robot not in self.locks:
+            if len(self.locks) >= 256:
+                raise V2Error("panel_capacity", "Too many panel coordinators.", status=429)
+            self.locks[robot] = asyncio.Lock()
+        async with self.locks[robot]:
+            client.check()
+            if panel_id is not None:
+                rows = self.db.execute("SELECT scene,body FROM panels WHERE robot=?", (robot,)).fetchall()
+                for scene, body in rows:
+                    value = json.loads(body)
+                    if value.get("panel_id") != panel_id:
+                        continue
+                    if value.get("platform_id") != client.identity.platform_id:
+                        raise V2Error("panel_owner_conflict", "A different instance owns this managed panel.", status=409)
+                    if value.get("pending"):
+                        raise V2Error("panel_result_unknown", "Resolve the prior managed write before overriding it.", status=409)
+                    value.update(enabled=False, state="paused", error={"code": "manual_override"}, checked=self.clock())
+                    self._save(robot, scene, value, control=True)
+                    break
+            return await write()
+
+
 
     def disable(self, instance, scene, *, confirm):
         instance.check_generation()

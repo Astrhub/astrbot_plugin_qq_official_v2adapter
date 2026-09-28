@@ -185,6 +185,97 @@ async def test_roster_refresh_coalesces_per_group_even_when_one_waiter_cancels(p
         release.set()
         await service.close()
 
+async def test_roster_refreshes_are_isolated_by_group_and_robot(profiles):
+    first_robot = InstanceKey("p1", RobotKey("app"))
+    second_robot = InstanceKey("p2", RobotKey("another-app"))
+    started, release = asyncio.Event(), asyncio.Event()
+    calls = []
+    class Reads:
+        def __init__(self, label):
+            self.label = label
+        async def get_group_member_list(self, group, cursor):
+            calls.append((self.label, group, cursor))
+            if len(calls) == 3:
+                started.set()
+            await release.wait()
+            return {"members": [{"member_openid": "shared", "username": self.label + group}], "next_cursor": ""}
+    service_a = Profiles(first_robot, profiles, Reads("a"), continuity_check=lambda: "ws:a")
+    service_b = Profiles(second_robot, profiles, Reads("b"), continuity_check=lambda: "ws:b")
+    jobs = [asyncio.create_task(service_a.refresh_roster("g")),
+            asyncio.create_task(service_a.refresh_roster("h")),
+            asyncio.create_task(service_b.refresh_roster("g"))]
+    try:
+        await asyncio.wait_for(started.wait(), 2)
+        release.set()
+        pages = await asyncio.gather(*jobs)
+        assert len(calls) == 3 and all(page["complete"] for page in pages)
+        assert profiles.get_member(first_robot.robot, "group", "g", "shared")["fields"]["nickname"]["value"] == "ag"
+        assert profiles.get_member(first_robot.robot, "group", "h", "shared")["fields"]["nickname"]["value"] == "ah"
+        assert profiles.get_member(second_robot.robot, "group", "g", "shared")["fields"]["nickname"]["value"] == "bg"
+    finally:
+        release.set()
+        await asyncio.gather(*jobs, return_exceptions=True)
+        await service_a.close()
+        await service_b.close()
+
+
+async def test_close_cancels_roster_and_new_view_can_refresh(profiles):
+    identity = InstanceKey("p", RobotKey("app"))
+    started, cancelled = asyncio.Event(), asyncio.Event()
+    calls = []
+    class Reads:
+        async def get_group_member_list(self, group, cursor):
+            calls.append((group, cursor))
+            if len(calls) == 1:
+                started.set()
+                try:
+                    await asyncio.Event().wait()
+                except asyncio.CancelledError:
+                    cancelled.set()
+                    raise
+            return {"members": [{"member_openid": "fresh", "username": "new view"}], "next_cursor": ""}
+    reads = Reads()
+    service = Profiles(identity, profiles, reads)
+    unfinished = asyncio.create_task(service.refresh_roster("g"))
+    await asyncio.wait_for(started.wait(), 2)
+    await service.close()
+    with pytest.raises(asyncio.CancelledError):
+        await unfinished
+    assert cancelled.is_set() and not service.roster_pending
+    with pytest.raises(V2Error, match="closed"):
+        await service.refresh_roster("g")
+    newer = Profiles(identity, profiles, reads)
+    try:
+        result = await newer.refresh_roster("g")
+        assert len(calls) == 2 and result["count"] == 1
+    finally:
+        await newer.close()
+
+
+async def test_failed_roster_future_is_not_reused_as_a_cached_success(profiles):
+    identity = InstanceKey("p", RobotKey("app"))
+    calls = []
+    class Reads:
+        async def get_group_member_list(self, group, cursor):
+            calls.append((group, cursor))
+            if len(calls) == 1:
+                raise V2Error("qq_rate_limited", "Temporary read rejection", status=429, phase="rejected")
+            return {"members": [{"member_openid": "observed", "username": "next read"}], "next_cursor": ""}
+    service = Profiles(identity, profiles, Reads())
+    try:
+        with pytest.raises(V2Error) as first:
+            await service.refresh_roster("g")
+        assert first.value.code == "qq_rate_limited"
+        with pytest.raises(V2Error) as missing:
+            profiles.get_member(identity.robot, "group", "g", "observed")
+        assert missing.value.code == "identity_not_observed"
+        fresh = await service.refresh_roster("g")
+        assert len(calls) == 2 and fresh["count"] == 1
+        assert profiles.get_member(identity.robot, "group", "g", "observed")["fields"]["nickname"]["value"] == "next read"
+    finally:
+        await service.close()
+
+
 
 
 async def test_roster_populates_present_members_without_elevating_cached_role(profiles):

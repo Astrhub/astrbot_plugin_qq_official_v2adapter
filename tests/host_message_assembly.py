@@ -53,6 +53,26 @@ async def host_message_roundtrip(lifecycle, client, owner, instance, callback, r
         assert event.is_at_or_wake_command and event.get_message_str() == "sid"
         assert len(bodies) == 1 and "UMO: 「webhook-fixture:GroupMessage:group-one」" in bodies[0]["content"]
         assert "message_reference" not in bodies[0] and "qqbot-at-user" not in bodies[0]["content"]
+        from astrbot.core import sp
+        from data.plugins.astrbot_plugin_qq_official_v2adapter.v2.errors import V2Error
+        from data.plugins.astrbot_plugin_qq_official_v2adapter.v2 import PLUGIN_NAME
+        assert (await owner.group_tools.call(event, "find_known_members", query="absent-name"))["candidates"] == []
+        prior = await sp.get_async("umo", event.unified_msg_origin, "session_plugin_config", default=None)
+        filtered = copy.deepcopy(prior or {})
+        filtered.setdefault(event.unified_msg_origin, {})["disabled_plugins"] = [PLUGIN_NAME]
+        await sp.put_async("umo", event.unified_msg_origin, "session_plugin_config", filtered)
+        try:
+            try:
+                await owner.group_tools.call(event, "find_known_members", query="absent-name")
+            except V2Error as exc:
+                assert exc.code == "tool_disabled"
+            else:
+                raise AssertionError("Disabled plugin tool executed")
+        finally:
+            if prior is None:
+                await sp.remove_async("umo", event.unified_msg_origin, "session_plugin_config")
+            else:
+                await sp.put_async("umo", event.unified_msg_origin, "session_plugin_config", prior)
         event, bodies = await receive("/sid")
         assert not event.is_at_or_wake_command and not bodies
         assert not any(h.handler_name == "sid" for h in event.get_extra("activated_handlers"))

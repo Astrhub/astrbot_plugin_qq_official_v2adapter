@@ -1,4 +1,4 @@
-"""M4/M5 methods are importable with stable signatures and non-OneBot aliases."""
+"""Native methods are importable with stable signatures and non-OneBot aliases."""
 
 import inspect
 
@@ -45,4 +45,4 @@ def test_m4m5_public_methods_import_and_positions():
     assert inspect.signature(client.qq.recall_message).parameters["hidetip"].default is False
     assert "begin_upload" in client.capabilities()["sdk"]["native_implemented"]
     assert "post_group_message" in client.capabilities()["sdk"]["native_implemented"]
-    assert "create_guild_role" not in client.capabilities()["sdk"]["native_implemented"]
+    assert "create_guild_role" in client.capabilities()["sdk"]["native_implemented"]

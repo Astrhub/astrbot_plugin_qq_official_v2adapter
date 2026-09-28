@@ -117,9 +117,6 @@ A097 PUT /channels/{channel_id}/threads M6
 A098 DELETE /channels/{channel_id}/threads/{thread_id} M6
 """
 
-_LEGACY_CORE = frozenset("""A002 A003 A005 A006 A007 A008 A009 A010 A012 A014 A016 A017 A018 A019
-A020 A021 A022 A023 A025 A028 A029 A030 A033 A034 A043 A044 A045 A046 A049 A050 A051 A052
-A053 A054 A055 A056 A057 A058 A062 A063""".split())
 _PAGES = {"A004": "limit", "A027": "cursor", "A031": "cursor", "A033": "cursor", "A035": "cursor",
           "A043": "cursor", "A056": "after", "A059": "start_index", "A086": "cookie"}
 _INVITED = frozenset("A026 A027 A029 A030 A031 A032 A033 A034 A035 A036 A037 A038 A039 A040".split())
@@ -128,8 +125,7 @@ _INVITED = frozenset("A026 A027 A029 A030 A031 A032 A033 A034 A035 A036 A037 A03
 def _build():
     result = {}
     for identifier, method, path, stage in (line.split() for line in _TARGETS.strip().splitlines()):
-        support = ("excluded" if stage == "X" else "native" if method == "GET" or stage == "M5"
-                   else "internal" if identifier in _LEGACY_CORE else "pending")
+        support = "excluded" if stage == "X" else "native"
         result[identifier] = Endpoint(identifier, method, path, stage,
                                       "read" if method == "GET" else "write", _PAGES.get(identifier), support,
                                       "invitation_only_unverified" if identifier in _INVITED else "qq_response_required")

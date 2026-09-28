@@ -74,8 +74,15 @@ ID 必须是原始字符串，数值 ID 不自动转换。布尔参数可用布�
 
 Pages“实际网络状态与能力”及 `_qq_get_capabilities` 使用同一目录，列参数、实际返回字段、缺失项、OpenID语义和权限证据。实现存在不代表应用获权；完整群/好友列表、缺完整历史的 `get_msg` 等继续不支持。
 
+## 进程内扩展动作与资料来源
+
+`event.bot`、`client.api` 与 `client.call_action` 共用 OneBot 分派；即使可选网络关闭，进程内仍可调用。新增等价动作：`set_group_kick_members`（≤20、可部分成功）、`get_group_shut_list`、`_qq_get_group_blacklist`、`_qq_set_group_blacklist`、`_qq_get_join_approval_strategies`。这些动作在网络入口沿用显式允许表、只读/写开关及 `management_writes`；原生 `.qq` 的其余具名写接口不自动暴露为网络 action。QQ群名单单页和不具备当前成员事件连续性的历史记录不能混成当前完整名单。
+
+`get_group_member_info` 默认缓存优先，`no_cache=true` 访问 QQ；`get_group_member_list` 默认复用有连续性的新鲜完整快照，否则重新逐页读取 QQ，明确刷新不返回旧缓存。成员 `_qq` 含来源、成员状态及观察时间；仅确认的昵称/role/bot/join_time 映射，离群的旧 role 不当作当前管理员。`get_stranger_info` 有真实聊天观察时为 `source=chat_cache`，保留原 `first_seen/last_seen/source_message_id`；只有历史资料时返回 `source=profile_cache`、历史 `as_of/stale/membership`，不产生聊天时间和消息 ID；二者皆无则 `identity_not_observed`。实例级查询必须给真实 `scope` 与 `id_kind`，`no_cache=true` 明确 unsupported，不能静默将历史当作实时。群名重名不自动选目标，明确成员 OpenID 或真实 @ 才可进行管理。
+
+
 ## 回退与验证边界
 
-P5不升级数据库/schema。回退前关闭网络总闸并停用实例，备份宿主配置与完整插件数据，核对未完成/未知账本；不要通过删库重放。旧P4不提供网络入口；不回退到无法识别现有账本的更早版本。
+P5 历史版本未升级 schema；本版 `messaging.sqlite3` v4、内嵌 `extension_schema` v4、`transport.sqlite3` v4、`profiles.sqlite3` v1。回退前关闭网络总闸、停用实例，停机恢复匹配目标代码的宿主配置及完整插件数据备份；核对未完成/unknown/partial，不删库重发，不用旧代码直接打开新库。
 
 本阶段验收为隔离 loopback、合成身份、真实宿主装配和页面 Node 夹具，不代表真实 QQ 权限、扫码/按钮/部署、浏览器视觉 E2E 或长期负载验证。

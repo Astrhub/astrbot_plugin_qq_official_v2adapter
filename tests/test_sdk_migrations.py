@@ -81,6 +81,48 @@ def test_v3_source_schema_adds_event_id_without_erasing_pending_operations(tmp_p
     finally:
         upgraded.close()
 
+async def test_extension_v3_to_v4_adds_owned_tool_operations_without_erasing_unknown(tmp_path):
+    path = tmp_path / "messages.sqlite3"
+    robot = RobotKey("app")
+    messages = MessageStore(path)
+    extension = ExtensionStore(messages)
+    try:
+        extension.begin(robot, "legacy-unknown", "group_mute", "group:g/member:u")
+        with messages.transaction():
+            messages.db.execute("UPDATE extension_ops SET state='unknown' WHERE op_id='legacy-unknown'")
+        assert messages.db.execute("SELECT version FROM extension_schema").fetchone()[0] == 4
+    finally:
+        await extension.close()
+        messages.close()
+    db = sqlite3.connect(path)
+    db.execute("DROP TABLE tool_ops")
+    db.execute("UPDATE extension_schema SET version=3")
+    db.commit()
+    db.close()
+    reopened = MessageStore(path)
+    upgraded = ExtensionStore(reopened)
+    try:
+        assert reopened.db.execute("PRAGMA user_version").fetchone()[0] == 4
+        assert reopened.db.execute("SELECT version FROM extension_schema").fetchone()[0] == 4
+        assert upgraded.operation(robot, "legacy-unknown")["state"] == "unknown"
+        upgraded.claim_tool(robot, "tool-operation", "p", "g", "actor", "p:GroupMessage:g", "mute_members", {"members": ["u"]})
+        assert upgraded.tool_owner(robot, "tool-operation", "p", "g", "actor", "p:GroupMessage:g") == "mute_members"
+    finally:
+        await upgraded.close()
+        reopened.close()
+    db = sqlite3.connect(path)
+    db.execute("UPDATE extension_schema SET version=5")
+    db.commit()
+    db.close()
+    check = MessageStore(path)
+    try:
+        with pytest.raises(V2Error) as future:
+            ExtensionStore(check)
+        assert future.value.code == "extension_state_corrupt"
+    finally:
+        check.close()
+
+
 
 
 def test_cross_lane_binding_and_sequence_collision(tmp_path):

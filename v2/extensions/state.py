@@ -21,7 +21,7 @@ class ExtensionStore:
         self.closed = False
         self.storage_failed = False
         if self.db.execute("SELECT 1 FROM sqlite_master WHERE name='extension_schema'").fetchone():
-            if self.db.execute("SELECT version FROM extension_schema").fetchone()[0] not in (1, 2):
+            if self.db.execute("SELECT version FROM extension_schema").fetchone()[0] not in (1, 2, 3, 4):
                 raise V2Error("extension_state_corrupt", "Unsupported extension schema; nothing was reset.", status=503)
         self.db.executescript("""
             CREATE TABLE IF NOT EXISTS extension_schema (version INTEGER NOT NULL);
@@ -38,10 +38,16 @@ class ExtensionStore:
             CREATE TABLE IF NOT EXISTS extension_events(robot TEXT,event_key TEXT,name TEXT,received REAL,metadata TEXT,
                 ack TEXT,business TEXT,error TEXT,updated REAL,PRIMARY KEY(robot,event_key));
         """)
-        if "context" not in {row[1] for row in self.db.execute("PRAGMA table_info(extension_ops)")}:
-            self.db.execute("ALTER TABLE extension_ops ADD COLUMN context TEXT")
-        self.db.execute("UPDATE extension_schema SET version=2")
-        self.db.commit()
+        with self.db:
+            if "context" not in {row[1] for row in self.db.execute("PRAGMA table_info(extension_ops)")}:
+                self.db.execute("ALTER TABLE extension_ops ADD COLUMN context TEXT")
+            if self.db.execute("SELECT version FROM extension_schema").fetchone()[0] < 4:
+                self.db.execute("""CREATE TABLE IF NOT EXISTS tool_ops(
+                robot TEXT NOT NULL, op_id TEXT NOT NULL, platform_id TEXT NOT NULL, scope TEXT NOT NULL,
+                actor TEXT NOT NULL, umo TEXT NOT NULL, kind TEXT NOT NULL, request_hash TEXT NOT NULL,
+                request TEXT NOT NULL, created REAL NOT NULL, PRIMARY KEY(robot,op_id))""")
+                self.db.execute("CREATE INDEX IF NOT EXISTS tool_ops_age ON tool_ops(created)")
+                self.db.execute("UPDATE extension_schema SET version=4")
         with self.messages.transaction():
             self.db.execute("UPDATE extension_ops SET state='unknown' WHERE state='in_flight'")
             self.db.execute("UPDATE extension_ops SET state='not_sent' WHERE state='reserved'")
@@ -52,6 +58,7 @@ class ExtensionStore:
         now = self.messages.now()
         self.db.execute("DELETE FROM extension_rates WHERE stamp<=?", (now - 60,))
         self.db.execute("DELETE FROM extension_ops WHERE updated<=? AND state NOT IN ('reserved','in_flight','unknown')", (now - 86400,))
+        self.db.execute("DELETE FROM tool_ops WHERE created<? AND NOT EXISTS (SELECT 1 FROM extension_ops e WHERE e.robot=tool_ops.robot AND e.op_id=tool_ops.op_id AND e.state IN ('reserved','in_flight','unknown'))", (now - 86400,))
         self.db.execute("UPDATE extension_ops SET result=NULL,error=NULL,context=NULL,state='history_evicted' WHERE rowid IN (SELECT rowid FROM extension_ops WHERE state IN ('succeeded','partial','not_sent','rejected') ORDER BY updated DESC,rowid DESC LIMIT -1 OFFSET ?)", (self.capacity,))
 
     def begin(self, robot, op_id, kind, binding, *, context=None):
@@ -112,6 +119,39 @@ class ExtensionStore:
             raise V2Error("operation_not_found", "No extension operation belongs to this robot.", status=404)
         return {**dict(row), "result": json.loads(row["result"]) if row["result"] else None,
                 "error": json.loads(row["error"]) if row["error"] else None, "context": json.loads(row["context"]) if row["context"] else None}
+
+    def claim_tool(self, robot, op_id, platform, scope, actor, umo, kind, request, *, logical=None):
+        """Freeze a caller-visible tool request before any management side effect."""
+        key = robot_key(robot), text_id(op_id)
+        metadata = [text_id(value) for value in (platform, scope, actor, umo, kind)]
+        try:
+            serialized = json.dumps(request, sort_keys=True, ensure_ascii=False, allow_nan=False)
+        except (TypeError, ValueError):
+            raise V2Error("invalid_tool_request", "Tool arguments must be finite JSON values.") from None
+        if len(serialized.encode()) > 16384:
+            raise V2Error("invalid_tool_request", "Tool request exceeds 16 KiB.", status=413)
+        fingerprint = digest([*metadata, request if logical is None else logical])
+        with self.messages.transaction():
+            self.prune()
+            row = self.db.execute("SELECT platform_id,scope,actor,umo,kind,request_hash,request FROM tool_ops WHERE robot=? AND op_id=?", key).fetchone()
+            if row:
+                if tuple(row[:6]) != (*metadata, fingerprint):
+                    raise V2Error("operation_conflict", "Tool operation was already bound to a different actor or request.", status=409)
+                return json.loads(row["request"])
+            if self.db.execute("SELECT count(*) FROM tool_ops WHERE robot=?", (key[0],)).fetchone()[0] >= self.capacity:
+                raise V2Error("tool_capacity", "Retained tool operations are at capacity.", status=503)
+            self.db.execute("INSERT INTO tool_ops VALUES(?,?,?,?,?,?,?,?,?,?)",
+                            (*key, *metadata, fingerprint, serialized, self.messages.now()))
+        return request
+
+    def tool_owner(self, robot, op_id, platform, scope, actor, umo):
+        """Return only the same event-session actor's retained tool operation kind."""
+        values = robot_key(robot), text_id(op_id), *(text_id(value) for value in (platform, scope, actor, umo))
+        row = self.db.execute("SELECT kind FROM tool_ops WHERE robot=? AND op_id=? AND platform_id=? AND scope=? AND actor=? AND umo=?", values).fetchone()
+        if row is None:
+            raise V2Error("operation_not_found", "No tool operation belongs to this actor and session.", status=404)
+        return row["kind"]
+
 
     async def execute(self, *args, **kwargs):
         if self.storage_failed:

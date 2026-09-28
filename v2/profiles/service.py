@@ -86,7 +86,7 @@ class Profiles:
             self.store.db.execute("DELETE FROM refresh_state WHERE robot=? AND scene='group' AND scope=? AND kind='member_openid' AND subject=?",
                                   (self._robot_key(), group, member))
 
-    async def refresh_roster(self, group_openid: str) -> dict:
+    async def refresh_roster(self, group_openid: str, *, with_rows=False) -> dict:
         """Coalesce a full native roster read for this bot and group."""
         self._check()
         group = text_id(group_openid)
@@ -103,7 +103,8 @@ class Profiles:
                 if not completed.cancelled():
                     completed.exception()
             future.add_done_callback(settled)
-        return await asyncio.shield(future)
+        result = await asyncio.shield(future)
+        return result if with_rows else {key: value for key, value in result.items() if key != "rows"}
 
     async def _refresh_roster(self, group):
         self._check()
@@ -144,7 +145,22 @@ class Profiles:
         if continuity and current_connection == continuity and self.store.revision(robot, "group", group) == revision:
             self.store.set_continuity(robot, "group", group, True)
         self.store.record_roster(robot, "group", group, rows, started_revision=revision, started_at=started)
-        return self.get_roster_status(group)
+        return {**self.get_roster_status(group), "rows": rows}
+
+    def cached_roster(self, group_openid: str):
+        """Return only a fresh, receiver-continuous complete roster snapshot."""
+        status = self.get_roster_status(group_openid)
+        if (not status["complete"] or not status["continuous"] or
+                status.get("finished", 0) < self.store.clock() - self.store.stale_seconds):
+            return None
+        robot = self.identity.robot
+        from .store import key_of
+        members = self.store.db.execute("SELECT subject FROM membership WHERE robot=? AND scene='group' AND scope=? AND kind='member_openid' AND revision=? AND state='present' ORDER BY subject",
+                                        (key_of(robot), group_openid, status["revision"])).fetchall()
+        if len(members) != status["count"]:
+            return None
+        return [self.store.get_member(robot, "group", group_openid, row[0]) for row in members]
+
 
 
     def list_known_members(self, group_openid: str, *, cursor="", limit=100) -> dict:
@@ -156,6 +172,9 @@ class Profiles:
     def get_roster_status(self, group_openid: str) -> dict:
         self._check()
         status = self.store.roster_status(self.identity.robot, "group", group_openid)
+        if status["revision"] != self.store.revision(self.identity.robot, "group", group_openid):
+            status["complete"] = False
+            status["reason"] = "roster_revision_changed"
         if self.store.last_error or not self.continuity_check():
             status["continuous"] = False
             if status["complete"]:

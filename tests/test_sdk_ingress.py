@@ -264,6 +264,23 @@ async def test_invalid_known_dispatch_is_retained_and_raw_observers_see_diagnost
     await typed.close()
 
 
+async def test_known_but_incomplete_shape_is_raw_only_without_inventing_a_guild(receiver):
+    owner, instance = receiver
+    raw = instance.client.qq.events.subscribe({"*"}, owner=object())
+    typed = instance.client.qq.events.subscribe({"GUILD_CREATE"}, owner=object())
+    payload = {"op": 0, "id": "guild-incomplete", "t": "GUILD_CREATE", "d": {"name": "unscoped"}}
+    owner.inbox.accept(instance.identity.settings_key, RawEnvelope(payload, NOW))
+    try:
+        assert instance.core.step()
+        assert typed.queue.empty()
+        event = raw.queue.get_nowait()[0]
+        assert event.known and event.d["name"] == "unscoped"
+        assert event.schema_missing == ("id",) and event.typed is None
+        assert instance.client.qq.events.progress(event.context.receipt)["core_state"] == "done"
+    finally:
+        await raw.close()
+        await typed.close()
+
 async def test_oversized_sdk_structure_is_quarantined_without_poisoning_chat(receiver):
     owner, instance = receiver
     key = instance.identity.settings_key

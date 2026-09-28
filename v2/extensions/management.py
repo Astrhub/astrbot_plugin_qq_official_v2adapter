@@ -16,7 +16,9 @@ from ..models import text_id
 from ..protocol import RequestSpec
 
 MANAGEMENT_ACTIONS = {"get_group_info", "get_group_member_info", "get_group_member_list", "get_login_info",
-                      "set_group_ban", "set_group_kick", "set_group_add_request", "delete_msg"}
+                      "set_group_ban", "set_group_kick", "set_group_add_request", "delete_msg",
+                      "set_group_kick_members", "get_group_shut_list", "_qq_get_group_blacklist",
+                      "_qq_set_group_blacklist", "_qq_get_join_approval_strategies"}
 NATIVE_ACTIONS = {"group_info", "bot_state", "group_member", "group_members", "group_ban", "group_kick", "group_mutes",
                   "join_requests", "approve", "login_info", "share", "delete_message", "guild_info", "channels",
                   "channel_info", "channel_create", "channel_update", "channel_delete", "guild_member", "guild_members",

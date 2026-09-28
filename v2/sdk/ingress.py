@@ -191,7 +191,7 @@ class CoreConsumer:
                     item["session_id"], item["received_at"], receipt, receipt <= self.recovered_through,
                     core_state="pending", host_state="pending" if name in CHAT_EVENTS else "not_applicable")
                 event = NativeEvent(payload, context, client=self.adapter.client.qq, reply_context=reply)
-                bus.publish(event)
+                bus.publish(event, raw_only=not event.schema_valid)
                 self.published.add(receipt)
             self.inbox.core_done(self.owner_key, receipt, state="degraded" if error else "done", error=error)
             if name not in CHAT_EVENTS:
