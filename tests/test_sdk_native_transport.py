@@ -4,9 +4,9 @@ import json
 
 import pytest
 
-from test_sdk_native_writes import native
 from v2.transport.http import HTTPTransport
 
+pytest_plugins = ("test_sdk_native_writes",)
 
 CASES = [
     ("post_group_message", ("g/1",), {"content": "hi"}, "POST", "https://api.bot.qq.com/v2/groups/g%2F1/messages", {"msg_type": 0, "content": "hi"}),

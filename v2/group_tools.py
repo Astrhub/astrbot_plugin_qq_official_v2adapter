@@ -16,7 +16,6 @@ from .models import text_id
 from .onebot_profiles import official_member
 from .profiles.store import key_of
 
-
 READ_TOOLS = {"get_group", "get_member", "list_members", "find_known_members"}
 GROUP_ADMIN_TOOLS = {"list_mutes", "mute_members", "kick_members", "list_blacklist", "change_blacklist",
                      "list_join_requests", "approve_join_request"}

@@ -1,6 +1,5 @@
 """Named native QQ reads, preserving raw response fields and bounded page traversal."""
 
-import asyncio
 import json
 from urllib.parse import quote
 

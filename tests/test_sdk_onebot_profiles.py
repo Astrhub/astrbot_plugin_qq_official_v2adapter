@@ -4,7 +4,13 @@ from types import SimpleNamespace
 
 import pytest
 
-from v2.client import ACTION_PARAMS, REMOTE_ACTIONS, WRITE_ACTIONS, ClientState, V2Client
+from v2.client import (
+    ACTION_PARAMS,
+    REMOTE_ACTIONS,
+    WRITE_ACTIONS,
+    ClientState,
+    V2Client,
+)
 from v2.errors import V2Error
 from v2.messaging.store import IdentityView, MessageStore, robot_key
 from v2.models import InstanceKey, RobotKey

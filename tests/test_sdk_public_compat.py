@@ -8,7 +8,6 @@ from pathlib import Path
 from v2.client import ClientState, NativeView, V2Client
 from v2.models import InstanceKey, RobotKey
 
-
 TARGET_PUBLIC = """
 get_guild get_guild_roles create_guild_role update_guild_role delete_guild_role
 create_guild_role_member delete_guild_role_member get_guild_member get_delete_member

@@ -174,7 +174,7 @@ class ExtensionDispatcher:
         except asyncio.CancelledError:
             self.update(key, ack="unknown")
             raise
-        except V2Error as exc:
+        except V2Error:
             try:
                 retained = self.state.operation(self.adapter.identity.robot, op_id)["state"]
             except V2Error:

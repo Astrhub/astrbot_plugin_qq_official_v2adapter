@@ -2,9 +2,8 @@
 
 import pytest
 
-from v2.sdk.events import EventContext, NativeEvent
 from v2.sdk.event_types import SHAPES
-
+from v2.sdk.events import EventContext, NativeEvent
 
 DOC = "plan/qq-wiki-v2/develop/api-v2/"
 AUTO = DOC + "autogen/event/"

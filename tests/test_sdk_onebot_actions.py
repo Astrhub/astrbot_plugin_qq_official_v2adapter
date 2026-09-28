@@ -4,12 +4,11 @@ from types import SimpleNamespace
 from urllib.parse import urlsplit
 
 import pytest
-from test_management import management
-from test_sdk_native_writes import native
 
 from v2.client import ClientState, V2Client
 from v2.errors import V2Error
 
+pytest_plugins = ("test_management", "test_sdk_native_writes")
 
 async def test_onebot_mutes_and_bulk_kick_use_actual_qq_and_existing_partial_ledger(management):
     m = management

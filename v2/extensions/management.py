@@ -11,9 +11,9 @@ from uuid import uuid4
 
 from ..errors import V2Error, unsupported
 from ..messaging.store import robot_key
-from .state import digest
 from ..models import text_id
 from ..protocol import RequestSpec
+from .state import digest
 
 MANAGEMENT_ACTIONS = {"get_group_info", "get_group_member_info", "get_group_member_list", "get_login_info",
                       "set_group_ban", "set_group_kick", "set_group_add_request", "delete_msg",

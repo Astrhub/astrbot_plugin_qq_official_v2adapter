@@ -154,6 +154,7 @@ async def test_native_send_cancellation_after_preflight_retains_unknown(native):
 
 async def test_ambiguous_observed_message_id_does_not_select_a_favorable_scope(native):
     from test_messaging_state import chat_payload
+
     from v2.messaging.convert import convert_chat
     from v2.protocol import RawEnvelope
     m = native
@@ -167,6 +168,7 @@ async def test_ambiguous_observed_message_id_does_not_select_a_favorable_scope(n
 
 async def test_observed_chat_outer_event_id_cannot_cross_group(native):
     from test_messaging_state import chat_payload
+
     from v2.messaging.convert import convert_chat
     from v2.protocol import RawEnvelope
     m = native
@@ -469,6 +471,7 @@ async def test_owned_upload_handle_put_and_finish_release_blob(native, tmp_path)
 
 async def test_caller_stream_ownership_and_multipart_body(native, tmp_path):
     import io
+
     from v2.media.io import BlobPool
     from v2.media.service import MediaService
     m = native

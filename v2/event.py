@@ -5,14 +5,14 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from astrbot.core.message.components import At, AtAll
-from astrbot.core.platform.astrbot_message import Group
 from astrbot.core.platform.astr_message_event import AstrMessageEvent
+from astrbot.core.platform.astrbot_message import Group
 
 from .errors import V2Error, unsupported
-
 from .media.service import FILE_TYPES
 from .media.types import MediaInput
 from .models import text_id
+
 
 @dataclass(frozen=True)
 class V2MediaReceipt:

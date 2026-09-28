@@ -6,8 +6,9 @@ from urllib.parse import urlsplit
 
 import pytest
 
-from test_sdk_native_writes import native
 from v2.errors import V2Error
+
+pytest_plugins = ("test_sdk_native_writes",)
 
 
 PANEL = {"items": [], "remark": ""}

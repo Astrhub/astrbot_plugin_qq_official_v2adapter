@@ -7,20 +7,19 @@ from urllib.parse import urlsplit
 import pytest
 from astrbot.core.platform.platform_metadata import PlatformMetadata
 from test_messaging_state import chat_payload
-from test_lifecycle import plugin_module
-from test_sdk_native_writes import native
 
 from v2 import PLATFORM_TYPE
 from v2.errors import V2Error
 from v2.event import V2MessageEvent
 from v2.extensions.management import Management
-from v2.group_tools import GroupTools, TOOL_NAMES
-from v2.sdk.api.groups import GroupReads
-from v2.protocol import RequestSpec
+from v2.group_tools import TOOL_NAMES, GroupTools
 from v2.messaging.convert import convert_chat
-from v2.profiles.store import ProfileStore
 from v2.profiles.service import Profiles
-from v2.protocol import RawEnvelope
+from v2.profiles.store import ProfileStore
+from v2.protocol import RawEnvelope, RequestSpec
+from v2.sdk.api.groups import GroupReads
+
+pytest_plugins = ("test_lifecycle", "test_sdk_native_writes")
 
 
 @pytest.fixture

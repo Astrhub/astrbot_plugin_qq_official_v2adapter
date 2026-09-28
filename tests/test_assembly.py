@@ -74,7 +74,9 @@ async def test_real_astrbot_assembly(config, monkeypatch, qq_reject_server, qq_p
         owner = metadata.star_cls
         assert owner and not owner.stopping
         from astrbot.core.provider.register import llm_tools
-        from data.plugins.astrbot_plugin_qq_official_v2adapter.v2.group_tools import TOOL_NAMES
+        from data.plugins.astrbot_plugin_qq_official_v2adapter.v2.group_tools import (
+            TOOL_NAMES,
+        )
         owned_tools = [tool for tool in llm_tools.func_list if tool.name in {"qq_v2_" + name for name in TOOL_NAMES}]
         assert len(owned_tools) == 13
         assert all(tool.active and type(tool.handler) is partial and tool.handler.args == (owner,)

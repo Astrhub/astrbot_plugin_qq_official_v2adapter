@@ -6,7 +6,6 @@ from types import SimpleNamespace
 import pytest
 from astrbot.core.platform.platform_metadata import PlatformMetadata
 from test_media_boundary import PNG
-from test_media_upload import media
 from test_messaging_state import NOW, chat_payload
 
 from v2.client import ClientState, V2Client
@@ -15,6 +14,8 @@ from v2.event import V2MediaReceipt, V2MessageEvent
 from v2.messaging.convert import convert_chat
 from v2.messaging.outbound import SendingCore
 from v2.protocol import RawEnvelope
+
+pytest_plugins = ("test_media_upload",)
 
 
 @pytest.fixture

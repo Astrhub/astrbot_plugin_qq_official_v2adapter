@@ -6,7 +6,6 @@ from astrbot.core.message.components import At, Reply
 
 from ..errors import V2Error
 
-
 KIND = {"group": "member_openid", "c2c": "user_openid", "channel": "channel_user_id", "dm": "channel_user_id"}
 
 

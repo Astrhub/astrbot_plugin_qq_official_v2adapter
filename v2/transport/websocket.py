@@ -2,8 +2,8 @@
 
 import asyncio
 import random
-from dataclasses import replace
 import time
+from dataclasses import replace
 
 import aiohttp
 from astrbot.api import logger

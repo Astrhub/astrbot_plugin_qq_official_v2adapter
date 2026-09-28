@@ -6,15 +6,15 @@ import weakref
 from . import PLATFORM_TYPE, VERSION
 from .errors import V2Error, not_ready, unsupported
 from .extensions.management import MANAGEMENT_ACTIONS, NATIVE_ACTIONS
-from .sdk.api.reads import NativeReadMixin
-from .sdk.api.messages import NativeMessageMixin
-from .sdk.api.media import NativeMediaMixin
-from .sdk.api.group_admin import NativeGroupAdminMixin
-from .sdk.api.guild_admin import NativeGuildAdminMixin
-from .sdk.api.menus import NativeMenuMixin
 from .messaging.reply import ACTIVE_FALLBACK_CODES
 from .models import SessionRoute, text_id
 from .protocol import avatar_url
+from .sdk.api.group_admin import NativeGroupAdminMixin
+from .sdk.api.guild_admin import NativeGuildAdminMixin
+from .sdk.api.media import NativeMediaMixin
+from .sdk.api.menus import NativeMenuMixin
+from .sdk.api.messages import NativeMessageMixin
+from .sdk.api.reads import NativeReadMixin
 
 REMOTE_ACTIONS = {
     "send_group_msg", "send_private_msg", "send_msg", "delete_msg", "get_msg",
@@ -114,7 +114,8 @@ class ClientState:
         try:
             ref = weakref.ref(owner)
         except TypeError:
-            ref = lambda owner=owner: owner
+            def ref(owner=owner):
+                return owner
         self.revoked_owners.append(ref)
 
 

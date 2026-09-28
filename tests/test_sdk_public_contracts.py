@@ -6,7 +6,6 @@ from v2.client import ClientState, V2Client
 from v2.models import InstanceKey, RobotKey
 from v2.sdk import NativeUploadHandle
 
-
 M4 = (
     "get_gateway", "get_gateway_bot", "get_ws_url", "me", "me_guilds", "get_message",
     "get_group_info", "get_group_bot_state", "get_group_member_info", "get_group_member_list",

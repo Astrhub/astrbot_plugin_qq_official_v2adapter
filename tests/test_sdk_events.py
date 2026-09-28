@@ -6,11 +6,11 @@ import subprocess
 import sys
 
 import pytest
-from v2.sdk.http_catalog import HTTP_TARGETS
 
 from v2.errors import V2Error
 from v2.sdk.catalog import CONNECTION_EVENTS, EVENT_INTENTS
 from v2.sdk.events import EventBus, EventContext, NativeEvent
+from v2.sdk.http_catalog import HTTP_TARGETS
 
 
 def context(*, recovered=False):
@@ -86,19 +86,24 @@ async def test_full_queue_gap_recovered_filter_and_owner_close():
 async def test_callback_timeout_isolated_and_close_is_idempotent():
     bus = EventBus()
     received = []
+    fast_done = asyncio.Event()
+    slow_started = asyncio.Event()
     async def blocked(_event):
+        slow_started.set()
         await asyncio.Event().wait()
     async def ok(notice):
         received.append(notice.t)
+        fast_done.set()
     slow = bus.subscribe({"GROUP_MEMBER_ADD"}, owner=object(), callback=blocked, timeout=0.01)
     fast = bus.subscribe({"GROUP_MEMBER_ADD"}, owner=object(), callback=ok)
     bus.publish(event())
     async with asyncio.timeout(1):
-        while not received or not slow.failures:
-            await asyncio.sleep(0)
-    assert received == ["GROUP_MEMBER_ADD"] and slow.failures == 1
+        await asyncio.gather(fast_done.wait(), slow.queue.join())
+    assert slow_started.is_set() and received == ["GROUP_MEMBER_ADD"] and slow.failures == 1
     await slow.close()
     await slow.close()
+    await fast.close()
+    assert fast.closed
     await bus.close()
     assert not bus.subscriptions
     assert bus.diagnostics()["failures"] == 1

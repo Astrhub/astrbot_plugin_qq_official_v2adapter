@@ -5,14 +5,13 @@ import copy
 import json
 import math
 from dataclasses import dataclass
-from typing import cast
 from types import MappingProxyType
-from typing import Any
+from typing import Any, cast
 
 from ..errors import V2Error
 from .catalog import EVENT_INTENTS, EVENT_NAMES
-
 from .event_types import SHAPES, TypedNotice, invalid_fields, missing_fields
+
 
 def validate_event(payload):
     if not isinstance(payload, dict):

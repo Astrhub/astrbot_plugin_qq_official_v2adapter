@@ -5,7 +5,6 @@ from datetime import datetime
 from .errors import V2Error
 from .models import text_id
 
-
 SCOPED_IDS = {"group": "member_openid", "c2c": "user_openid", "channel": "channel_user_id", "dm": "channel_user_id"}
 
 
@@ -21,7 +20,8 @@ def join_seconds(value):
 
 def profile_member(group, member):
     fields = member["fields"]
-    value = lambda name: fields[name]["value"] if name in fields else None
+    def value(name):
+        return fields[name]["value"] if name in fields else None
     result = {"group_id": group, "user_id": member["user_id"], "id_kind": "member_openid", "partial": True}
     if value("nickname") is not None:
         result["nickname"] = value("nickname")

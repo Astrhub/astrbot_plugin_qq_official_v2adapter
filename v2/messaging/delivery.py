@@ -4,8 +4,8 @@ import sqlite3
 
 from ..errors import V2Error
 from ..models import text_id
-from ..protocol import CHAT_EVENTS, RawEnvelope
 from ..profiles.display import enrich_chat
+from ..protocol import CHAT_EVENTS, RawEnvelope
 from .convert import convert_chat
 
 

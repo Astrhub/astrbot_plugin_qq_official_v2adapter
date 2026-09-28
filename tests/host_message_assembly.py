@@ -54,8 +54,8 @@ async def host_message_roundtrip(lifecycle, client, owner, instance, callback, r
         assert len(bodies) == 1 and "UMO: 「webhook-fixture:GroupMessage:group-one」" in bodies[0]["content"]
         assert "message_reference" not in bodies[0] and "qqbot-at-user" not in bodies[0]["content"]
         from astrbot.core import sp
-        from data.plugins.astrbot_plugin_qq_official_v2adapter.v2.errors import V2Error
         from data.plugins.astrbot_plugin_qq_official_v2adapter.v2 import PLUGIN_NAME
+        from data.plugins.astrbot_plugin_qq_official_v2adapter.v2.errors import V2Error
         assert (await owner.group_tools.call(event, "find_known_members", query="absent-name"))["candidates"] == []
         prior = await sp.get_async("umo", event.unified_msg_origin, "session_plugin_config", default=None)
         filtered = copy.deepcopy(prior or {})

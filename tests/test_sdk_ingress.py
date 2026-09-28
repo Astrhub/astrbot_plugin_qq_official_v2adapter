@@ -4,12 +4,12 @@ import asyncio
 import sqlite3
 
 import pytest
-
-from test_messaging_delivery import receiver
-from test_lifecycle import plugin_module as plugin_module
 from test_messaging_state import NOW, chat_payload
+
 from v2.protocol import RawEnvelope
 from v2.transport.inbox import RawInbox
+
+pytest_plugins = ("test_lifecycle", "test_messaging_delivery")
 
 
 async def test_member_state_and_observer_progress_while_host_queue_full(receiver):

@@ -6,14 +6,14 @@ from types import SimpleNamespace
 
 import pytest
 
-from test_management import management
 from v2.errors import V2Error
+from v2.models import InstanceKey, RobotKey
 from v2.profiles.service import Profiles
 from v2.profiles.store import ProfileStore
-from v2.sdk.api.groups import GroupReads
-from v2.models import InstanceKey, RobotKey
 from v2.protocol import RequestSpec
+from v2.sdk.api.groups import GroupReads
 
+pytest_plugins = ("test_management",)
 
 @pytest.fixture
 def profiles(tmp_path):

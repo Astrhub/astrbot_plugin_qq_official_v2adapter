@@ -38,8 +38,8 @@ def plugin_module(monkeypatch):
     for name in list(sys.modules):
         if name.startswith(package.__name__ + "."):
             sys.modules.pop(name)
-    from astrbot.core.star.star import star_map, star_registry
     from astrbot.core.provider.register import llm_tools
+    from astrbot.core.star.star import star_map, star_registry
     from astrbot.core.star.star_handler import star_handlers_registry
     star_map.pop(module.__name__, None)
     star_registry[:] = [m for m in star_registry if m.module_path != module.__name__]

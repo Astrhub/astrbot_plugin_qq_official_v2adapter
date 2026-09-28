@@ -5,13 +5,13 @@ import sqlite3
 
 import pytest
 
-from test_management import management
 from v2.errors import V2Error
 from v2.extensions.state import ExtensionStore
 from v2.messaging.store import MessageStore, robot_key
 from v2.models import RobotKey, SessionRoute
 from v2.profiles.store import ProfileStore
 
+pytest_plugins = ("test_management",)
 
 def test_message_schema_upgrade_keeps_unknown_and_legacy_profile(tmp_path):
     path = tmp_path / "messages.sqlite3"

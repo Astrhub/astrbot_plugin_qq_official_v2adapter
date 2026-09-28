@@ -11,8 +11,7 @@ from test_transport_http import MappedSession, upstream
 from v2.commands import collect_catalog
 from v2.errors import V2Error
 from v2.help import node_token, render_help, text_link
-from v2.messaging.store import MessageStore
-from v2.messaging.store import robot_key
+from v2.messaging.store import MessageStore, robot_key
 from v2.models import InstanceKey
 from v2.panels import PanelService
 from v2.settings import DEFAULTS, SettingsStore

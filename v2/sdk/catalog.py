@@ -1,7 +1,7 @@
 """Official dispatch names and observable SDK coverage groups."""
 
-from .http_catalog import HTTP_TARGETS, Endpoint
-
+from .http_catalog import HTTP_TARGETS as HTTP_TARGETS
+from .http_catalog import Endpoint as Endpoint
 
 EVENT_FAMILIES = {
     "GUILDS": (0, "GUILD_CREATE GUILD_UPDATE GUILD_DELETE CHANNEL_CREATE CHANNEL_UPDATE CHANNEL_DELETE"),

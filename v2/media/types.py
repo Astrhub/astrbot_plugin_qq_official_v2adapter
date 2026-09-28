@@ -1,6 +1,6 @@
 """Explicit input policy; a chat string alone never authorizes a local read."""
-from dataclasses import dataclass, field
 import inspect
+from dataclasses import dataclass, field
 
 from astrbot.core.message.components import File, Image, Record, Video
 

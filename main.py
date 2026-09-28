@@ -16,10 +16,10 @@ from astrbot.core.star.filter.command import GreedyStr
 
 from .v2 import PLATFORM_TYPE, PLATFORM_TYPES, PLUGIN_NAME, WEBHOOK_TYPE
 from .v2.adapter import DEFAULT_PLATFORM_CONFIG, V2Adapter
-from .v2.group_tools import GroupTools
 from .v2.connections import Connections
 from .v2.errors import V2Error
 from .v2.extensions.state import ExtensionStore
+from .v2.group_tools import GroupTools
 from .v2.help import send_help
 from .v2.media.io import BlobPool
 from .v2.messaging.delivery import DeliverySlots

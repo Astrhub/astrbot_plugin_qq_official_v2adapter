@@ -2,14 +2,13 @@
 
 import asyncio
 from datetime import UTC, datetime
+from importlib import import_module
 from types import SimpleNamespace
 
 import pytest
-
-from test_lifecycle import plugin_module as plugin_module
-from test_messaging_delivery import receiver
 from test_messaging_state import NOW
-from importlib import import_module
+
+pytest_plugins = ("test_lifecycle", "test_messaging_delivery")
 
 
 def interaction(instance, kind, identifier):
@@ -37,7 +36,7 @@ async def ack_fixture(receiver):
         async def close(self):
             pass
     instance.extensions.ack_http = ACK()
-    Error = import_module(instance.identity.__class__.__module__.split('.v2.')[0] + '.v2.errors').V2Error
+    Error = import_module(instance.identity.__class__.__module__.split(".v2.")[0] + ".v2.errors").V2Error
     yield SimpleNamespace(instance=instance, owner=owner, calls=calls, failure=failure, Error=Error)
 
 
@@ -79,7 +78,7 @@ async def test_interaction_uses_literal_https_ack_transport(ack_fixture):
             pass
     async def token_provider(*, rejected=None):
         return "ack-fixture"
-    Transport = import_module(f.instance.identity.__class__.__module__.split('.v2.')[0] + '.v2.transport.http').HTTPTransport
+    Transport = import_module(f.instance.identity.__class__.__module__.split(".v2.")[0] + ".v2.transport.http").HTTPTransport
     http = Transport(f.instance.identity, "", session_factory=Session, token_provider=token_provider)
     f.instance.extensions.ack_http = http
     assert await f.instance.client.qq.on_interaction_result("live-path", 0) == {}
