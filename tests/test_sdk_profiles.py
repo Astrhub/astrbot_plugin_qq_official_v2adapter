@@ -158,6 +158,34 @@ async def test_roster_absence_is_not_leave_evidence_and_revision_protects_snapsh
     finally:
         await service.close()
 
+async def test_roster_refresh_coalesces_per_group_even_when_one_waiter_cancels(profiles):
+    identity = InstanceKey("p", RobotKey("app"))
+    started, release = asyncio.Event(), asyncio.Event()
+    calls = []
+    class Reads:
+        async def get_group_member_list(self, group, cursor):
+            calls.append((group, cursor))
+            started.set()
+            await release.wait()
+            return {"members": [{"member_openid": "one", "username": "From QQ"}], "next_cursor": ""}
+    service = Profiles(identity, profiles, Reads())
+    first = asyncio.create_task(service.refresh_roster("g"))
+    try:
+        await started.wait()
+        second = asyncio.create_task(service.refresh_roster("g"))
+        await asyncio.sleep(0)
+        first.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await first
+        release.set()
+        result = await second
+        assert result["complete"] and calls == [("g", "")]
+        assert profiles.get_member(identity.robot, "group", "g", "one")["fields"]["nickname"]["value"] == "From QQ"
+    finally:
+        release.set()
+        await service.close()
+
+
 
 async def test_roster_populates_present_members_without_elevating_cached_role(profiles):
     identity = InstanceKey("p", RobotKey("app"))

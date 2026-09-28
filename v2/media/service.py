@@ -69,7 +69,7 @@ class MediaService:
             bad("media_capacity", "Too many pending media inputs.", status=429)
         if route.scene in {"channel", "dm"} and value.kind != "image":
             raise unsupported("Channel/DM has no verified file_info mapping for this media type.")
-        remote = value.value.lower().startswith(("http:", "https:"))
+        remote = isinstance(value.value, str) and value.value.lower().startswith(("http:", "https:"))
         if remote:
             media_url(value.value)
             return PreparedMedia(self.binding(route), value, None, value.kind)

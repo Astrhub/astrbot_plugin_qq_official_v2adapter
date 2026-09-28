@@ -3,7 +3,7 @@ import json
 import os
 import sqlite3
 import time
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from pathlib import Path
 
 from astrbot.core.platform.message_type import MessageType
@@ -62,7 +62,7 @@ class MessageStore:
                 failure("message_state_in_use", "Another owner holds this message-state directory.", 503)
             self.db = sqlite3.connect(path, timeout=0.1)
             self.db.row_factory = sqlite3.Row
-            if self.db.execute("PRAGMA user_version").fetchone()[0] not in (0, 1, 2, 3):
+            if self.db.execute("PRAGMA user_version").fetchone()[0] not in (0, 1, 2, 3, 4):
                 failure("message_state_corrupt", "Unsupported message-state schema; data was not reset.", 503)
             self.db.execute("PRAGMA synchronous=FULL")
             page_size = self.db.execute("PRAGMA page_size").fetchone()[0]
@@ -78,7 +78,7 @@ class MessageStore:
                     last REAL NOT NULL, PRIMARY KEY(robot,scene,target));
                 CREATE TABLE IF NOT EXISTS sources (robot TEXT, scene TEXT, target TEXT, message_id TEXT,
                     started REAL NOT NULL, received REAL NOT NULL, expires REAL NOT NULL, ref_idx TEXT,
-                    seq INTEGER NOT NULL DEFAULT 0, used INTEGER NOT NULL DEFAULT 0, blocked TEXT,
+                    seq INTEGER NOT NULL DEFAULT 0, used INTEGER NOT NULL DEFAULT 0, blocked TEXT, event_id TEXT,
                     PRIMARY KEY(robot,scene,target,message_id));
                 CREATE INDEX IF NOT EXISTS source_expiry ON sources(expires);
                 CREATE TABLE IF NOT EXISTS deliveries (robot TEXT, scene TEXT, target TEXT, message_id TEXT,
@@ -112,8 +112,12 @@ class MessageStore:
                     source_kind TEXT NOT NULL, source_id TEXT NOT NULL, seq INTEGER NOT NULL,
                     op_id TEXT NOT NULL, PRIMARY KEY(robot,scene,target,source_kind,source_id,seq));
                 CREATE INDEX IF NOT EXISTS sdk_seq_operation ON sdk_sequences(robot,op_id);
-                PRAGMA user_version=3;
+                PRAGMA user_version=4;
             """)
+            if "event_id" not in {row[1] for row in self.db.execute("PRAGMA table_info(sources)")}:
+                self.db.execute("ALTER TABLE sources ADD COLUMN event_id TEXT")
+            self.db.execute("CREATE INDEX IF NOT EXISTS source_event_id ON sources(event_id)")
+            self.db.commit()
             self._water = self.db.execute("SELECT value FROM clock_guard WHERE id=1").fetchone()[0]
             with self.transaction():
                 now = self.now()
@@ -187,9 +191,12 @@ class MessageStore:
         excess = self.db.execute("SELECT max(0,count(*)-?) FROM operations WHERE state IN ('sent','rejected','not_sent')", (limit,)).fetchone()[0]
         if not excess:
             return
-        rows = self.db.execute("SELECT rowid,state FROM operations WHERE state IN ('sent','rejected','not_sent') ORDER BY updated,rowid LIMIT ?", (excess,)).fetchall()
-        # Success loses result details, not its replay fence or legacy charges.
-        self.db.executemany("UPDATE operations SET state='history_evicted',result=NULL,error=NULL WHERE rowid=?", ((r[0],) for r in rows if r[1] == "sent"))
+        rows = self.db.execute("SELECT rowid,state,result FROM operations WHERE state IN ('sent','rejected','not_sent') ORDER BY updated,rowid LIMIT ?", (excess,)).fetchall()
+        # Preserve only a stream's sequence fence; native payloads and results are not replayable.
+        self.db.executemany("UPDATE operations SET state='history_evicted',result=?,error=NULL WHERE rowid=?",
+            ((json.dumps({"native_stream": json.loads(r["result"])["native_stream"]})
+              if r["result"] and "native_stream" in json.loads(r["result"]) else None, r["rowid"])
+             for r in rows if r["state"] == "sent"))
         self.db.executemany("DELETE FROM operations WHERE rowid=?", ((r[0],) for r in rows if r[1] != "sent"))
 
     def _prune(self, now, *, keep_source=None):
@@ -228,6 +235,7 @@ class MessageStore:
 
     def observe(self, chat):
         key, source = route_key(chat.route), chat.source
+        event_id = text_id(source.event_id) if source.event_id is not None else None
         with self.transaction():
             now = self.now()
             self._prune(now)
@@ -235,12 +243,12 @@ class MessageStore:
             seen_at = min(source.received_at, now)
             if old:
                 seen_at = min(seen_at, old["received"])
-                self.db.execute("UPDATE sources SET expires=min(expires,?),received=min(received,?) WHERE robot=? AND scene=? AND target=? AND message_id=?",
-                                (source.expires, source.received_at, *key, source.message_id))
+                self.db.execute("UPDATE sources SET expires=min(expires,?),received=min(received,?),event_id=coalesce(event_id,?) WHERE robot=? AND scene=? AND target=? AND message_id=?",
+                                (source.expires, source.received_at, event_id, *key, source.message_id))
             else:
                 self._capacity("sources", self.source_capacity)
-                self.db.execute("INSERT INTO sources(robot,scene,target,message_id,started,received,expires,ref_idx) VALUES(?,?,?,?,?,?,?,?)",
-                                (*key, source.message_id, source.sent_at, source.received_at, source.expires, source.ref_idx))
+                self.db.execute("INSERT INTO sources(robot,scene,target,message_id,started,received,expires,ref_idx,event_id) VALUES(?,?,?,?,?,?,?,?,?)",
+                                (*key, source.message_id, source.sent_at, source.received_at, source.expires, source.ref_idx, event_id))
             for record in chat.observations:
                 profile_key = (key[0], record["id_kind"], record["scope"], record["user_id"])
                 row = self.db.execute("SELECT first,last FROM identities WHERE robot=? AND kind=? AND scope=? AND subject=?", profile_key).fetchone()
@@ -438,7 +446,7 @@ class MessageStore:
             failure("operation_conflict", "Operation ID belongs to another write.")
         self.db.execute("INSERT INTO sdk_bindings VALUES(?,?,?,?,?)", (key, op_id, lane, binding, self.now()))
 
-    def claim_sequence(self, route, source_kind, source_id, op_id, requested=None, *, lane, binding):
+    def claim_sequence(self, route, source_kind, source_id, op_id, requested=None, *, lane, binding, _within_transaction=False):
         """Reserve a source sequence under the same binding as its write ledger."""
         if source_kind not in {"message", "event"}:
             failure("invalid_source", "Sequence source must be a message or event.")
@@ -448,7 +456,7 @@ class MessageStore:
         key = (*route_key(route), source_kind, source_id)
         if lane not in {"send", "extension"} or not isinstance(binding, str) or not 1 <= len(binding) <= 128:
             failure("invalid_binding", "Sequence must share a bounded write-ledger binding.")
-        with self.transaction():
+        with nullcontext() if _within_transaction else self.transaction():
             self._bind_operation(route.robot, op_id, lane, binding)
             old = self.db.execute("SELECT scene,target,source_kind,source_id,seq FROM sdk_sequences WHERE robot=? AND op_id=?", (key[0], op_id)).fetchone()
             if old:
@@ -460,12 +468,12 @@ class MessageStore:
             high = max(high, observed[0]) if observed else high
             legacy_source = source_id if source_kind == "message" else "\x1f" + source_id
             retained = self.db.execute("""SELECT max(seq) FROM operations WHERE robot=? AND scene=? AND target=?
-                AND source=? AND state IN ('reserved','in_flight','unknown','sent','history_evicted')""",
+                AND source=? AND state IN ('reserved','in_flight','unknown','sent','rejected','history_evicted')""",
                 (key[0], key[1], key[2], legacy_source)).fetchone()[0]
             high = max(high, retained or 0)
             seq = requested if requested is not None else high + 1
             occupied = self.db.execute("""SELECT 1 FROM operations WHERE robot=? AND scene=? AND target=?
-                AND source=? AND seq=? AND state IN ('reserved','in_flight','unknown','sent','history_evicted')""",
+                AND source=? AND seq=? AND state IN ('reserved','in_flight','unknown','sent','rejected','history_evicted')""",
                 (key[0], key[1], key[2], legacy_source, seq)).fetchone()
             if occupied:
                 failure("sequence_conflict", "This source sequence belongs to a retained send.")
@@ -542,10 +550,95 @@ class MessageStore:
                             (key[0], op_id, route.scene, route.target, source_key(source) if source else None, digest, seq, "reserved", now, now, json.dumps(delivery) if delivery else None, None))
             return self.operation(route.robot, op_id)
 
+    def reserve_native(self, route, source_kind, source_id, digest, op_id, *, requested_seq=None, stream=None):
+        """Bind a native send without fabricating target observation or source lifetime."""
+        op_id = text_id(op_id)
+        if (source_kind is None) != (source_id is None) or source_kind not in (None, "message", "event"):
+            failure("invalid_source", "A native source must be one message or event identifier.")
+        source_id = text_id(source_id) if source_id is not None else None
+        if requested_seq is not None and (type(requested_seq) is not int or not 1 <= requested_seq <= 2**31 - 1):
+            failure("invalid_sequence", "Sequence must be a positive integer.")
+        key = route_key(route)
+        source = source_id if source_kind == "message" else "\x1f" + source_id if source_id else None
+        with self.transaction():
+            self._prune(self.now())
+            if source is not None:
+                known = self.db.execute("""SELECT robot,scene,target FROM sources WHERE message_id=?
+                    UNION ALL SELECT robot,scene,target FROM deliveries WHERE message_id=?""", (source, source)).fetchall()
+                if any(tuple(row) != key for row in known):
+                    failure("identity_mismatch", "Observed reply source belongs to another robot or target.")
+            if source_kind == "event" and source_id is not None:
+                chats = self.db.execute("SELECT robot,scene,target FROM sources WHERE event_id=?", (source_id,)).fetchall()
+                if any(tuple(row) != key for row in chats):
+                    failure("identity_mismatch", "Observed chat event belongs to another robot or target.")
+            if source_kind == "event" and source_id is not None and self.db.execute("SELECT 1 FROM sqlite_master WHERE name='extension_events'").fetchone():
+                events = self.db.execute("""SELECT robot,json_extract(metadata,'$.scene'),json_extract(metadata,'$.target')
+                    FROM extension_events WHERE json_extract(metadata,'$.event_id')=?""", (source_id,)).fetchall()
+                if any(row[0] != key[0] or row[1] is not None and row[1] != route.scene or
+                       row[2] is not None and row[2] != route.target for row in events):
+                    failure("identity_mismatch", "Observed event reply belongs to another robot or target.")
+            self._bind_operation(route.robot, op_id, "send", digest)
+            old = self.db.execute("SELECT * FROM operations WHERE robot=? AND op_id=?", (key[0], op_id)).fetchone()
+            if old is not None and (old["scene"], old["target"], old["source"], old["digest"]) != (*key[1:], source, digest):
+                failure("operation_conflict", "Native send cannot change source, target or body.")
+            if old:
+                if old["state"] == "sent":
+                    failure("operation_result_not_retained", "The native result is not safely reconstructible; do not resend.", 410)
+                if old["state"] == "unknown":
+                    failure("send_result_unknown", "The native result is unknown and cannot be replayed.")
+                failure("operation_already_attempted", "This native send was already attempted.")
+            parent_seq = None
+            if stream is not None:
+                index, stream_id = stream["index"], stream.get("id")
+                if type(index) is not int or index < 0 or index == 0 and stream_id is not None or index > 0 and not isinstance(stream_id, str):
+                    failure("invalid_stream", "Native stream index and server ID disagree.")
+                rows = self.db.execute("""SELECT seq,state,result FROM operations WHERE robot=? AND scene=? AND target=?
+                    AND source IS ? AND json_extract(result,'$.native_stream.index') IS NOT NULL""", (*key, source)).fetchall()
+                if index == 0:
+                    decoded = [(row, json.loads(row["result"])["native_stream"]) for row in rows]
+                    finished = {meta.get("id") for row, meta in decoded if row["state"] in {"sent", "history_evicted"} and meta.get("finished")}
+                    if any(row["state"] in {"reserved", "in_flight", "unknown"} or
+                           row["state"] in {"sent", "history_evicted"} and meta.get("id") not in finished
+                           for row, meta in decoded):
+                        failure("stream_already_started", "This source already has an unfinished or uncertain stream.")
+                else:
+                    matching = [(row, json.loads(row["result"])["native_stream"]) for row in rows
+                                if json.loads(row["result"])["native_stream"].get("id") == stream_id]
+                    if not matching or any(row["state"] in {"reserved", "in_flight", "unknown"} for row, _ in matching):
+                        failure("stream_result_unknown", "Stream continuation lacks a confirmed previous fragment.")
+                    latest, metadata = max(matching, key=lambda pair: pair[1]["index"])
+                    if latest["state"] != "sent" or metadata["index"] != index - 1 or metadata.get("finished"):
+                        failure("stream_sequence_conflict", "Stream fragments must follow the confirmed index.")
+                    parent_seq = latest["seq"]
+                    if requested_seq is not None and requested_seq != parent_seq:
+                        failure("operation_conflict", "Continuation must retain the first fragment sequence.")
+            seq = (parent_seq if stream is not None and stream["index"] > 0 else
+                   self.claim_sequence(route, source_kind, source_id, op_id, requested_seq,
+                                       lane="send", binding=digest, _within_transaction=True)
+                   if source_id is not None and route.scene in {"group", "c2c"} else requested_seq)
+            pending = self.db.execute("SELECT count(*) FROM operations WHERE state IN ('reserved','in_flight','unknown')").fetchone()[0]
+            if pending >= self.operation_capacity:
+                failure("message_state_full", "Unfinished operation capacity reached.", 503)
+            now = self.now()
+            mode = "passive" if source is not None else "active"
+            result = {"delivery": {"mode": mode, "source": "caller_supplied" if source else None,
+                                   "attempts": [{"mode": mode, "state": "not_sent", "wire_attempts": 0}]}}
+            if stream is not None:
+                result["native_stream"] = {"index": stream["index"], "id": stream.get("id"), "finished": False}
+            self.db.execute("INSERT INTO operations VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+                            (*key[:1], op_id, *key[1:], source, digest, seq, "reserved", now, now, json.dumps(result), None))
+            return seq
+
+
     def save_delivery(self, robot, op_id, delivery):
         with self.transaction():
-            self.db.execute("UPDATE operations SET result=? WHERE robot=? AND op_id=? AND state IN ('reserved','in_flight')",
-                            (json.dumps({"delivery": delivery}), robot_key(robot), op_id))
+            key = robot_key(robot)
+            row = self.db.execute("SELECT result FROM operations WHERE robot=? AND op_id=? AND state IN ('reserved','in_flight')",
+                                  (key, op_id)).fetchone()
+            if row:
+                existing = json.loads(row["result"]) if row["result"] else {}
+                self.db.execute("UPDATE operations SET result=? WHERE robot=? AND op_id=?",
+                                (json.dumps({**existing, "delivery": delivery}), key, op_id))
 
     def switch_active(self, route, source, op_id, delivery):
         with self.transaction():
@@ -582,11 +675,16 @@ class MessageStore:
             return
         if state in {"sent", "not_sent", "rejected"}:
             self._trim_operation_history(reserve=1)
+        if state == "not_sent":
+            self.db.execute("DELETE FROM sdk_sequences WHERE robot=? AND op_id=?", (robot, op_id))
         if state in {"not_sent", "rejected"}:
             if row["source"] and row["seq"] is not None:
                 self.db.execute("UPDATE sources SET used=max(0,used-1) WHERE robot=? AND scene=? AND target=? AND message_id=?", (robot, row["scene"], row["target"], row["source"]))
             self.db.execute("DELETE FROM charges WHERE robot=? AND op_id=?", (robot, op_id))
         delivery = ((error or {}).get("details") or {}).get("delivery") or (json.loads(row["result"]).get("delivery") if row["result"] else None)
+        native_stream = json.loads(row["result"]).get("native_stream") if row["result"] else None
+        if native_stream is not None:
+            result = {"native_stream": native_stream, **(result or {})}
         if delivery:
             delivery["attempts"][-1]["state"] = state
             if result is not None:

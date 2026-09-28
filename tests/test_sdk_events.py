@@ -43,7 +43,8 @@ def test_catalog_does_not_turn_pending_writes_into_network_actions():
     assert HTTP_TARGETS["A026"].path == "/v2/groups/{group_openid}/members/{member_openid}"
     assert HTTP_TARGETS["A027"].pagination == "cursor"
     assert HTTP_TARGETS["A058"].effect == "write"
-    assert HTTP_TARGETS["A041"].support == HTTP_TARGETS["A047"].support == HTTP_TARGETS["A048"].support == "pending"
+    assert HTTP_TARGETS["A041"].support == "native"
+    assert HTTP_TARGETS["A047"].support == HTTP_TARGETS["A048"].support == "pending"
 
 
 def test_event_names_and_payload_are_defensive():

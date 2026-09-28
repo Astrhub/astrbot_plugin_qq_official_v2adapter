@@ -36,7 +36,7 @@ def test_message_schema_upgrade_keeps_unknown_and_legacy_profile(tmp_path):
     upgraded = MessageStore(path)
     profiles = ProfileStore(tmp_path / "profiles.sqlite3")
     try:
-        assert upgraded.db.execute("PRAGMA user_version").fetchone()[0] == 3
+        assert upgraded.db.execute("PRAGMA user_version").fetchone()[0] == 4
         assert upgraded.operation(robot, "unknown")["state"] == "unknown"
         assert profiles.migrate_identities(upgraded) == 1
         assert profiles.get_member(robot, "group", "g", "001")["fields"]["nickname"]["value"] == "historical"
@@ -46,11 +46,41 @@ def test_message_schema_upgrade_keeps_unknown_and_legacy_profile(tmp_path):
         profiles.close()
         upgraded.close()
     db = sqlite3.connect(path)
-    db.execute("PRAGMA user_version=4")
+    db.execute("PRAGMA user_version=5")
     db.commit()
     db.close()
     with pytest.raises(V2Error, match="schema"):
         MessageStore(path)
+
+def test_v3_source_schema_adds_event_id_without_erasing_pending_operations(tmp_path):
+    path = tmp_path / "v3.sqlite3"
+    robot = RobotKey("app")
+    first = MessageStore(path)
+    try:
+        with first.transaction():
+            first.db.execute("INSERT INTO sources(robot,scene,target,message_id,started,received,expires) VALUES(?,?,?,?,?,?,?)",
+                             (robot_key(robot), "group", "g", "incoming", 1, 1, 9999999999))
+            first.db.execute("INSERT INTO operations VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+                             (robot_key(robot), "pending", "group", "g", "incoming", "digest", 1,
+                              "unknown", 1, 1, None, None))
+    finally:
+        first.close()
+    db = sqlite3.connect(path)
+    try:
+        db.execute("DROP INDEX source_event_id")
+        db.execute("ALTER TABLE sources DROP COLUMN event_id")
+        db.execute("PRAGMA user_version=3")
+        db.commit()
+    finally:
+        db.close()
+    upgraded = MessageStore(path)
+    try:
+        assert upgraded.db.execute("PRAGMA user_version").fetchone()[0] == 4
+        assert upgraded.db.execute("SELECT event_id FROM sources WHERE message_id='incoming'").fetchone()[0] is None
+        assert upgraded.operation(robot, "pending")["state"] == "unknown"
+    finally:
+        upgraded.close()
+
 
 
 def test_cross_lane_binding_and_sequence_collision(tmp_path):

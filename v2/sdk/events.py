@@ -210,6 +210,8 @@ class EventBus:
         self.guard()
         if self.closed:
             return
+        if not self.subscriptions:
+            return
         size = len(json.dumps(event.raw(), ensure_ascii=False).encode())
         for sub in tuple(self.subscriptions):
             if (raw_only and "*" not in sub.names or

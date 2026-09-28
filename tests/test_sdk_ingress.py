@@ -182,14 +182,67 @@ async def test_nested_history_only_fills_profile_without_reviving_member(receive
     robot = instance.identity.robot
     owner.profiles.member_event(robot, "group", "group-one", "former", "left", int(NOW) - 10)
     payload = chat_payload(message_id="history")
+    payload["d"]["message_type"] = 103
+    payload["d"]["message_scene"]["ext"].append("ref_msg_idx=ref-history")
     payload["d"]["msg_elements"] = [{"author": {"member_openid": "former", "username": "Old Nick"},
-                                   "timestamp": "2020-01-01T00:00:00Z", "content": "old body"}]
+                                   "timestamp": "2020-01-01T00:00:00Z", "msg_idx": "ref-history", "content": "old body"}]
     owner.inbox.accept(instance.identity.settings_key, RawEnvelope(payload, NOW))
     assert instance.core.step()
     member = owner.profiles.get_member(robot, "group", "group-one", "former")
     assert member["membership"] == "left"
     assert member["fields"]["nickname"]["value"] == "Old Nick"
     assert {row[0] for row in owner.messages.db.execute("SELECT message_id FROM sources WHERE scene='group' AND target='group-one'")} == {"history"}
+
+async def test_forwarded_and_parallel_authors_do_not_enter_group_profiles(receiver):
+    owner, instance = receiver
+    payload = chat_payload(message_id="untrusted-history")
+    payload["d"]["message_type"] = 103
+    payload["d"]["message_scene"]["ext"].append("ref_msg_idx=ref-bound")
+    payload["d"]["msg_elements"] = [
+        {"message_type": 102, "msg_idx": "ref-bound", "content": "forward",
+         "author": {"member_openid": "foreign", "username": "Other group"},
+         "msg_elements": [{"author": {"member_openid": "nested", "username": "Nested foreign"}}]},
+        {"message_type": 103, "msg_idx": "other", "content": "parallel",
+         "author": {"member_openid": "parallel", "username": "Unrelated"}},
+        {"message_type": 103, "msg_idx": "ref-bound", "content": "quoted",
+         "timestamp": "2020-01-01T00:00:00Z",
+         "author": {"member_openid": "trusted", "username": "Trusted quote"}},
+    ]
+    owner.inbox.accept(instance.identity.settings_key, RawEnvelope(payload, NOW))
+    assert instance.core.step()
+    known = owner.profiles.list_known_members(instance.identity.robot, "group", "group-one")["members"]
+    assert {row["user_id"] for row in known} == {"user-one", "trusted"}
+    quoted = owner.profiles.get_member(instance.identity.robot, "group", "group-one", "trusted")
+    assert quoted["fields"]["nickname"]["source"] == "chat_history"
+    assert quoted["membership"] == "unknown"
+
+
+async def test_no_listeners_skip_native_event_construction(receiver, monkeypatch):
+    import sys
+    owner, instance = receiver
+    module = sys.modules[instance.core.__class__.__module__]
+    def fail(*args, **kwargs):
+        raise AssertionError("No SDK event allocation without a subscriber")
+    monkeypatch.setattr(module, "NativeEvent", fail)
+    owner.inbox.accept(instance.identity.settings_key, RawEnvelope(chat_payload(message_id="no-subscriber"), NOW))
+    assert instance.core.step() and instance.consumer.step()
+    host = instance._event_queue.get_nowait()
+    host.cleanup_temporary_local_files()
+
+
+async def test_degraded_event_context_is_pending_snapshot(receiver):
+    owner, instance = receiver
+    owner.profiles.max_profiles = 0
+    sub = instance.client.qq.events.subscribe({"GROUP_AT_MESSAGE_CREATE"}, owner=object())
+    owner.inbox.accept(instance.identity.settings_key, RawEnvelope(chat_payload(message_id="degraded-context"), NOW))
+    try:
+        assert instance.core.step()
+        event = sub.queue.get_nowait()[0]
+        assert event.context.core_state == "pending"
+        assert instance.client.qq.events.progress(event.context.receipt)["core_state"] == "degraded"
+    finally:
+        await sub.close()
+
 
 
 
@@ -253,8 +306,12 @@ async def test_plugin_owner_unload_and_platform_revoke_close_subscriptions(recei
     plugin = object()
     ours = instance.client.qq.events.subscribe({"GROUP_MEMBER_ADD"}, owner=plugin)
     other = instance.client.qq.events.subscribe({"GROUP_MEMBER_ADD"}, owner=object())
+    owner_view = instance.client.qq.with_options(owner=plugin)
     await owner.catalog_unloaded(SimpleNamespace(star_cls=plugin))
     assert ours.closed and not other.closed
+    with pytest.raises(RuntimeError) as stale:
+        await owner_view.post_group_message("g", content="never")
+    assert stale.value.code == "stale_owner"
     instance.revoke()
     assert other.closed and instance.client._state.events.closed
     await ours.close()

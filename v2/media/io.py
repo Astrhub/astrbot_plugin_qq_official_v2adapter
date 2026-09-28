@@ -159,9 +159,22 @@ class BlobPool:
         """Copy bounded bytes; the deprecated roots argument is ignored."""
         blob = self.create(max_bytes)
         try:
-            if not isinstance(value, str):
-                bad("invalid_media_input", "Media input must be a file URI or encoded string.")
-            if value.startswith("base64://") or value.startswith("data:"):
+            if isinstance(value, (bytes, bytearray, memoryview)):
+                for start in range(0, len(value), CHUNK):
+                    blob.append(bytes(value[start:start + CHUNK]))
+                    await asyncio.sleep(0)
+            elif not isinstance(value, str) and callable(getattr(value, "read", None)):
+                while True:
+                    chunk = await asyncio.to_thread(value.read, CHUNK)
+                    if not chunk:
+                        break
+                    if not isinstance(chunk, (bytes, bytearray, memoryview)):
+                        bad("invalid_media_input", "A supplied stream must return bytes.")
+                    blob.append(bytes(chunk))
+                    await asyncio.sleep(0)
+            elif not isinstance(value, str):
+                bad("invalid_media_input", "Media input must be a local file, bytes, stream or encoded string.")
+            elif value.startswith("base64://") or value.startswith("data:"):
                 if value.startswith("base64://"):
                     encoded = value[9:]
                 else:

@@ -33,6 +33,9 @@ class CoreConsumer:
 
     def _diagnose(self, item, payload, reason):
         identity = self.adapter.identity
+        bus = self.adapter.client._state.events
+        if not bus or not any("*" in sub.names for sub in bus.subscriptions):
+            return
         context = EventContext(identity.platform_id, identity.robot.appid, identity.robot.environment,
             item["received_generation"] or identity.generation, item["transport"], item["shard"],
             item["session_id"], item["received_at"], item["receipt"],
@@ -180,14 +183,15 @@ class CoreConsumer:
                 self.inbox.core_done(self.owner_key, receipt, state="invalid", error=exc.code)
                 self.last_error, self.state = exc.code, "quarantined"
                 return True
-            if receipt not in self.published:
+            bus = self.adapter.client._state.events
+            if receipt not in self.published and bus.subscriptions:
                 identity = self.adapter.identity
                 context = EventContext(identity.platform_id, identity.robot.appid, identity.robot.environment,
                     item["received_generation"] or identity.generation, item["transport"], item["shard"],
                     item["session_id"], item["received_at"], receipt, receipt <= self.recovered_through,
-                    host_state="pending" if name in CHAT_EVENTS else "not_applicable")
+                    core_state="pending", host_state="pending" if name in CHAT_EVENTS else "not_applicable")
                 event = NativeEvent(payload, context, client=self.adapter.client.qq, reply_context=reply)
-                self.adapter.client._state.events.publish(event)
+                bus.publish(event)
                 self.published.add(receipt)
             self.inbox.core_done(self.owner_key, receipt, state="degraded" if error else "done", error=error)
             if name not in CHAT_EVENTS:

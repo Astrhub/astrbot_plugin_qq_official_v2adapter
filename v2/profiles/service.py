@@ -13,6 +13,7 @@ class Profiles:
         self.continuity_check, self.guard = continuity_check, guard
         self.cooldown = cooldown
         self.pending = {}
+        self.roster_pending = {}
         self.closed = False
 
     def _check(self):
@@ -86,9 +87,26 @@ class Profiles:
                                   (self._robot_key(), group, member))
 
     async def refresh_roster(self, group_openid: str) -> dict:
-        """Fetch a bounded full roster and publish only a revision-safe snapshot."""
+        """Coalesce a full native roster read for this bot and group."""
         self._check()
         group = text_id(group_openid)
+        key = (self.identity.robot, group)
+        future = self.roster_pending.get(key)
+        if future is None:
+            if len(self.roster_pending) >= 32:
+                raise V2Error("profile_capacity", "Too many roster reads are pending.", status=503)
+            future = asyncio.create_task(self._refresh_roster(group), name="qq-v2-roster-refresh")
+            self.roster_pending[key] = future
+            def settled(completed):
+                if self.roster_pending.get(key) is completed:
+                    self.roster_pending.pop(key, None)
+                if not completed.cancelled():
+                    completed.exception()
+            future.add_done_callback(settled)
+        return await asyncio.shield(future)
+
+    async def _refresh_roster(self, group):
+        self._check()
         robot = self.identity.robot
         revision = self.store.revision(robot, "group", group)
         started = self.store.clock()
@@ -152,7 +170,7 @@ class Profiles:
 
     async def close(self):
         self.closed = True
-        tasks = list(self.pending.values())
+        tasks = list(self.pending.values()) + list(self.roster_pending.values())
         for task in tasks:
             task.cancel()
         if tasks:

@@ -149,6 +149,7 @@ class QQOfficialV2(Star):
         if owner is not None:
             for instance in tuple(self.instances):
                 instance.client._state.events.close_owner(owner)
+                instance.client._state.revoke_owner(owner)
 
     async def terminate(self):
         self.stopping = True

@@ -96,6 +96,8 @@ class ExtensionStore:
             raise V2Error("extension_result_too_large", "Extension result exceeds its retained limit.", status=502, phase="result_unknown")
         with self.messages.transaction():
             self.db.execute("UPDATE extension_ops SET state=?,updated=?,result=?,error=? WHERE robot=? AND op_id=? AND state IN ('reserved','in_flight')", (state, self.messages.now(), encoded, json.dumps(error) if error else None, robot_key(robot), op_id))
+            if state == "not_sent":
+                self.db.execute("DELETE FROM sdk_sequences WHERE robot=? AND op_id=?", (robot_key(robot), op_id))
             self.prune()
 
     def recent(self, robot, limit=10):

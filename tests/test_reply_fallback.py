@@ -193,7 +193,7 @@ def test_restart_during_mode_conversion_preserves_fence_and_diagnostics(config, 
         assert [a["state"] for a in row["error"]["details"]["delivery"]["attempts"]] == ["rejected", expected]
         with pytest.raises(V2Error):
             restored.reserve(chat.route, chat.source, "digest", "interrupted", allow_active=True)
-        assert restored.db.execute("PRAGMA user_version").fetchone()[0] == 3
+        assert restored.db.execute("PRAGMA user_version").fetchone()[0] == 4
         assert restored.db.execute("SELECT used FROM sources").fetchone()[0] == 0
     finally:
         restored.close()
