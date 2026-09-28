@@ -5,7 +5,11 @@ import weakref
 
 from . import PLATFORM_TYPE, VERSION
 from .errors import V2Error, not_ready, unsupported
-from .extensions.management import MANAGEMENT_ACTIONS, NATIVE_ACTIONS, NATIVE_READ_ACTIONS
+from .extensions.management import (
+    MANAGEMENT_ACTIONS,
+    NATIVE_ACTIONS,
+    NATIVE_READ_ACTIONS,
+)
 from .messaging.reply import ACTIVE_FALLBACK_CODES
 from .models import SessionRoute, text_id
 from .protocol import avatar_url

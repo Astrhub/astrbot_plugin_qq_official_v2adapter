@@ -11,7 +11,11 @@ import pytest
 from aiohttp import web
 from test_transport_http import MappedSession, upstream
 
-from v2.extensions.management import Management, NATIVE_ACTIONS, NATIVE_READ_ACTIONS
+from v2.extensions.management import (
+    NATIVE_ACTIONS,
+    NATIVE_READ_ACTIONS,
+    Management,
+)
 
 pytest_plugins = ("test_lifecycle", "test_messaging_delivery")
 
