@@ -3,6 +3,7 @@
 import asyncio
 import random
 import time
+from dataclasses import replace
 
 import aiohttp
 from astrbot.api import logger
@@ -35,11 +36,12 @@ class GatewayClosed(V2Error):
 class Gateway:
     def __init__(self, http, ingress, *, guard=lambda: None, clock=time.monotonic,
                  sleep=asyncio.sleep, jitter=random.random, attempts=None, hello_timeout=10,
-                 budget=None, shard=None, ws_session=None):
+                 budget=None, shard=None, ws_session=None, on_fresh=lambda: None):
         self.http, self.ingress, self.guard = http, ingress, guard
         self.budget = budget if budget is not None else IdentifyBudget()
         self.shard = http.identity.shard if shard is None else shard
         self.ws_session = ws_session
+        self.on_fresh = on_fresh
         self.clock, self.sleep, self.jitter = clock, sleep, jitter
         self.attempt_limit, self.hello_timeout = attempts, hello_timeout
         self.state = "idle"
@@ -67,6 +69,7 @@ class Gateway:
     def _fresh(self):
         self.session_id = None
         self.ingress.last_sequence = None
+        self.on_fresh()
 
     async def run(self):
         failed = False
@@ -231,6 +234,9 @@ class Gateway:
                     if not isinstance(data, dict) or not isinstance(data.get("session_id"), str) or not 1 <= len(data["session_id"]) <= 512:
                         raise V2Error("invalid_ready", "QQ READY lacks a session ID.", status=502)
                     self.ingress.last_sequence = None
+                envelope = replace(envelope, transport="websocket", shard=self.shard,
+                                   session_id=data["session_id"] if ready else self.session_id,
+                                   generation=getattr(self.http.identity, "generation", None))
                 await self.ingress.accept(envelope)
                 if ready:
                     self.session_id = data["session_id"]

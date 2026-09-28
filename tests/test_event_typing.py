@@ -151,3 +151,80 @@ async def test_automatic_typing_cancellation_cleans_up_without_replay(typing_eve
         t.wire.release.set()
         task.cancel()
         await asyncio.gather(task, return_exceptions=True)
+
+
+async def test_revoked_owned_typing_view_does_not_start_a_notification(typing_events):
+    t = typing_events
+    t.settings["typing_enabled"] = True
+    event = t.event()
+    owner = object()
+    view = event.bot.qq.with_options(owner=owner)
+    t.client._state.revoke_owner(owner)
+    with pytest.raises(V2Error) as revoked:
+        await view.typing("c2c", "user-one")
+    assert revoked.value.code == "stale_owner"
+    assert not t.core.jobs and not t.wire.calls
+    assert t.wire.store.db.execute("SELECT count(*) FROM operations").fetchone()[0] == 0
+
+
+async def test_owned_typing_revocation_before_wire_marks_not_sent_without_http(typing_events):
+    t = typing_events
+    t.settings["typing_enabled"] = True
+    event = t.event()
+    owner = object()
+    view = event.bot.qq.with_options(owner=owner)
+    entered, release = asyncio.Event(), asyncio.Event()
+    original = t.wire.http.request
+    async def queued(spec, *, before_send=None):
+        entered.set()
+        await release.wait()
+        return await original(spec, before_send=before_send)
+    t.wire.http.request = queued
+    task = asyncio.create_task(view.typing("c2c", "user-one"))
+    try:
+        await asyncio.wait_for(entered.wait(), 2)
+        t.client._state.revoke_owner(owner)
+        release.set()
+        with pytest.raises(V2Error) as revoked:
+            await task
+        assert revoked.value.code == "stale_owner" and revoked.value.phase == "not_sent"
+        assert not t.wire.calls
+        assert t.wire.store.db.execute("SELECT state FROM operations").fetchone()[0] == "not_sent"
+        assert t.wire.store.db.execute("SELECT used FROM sources").fetchone()[0] == 0
+    finally:
+        release.set()
+        t.wire.http.request = original
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+
+
+async def test_owned_typing_keeps_valid_and_unowned_shared_work_when_another_owner_revokes(typing_events):
+    t = typing_events
+    t.settings["typing_enabled"] = True
+    event = t.event()
+    good, bad = object(), object()
+    valid = event.bot.qq.with_options(owner=good)
+    invalid = event.bot.qq.with_options(owner=bad)
+    entered, release = asyncio.Event(), asyncio.Event()
+    original = t.wire.http.request
+    async def queued(spec, *, before_send=None):
+        entered.set()
+        await release.wait()
+        return await original(spec, before_send=before_send)
+    t.wire.http.request = queued
+    work = asyncio.create_task(valid.typing("c2c", "user-one"))
+    try:
+        await asyncio.wait_for(entered.wait(), 2)
+        t.client._state.revoke_owner(bad)
+        with pytest.raises(V2Error) as revoked:
+            await invalid.typing("c2c", "user-one")
+        assert revoked.value.code == "stale_owner" and not work.done()
+        release.set()
+        assert (await work)["state"] == "notified"
+        assert (await event.bot.qq.typing("c2c", "user-one"))["state"] == "notified"
+        assert len(t.wire.calls) == 1
+    finally:
+        release.set()
+        t.wire.http.request = original
+        work.cancel()
+        await asyncio.gather(work, return_exceptions=True)

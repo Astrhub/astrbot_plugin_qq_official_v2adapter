@@ -3,6 +3,7 @@
 import asyncio
 import hashlib
 import time
+from dataclasses import replace
 
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -115,7 +116,8 @@ class Webhook:
             replay = hashlib.sha256(timestamp.encode() + body).digest()
             if not self.replays.contains(replay):
                 async with asyncio.timeout(5):
-                    await self.ingress.accept(envelope)
+                    await self.ingress.accept(replace(envelope, transport="webhook",
+                        generation=getattr(getattr(self.ingress, "identity", None), "generation", None)))
                 self.guard()
                 self.replays.add(replay)
             self.last_authenticated = self.clock()

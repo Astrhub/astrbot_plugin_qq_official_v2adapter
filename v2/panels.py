@@ -234,27 +234,143 @@ class PanelService:
             raise V2Error("panel_invalid", "Panel blocked: " + ", ".join(value["issues"][:8]), status=409)
         return value
 
+    async def _confirm_manual(self, instance, scene, value):
+        """Require a matching ledger result and remote state before adopting a manual override."""
+        manual = value.get("manual")
+        if not isinstance(manual, dict) or manual.get("panel_id") != value.get("panel_id") or manual.get("scene") != scene:
+            raise V2Error("panel_owner_conflict", "The paused panel no longer matches its manual operation.", status=409)
+        if manual.get("kind") not in {"update_panel", "delete_panel", "set_panel_target"}:
+            raise V2Error("panel_scope_locked", "Changed panel targets cannot be adopted as the original scope.", status=409)
+        outcome = self.owner.extension_state.panel_write_result(instance.identity.robot, manual["op_id"],
+            manual["kind"], manual["binding"])
+        if manual["kind"] == "set_panel_target":
+            if outcome not in {"not_sent", "rejected"}:
+                raise V2Error("panel_scope_locked", "Confirmed target changes cannot be adopted as the original scope.", status=409)
+            if not isinstance(value.get("previous"), dict):
+                raise V2Error("panel_result_unknown", "The original panel baseline is unavailable.", status=409)
+            if await self._detail(instance, value["panel_id"]) != value["previous"]:
+                raise V2Error("panel_drift", "Remote panel targets changed despite the rejected manual write.", status=409)
+        elif manual["kind"] == "update_panel":
+            previous = value.get("previous")
+            if not isinstance(previous, dict) or not isinstance(manual.get("panel"), dict):
+                raise V2Error("panel_result_unknown", "The manual panel baseline is unavailable.", status=409)
+            expected = canonical({**previous, "panel": manual["panel"]}) if outcome == "succeeded" else previous
+            actual = await self._detail(instance, value["panel_id"])
+            if actual != expected:
+                raise V2Error("panel_drift", "Remote panel state does not match the confirmed manual write.", status=409)
+            value["previous"] = actual
+        elif outcome == "succeeded":
+            records = await self._list(instance)
+            if value["panel_id"] in records:
+                raise V2Error("panel_result_unknown", "QQ still lists the deleted panel; do not recreate it.", status=409, phase="result_unknown")
+            value.update(panel_id=None, previous=None)
+        elif await self._detail(instance, value["panel_id"]) != value["previous"]:
+            raise V2Error("panel_drift", "The remote panel changed after a failed manual delete.", status=409)
+        value.pop("manual", None)
+        value.update(state="paused", error=None, checked=self.clock())
+        return value
+
+
     async def enable(self, instance, scene, fingerprint, *, confirm, target_type="all", targets=None, menu_only=False):
         self.gate(instance)
-        lock = self.locks.get(robot_key(instance.identity.robot))
-        if lock and lock.locked():
-            raise V2Error("panel_busy", "A robot-wide panel operation is already in progress.", status=409)
         if confirm is not True:
             raise V2Error("confirmation_required", "Confirm the displayed application, scope and panel items.")
-        plan = self.plan(instance, scene, target_type=target_type, targets=targets, menu_only=menu_only)
-        if fingerprint != plan["fingerprint"]:
-            raise V2Error("config_conflict", "Applied settings or command catalog changed; preview again.", status=409)
-        self._stable_plan(instance, scene, plan["intent"])
-        value = self.state(instance, scene)
-        if value.get("platform_id") not in (None, instance.identity.platform_id):
-            raise V2Error("panel_owner_conflict", "Another instance already coordinates this robot and scene.", status=409)
-        if value.get("pending"):
-            raise V2Error("panel_result_unknown", "Reconcile the previous operation before changing its intent.", status=409)
-        if value.get("panel_id") and any(value["intent"][k] != plan["intent"][k] for k in ("target_type", "targets")):
-            raise V2Error("panel_scope_locked", "This owned panel's scope is immutable here; no implicit delete/rebind is allowed.", status=409)
-        value.update(enabled=True, platform_id=instance.identity.platform_id, intent=plan["intent"])
-        self._save(robot_key(instance.identity.robot), scene, value, control=True)
+        robot = robot_key(instance.identity.robot)
+        lock = self.locks.get(robot)
+        if lock is None:
+            if len(self.locks) >= 256:
+                raise V2Error("panel_capacity", "Too many robot coordinators.", status=429)
+            lock = self.locks[robot] = asyncio.Lock()
+        if lock.locked():
+            raise V2Error("panel_busy", "A robot-wide panel operation is already in progress.", status=409)
+        async with lock:
+            self.gate(instance)
+            plan = self.plan(instance, scene, target_type=target_type, targets=targets, menu_only=menu_only)
+            if fingerprint != plan["fingerprint"]:
+                raise V2Error("config_conflict", "Applied settings or command catalog changed; preview again.", status=409)
+            self._stable_plan(instance, scene, plan["intent"])
+            value = self.state(instance, scene)
+            if value.get("platform_id") not in (None, instance.identity.platform_id):
+                raise V2Error("panel_owner_conflict", "Another instance already coordinates this robot and scene.", status=409)
+            if value.get("pending"):
+                raise V2Error("panel_result_unknown", "Reconcile the previous operation before changing its intent.", status=409)
+            if value.get("panel_id") and any(value["intent"][k] != plan["intent"][k] for k in ("target_type", "targets")):
+                raise V2Error("panel_scope_locked", "This owned panel's scope is immutable here; no implicit delete/rebind is allowed.", status=409)
+            if value.get("manual"):
+                prior = copy.deepcopy(value)
+                value = await self._confirm_manual(instance, scene, value)
+                self.gate(instance)
+                if (self.state(instance, scene) != prior or
+                        self.plan(instance, scene, **plan["intent"])["fingerprint"] != fingerprint):
+                    raise V2Error("config_conflict", "Panel state or preview changed during confirmation; preview again.", status=409)
+            value.update(enabled=True, platform_id=instance.identity.platform_id, intent=plan["intent"],
+                         control_version=value.get("control_version", 0) + 1)
+            self._save(robot, scene, value, control=True)
         return await self.sync(instance, scene)
+    async def manual_write(self, client, panel_id, write, *, mutation=None):
+        """Serialize native writes with auto-sync and pause only an owned panel."""
+        if self.closed or self.owner.stopping:
+            raise V2Error("service_stopped", "Panel coordinator is stopped.", status=503)
+        client.check()
+        robot = robot_key(client.identity.robot)
+        if robot not in self.locks:
+            if len(self.locks) >= 256:
+                raise V2Error("panel_capacity", "Too many panel coordinators.", status=429)
+            self.locks[robot] = asyncio.Lock()
+        async with self.locks[robot]:
+            client.check()
+            original, matched_scene = None, None
+            if panel_id is not None:
+                rows = self.db.execute("SELECT scene,body FROM panels WHERE robot=?", (robot,)).fetchall()
+                for scene, body in rows:
+                    value = json.loads(body)
+                    if value.get("panel_id") != panel_id:
+                        continue
+                    if value.get("platform_id") != client.identity.platform_id:
+                        raise V2Error("panel_owner_conflict", "A different instance owns this managed panel.", status=409)
+                    if value.get("pending"):
+                        raise V2Error("panel_result_unknown", "Resolve the prior managed write before overriding it.", status=409)
+                    if value.get("manual"):
+                        raise V2Error("panel_result_unknown", "Confirm or inspect the previous manual panel write before another one.", status=409)
+                    if mutation is not None:
+                        original, matched_scene = copy.deepcopy(value), scene
+                        if mutation.get("panel_id") != panel_id:
+                            raise V2Error("panel_owner_conflict", "Manual mutation belongs to another panel.", status=409)
+                        value["manual"] = {**mutation, "scene": scene}
+                    value.update(enabled=False, state="paused", error={"code": "manual_override"}, checked=self.clock())
+                    self._save(robot, scene, value, control=True)
+                    break
+            try:
+                return await write()
+            except V2Error as exc:
+                if original is not None and exc.phase in {"not_sent", "rejected"}:
+                    self._restore_failed_manual(client, robot, matched_scene, panel_id, mutation, original, exc.phase)
+                raise
+
+
+
+    def _restore_failed_manual(self, client, robot, scene, panel_id, mutation, original, phase):
+        try:
+            client.check()
+            outcome = self.owner.extension_state.panel_write_result(client.identity.robot,
+                mutation["op_id"], mutation["kind"], mutation["binding"], missing_ok=True)
+            if outcome != phase and not (outcome == "missing" and phase == "not_sent"):
+                return
+            current = self.state(client, scene)
+            if (current.get("control_version", 0) != original.get("control_version", 0) or
+                    current.get("platform_id") != client.identity.platform_id or current.get("panel_id") != panel_id or
+                    current.get("pending") != original.get("pending") or
+                    not isinstance(current.get("manual"), dict) or current["manual"].get("op_id") != mutation["op_id"]):
+                return
+            for field in ("enabled", "state", "error", "checked"):
+                current[field] = copy.deepcopy(original.get(field))
+            current.pop("manual", None)
+            self._save(robot, scene, current, control=True)
+        except V2Error:
+            return
+        except sqlite3.Error:
+            self.last_error = "panel_storage_unavailable"
+
 
     def disable(self, instance, scene, *, confirm):
         instance.check_generation()
@@ -263,7 +379,7 @@ class PanelService:
         value = self.state(instance, scene)
         if value.get("platform_id") not in (None, instance.identity.platform_id):
             raise V2Error("panel_owner_conflict", "Only the coordinating instance can disable this scope.", status=409)
-        value["enabled"] = False
+        value.update(enabled=False, control_version=value.get("control_version", 0) + 1)
         self._save(robot_key(instance.identity.robot), scene, value, control=True)
         return value
 

@@ -1,8 +1,10 @@
 """Owned QQ connections; transport readiness is separate from P3 message delivery."""
 
 import asyncio
+import sqlite3
 import uuid
 
+from astrbot.api import logger
 from astrbot.core.platform.platform import Platform, PlatformStatus
 from astrbot.core.platform.platform_metadata import PlatformMetadata
 
@@ -21,6 +23,11 @@ from .messaging.typing import TypingCore
 from .models import InstanceKey
 from .network import OneBotServer
 from .network_config import DEFAULT_NETWORK, network_config
+from .profiles.service import Profiles
+from .protocol import RequestSpec
+from .sdk.api.groups import GroupReads
+from .sdk.events import EventBus
+from .sdk.ingress import CoreConsumer
 from .transport.http import HTTPTransport
 from .transport.inbox import Ingress
 from .transport.shards import GatewayGroup, IdentifyBudget
@@ -78,12 +85,23 @@ class V2Adapter(Platform):
         self.bot_id = ""
         self.session_isolated = platform_settings.get("unique_session", False) is True
         self.client._state.cache = IdentityView(self.owner.messages, identity.robot)
+        self.client._state.events = EventBus(self.check_generation,
+            owner_guard=self.client._state.check_owner,
+            progress=lambda receipt: self.owner.inbox.progress(identity.settings_key, receipt))
         self.consumer = ChatConsumer(self)
         self.client._state.guard = self.check_generation
         self.client._state.status = self.runtime_status
         self.http = HTTPTransport(identity, platform_config["secret"], guard=self.check_generation)
         self.client._state.http = self.http
-        self.ingress = Ingress(self.owner.inbox, identity.settings_key, guard=self.check_generation)
+        self.reads = GroupReads(identity, self.http, RequestSpec)
+        self.client._state.reads = self.reads
+        self.profiles = Profiles(identity, self.owner.profiles, self.reads,
+                                 cooldown=self.owner.config.get("profile_cooldown_seconds", 600),
+                                 continuity_check=lambda: (tuple((g.shard, g.session_id) for g in self.gateway.gateways)
+                                     if self.gateway and self.gateway.online and identity.intents & (1 << 24) else None),
+                                 guard=self.check_generation)
+        self.client._state.profiles = self.profiles
+        self.ingress = Ingress(self.owner.inbox, identity.settings_key, guard=self.check_generation, identity=identity)
         self.gateway = None
         if identity.transport == "websocket":
             budgets = self.owner.identify_budgets
@@ -91,7 +109,8 @@ class V2Adapter(Platform):
                 if len(budgets) >= 256:
                     raise V2Error("identify_capacity", "At most 256 robot Identify budgets per plugin lifetime.", status=503)
                 budgets[identity.robot] = IdentifyBudget()
-            self.gateway = GatewayGroup(self.http, self.ingress, budgets[identity.robot], guard=self.check_generation)
+            self.gateway = GatewayGroup(self.http, self.ingress, budgets[identity.robot], guard=self.check_generation,
+                                        on_fresh=self._profile_fresh)
         self.webhook = Webhook(identity.robot.appid, platform_config["secret"], self.ingress, guard=self.check_generation) if identity.transport == "webhook" else None
         self.media = MediaService(identity, self.http, self.owner.extension_state, self.owner.media_pool,
             settings=lambda: self.owner.store.get(identity.settings_key)["applied"].get("extensions", {}), guard=self.check_generation)
@@ -108,10 +127,20 @@ class V2Adapter(Platform):
         self.ack_http = HTTPTransport(identity, platform_config["secret"], guard=self.check_generation, token_provider=self.http.token)
         self.extensions = ExtensionDispatcher(self, self.ack_http)
         self.client._state.extensions = self.extensions
+        self.client._state.panels = self.owner.panels
         self.sender.callbacks = self.extensions.callbacks
         self.network = OneBotServer(self, network)
         self.client._state.network = self.network
+        self.core = CoreConsumer(self)
         self.owner.instances.add(self)
+
+    def _profile_fresh(self):
+        self.check_generation()
+        try:
+            self.owner.profiles.mark_gap(self.identity.robot, reason="ws_identify_required")
+        except sqlite3.Error:
+            self.owner.profiles.remember_robot_gap(self.identity.robot, "profile_storage_unavailable")
+            logger.warning("QQ V2 profile gap could not be persisted; cached rosters for this robot need a fresh read.")
 
     def check_generation(self):
         current = [c for c in self.owner.context.get_config().get("platform", []) if c.get("id") == self.identity.platform_id]
@@ -132,7 +161,7 @@ class V2Adapter(Platform):
             state = "reload_required"
         if self._terminated:
             state = "stopped"
-        return {"online": online, "good": online and self.consumer.state != "backpressured" and not self.consumer.last_error and not self.sender.storage_failed, "state": state, "failure": self.failure,
+        return {"online": online, "good": online and self.consumer.state != "backpressured" and self.core.state != "backpressured" and not self.consumer.last_error and not self.sender.storage_failed, "state": state, "failure": self.failure,
                 "message_ready": message_ready, "ws_available": ws_available,
                 "send_storage_failed": self.sender.storage_failed,
                 "gateway_group": self.gateway.status() if self.gateway else None,
@@ -142,6 +171,11 @@ class V2Adapter(Platform):
                 "platform_id": self.identity.platform_id, "generation": self.identity.generation,
                 "transport": self.identity.transport, "message_delivery": self.consumer.state,
                 "delivery_error": self.consumer.last_error,
+                "sdk_core": self.core.state, "sdk_core_error": self.core.last_error,
+                "sdk_events": self.client._state.events.diagnostics(),
+                "profiles": {"state": "ready", "last_error": self.owner.profiles.last_error,
+                             "max_profiles": self.owner.profiles.max_profiles, "max_bytes": self.owner.profiles.max_bytes}
+                            if self.owner.profiles and not self.owner.profiles.closed else {"state": "closed"},
                 "raw_disposition": self.owner.inbox.diagnostics(self.identity.settings_key) if not self.owner.inbox.closed else {},
                 "pending_raw": self.owner.inbox.count(self.identity.settings_key) if not self.owner.inbox.closed else None,
                 "challenge_answered": bool(self.webhook and self.webhook.challenge_answered),
@@ -150,6 +184,7 @@ class V2Adapter(Platform):
 
     def revoke(self):
         self._revoked = True
+        self.client._state.events.invalidate()
         self._stop.set()
         self.network.revoke()
         if self._run_task and self._run_task is not asyncio.current_task():
@@ -174,6 +209,8 @@ class V2Adapter(Platform):
             await self.network.start()
             self.state = "connecting"
             self.ingress.start()
+            self.core.start()
+            tasks.add(self.core.task)
             self.consumer.start()
             tasks.add(self.consumer.task)
             self.started.set()
@@ -223,7 +260,7 @@ class V2Adapter(Platform):
                     return type(service).__name__
                 return None
             network_failure = await close_one(self.network)
-            failures = await asyncio.gather(*(close_one(s) for s in (self.consumer, self.extensions, self.management, self.streaming, self.typing, self.sender, self.media, self.webhook, self.gateway, self.ingress, self.http) if s))
+            failures = await asyncio.gather(*(close_one(s) for s in (self.consumer, self.core, self.client._state.events, self.profiles, self.extensions, self.management, self.streaming, self.typing, self.sender, self.media, self.webhook, self.gateway, self.ingress, self.http) if s))
             failures.append(network_failure)
             if any(failures):
                 self.failure = "cleanup_failed"

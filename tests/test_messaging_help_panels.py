@@ -1,3 +1,4 @@
+import asyncio
 import copy
 from types import SimpleNamespace
 
@@ -10,7 +11,7 @@ from test_transport_http import MappedSession, upstream
 from v2.commands import collect_catalog
 from v2.errors import V2Error
 from v2.help import node_token, render_help, text_link
-from v2.messaging.store import MessageStore
+from v2.messaging.store import MessageStore, robot_key
 from v2.models import InstanceKey
 from v2.panels import PanelService
 from v2.settings import DEFAULTS, SettingsStore
@@ -73,7 +74,7 @@ async def panel_env(config, tmp_path):
         if request.path == "/app/getAppAccessToken":
             return web.json_response({"access_token": "panel-fixture", "expires_in": 7200})
         assert request.headers["Authorization"] == "QQBot panel-fixture"
-        body = await request.json() if request.method != "GET" else dict(request.query)
+        body = await request.json() if request.method in {"POST", "PUT"} else dict(request.query) if request.method == "GET" else None
         calls.append((request.method, request.path, body))
         if request.method == "GET" and request.path == "/v2/panels":
             assert set(body) <= {"scope", "limit", "cursor"} and body["limit"] == "50"
@@ -82,16 +83,26 @@ async def panel_env(config, tmp_path):
             return web.json_response(records[request.path.rsplit("/", 1)[-1]])
         mode = modes.pop(0) if modes else "ok"
         if request.method == "POST":
-            panel_id = "owned-" + str(len(records))
+            panel_id = "owned-" + str(sum(method == "POST" and path == "/v2/panels" for method, path, _ in calls) - 1)
             records[panel_id] = {**copy.deepcopy(body), "panel_id": panel_id, "version": 1}
             if mode == "unknown":
                 return web.Response(status=500, text="unknown")
             return web.json_response({"panel_id": panel_id})
-        panel_id = request.path.rsplit("/", 1)[-1]
+        panel_id = request.path.split("/")[-2] if request.path.endswith("/target") else request.path.rsplit("/", 1)[-1]
         if mode == "reject":
             return web.json_response({"code": 40030020})
+        if request.method == "PUT" and request.path.endswith("/target"):
+            field = "group_openids" if "group_openids" in body else "user_openids"
+            previous = records[panel_id].get(field, [])
+            records[panel_id][field] = sorted(set(previous) | set(body[field])) if body["op"] == "add" else sorted(set(previous) - set(body[field]))
+            return web.Response(status=500, text="unknown") if mode == "unknown" else web.json_response({})
+        if request.method == "DELETE":
+            records.pop(panel_id, None)
+            return web.Response(status=500, text="unknown") if mode == "unknown" else web.json_response({})
         records[panel_id]["panel"] = copy.deepcopy(body["panel"])
         records[panel_id]["version"] += 1
+        if mode == "unknown":
+            return web.Response(status=500, text="unknown")
         return web.json_response({"version": records[panel_id]["version"]})
     async with upstream(handle) as base:
         http = HTTPTransport(identity, config["secret"], session_factory=lambda: MappedSession(base))
@@ -187,3 +198,43 @@ async def test_capacity_no_truncation_and_new_binding_requires_confirmation(pane
     # Explicitly selecting menu-only is not silent truncation.
     result = await enable(e, menu_only=True)
     assert len(e.records[result["panel_id"]]["panel"]["items"]) == 1
+
+
+async def test_manual_panel_write_pauses_only_owned_scope_and_serializes_sync(panel_env):
+    e = panel_env
+    managed = await enable(e)
+    owned = managed["panel_id"]
+    client = SimpleNamespace(identity=e.instance.identity, check=lambda: None)
+    entered, finish = asyncio.Event(), asyncio.Event()
+    async def manual():
+        entered.set()
+        await finish.wait()
+        return {"version": 2}
+    write = asyncio.create_task(e.service.manual_write(client, owned, manual))
+    await entered.wait()
+    current = e.service.state(e.instance, "group")
+    assert current["state"] == "paused" and current["enabled"] is False
+    sync = asyncio.create_task(e.service.sync(e.instance, "group"))
+    await asyncio.sleep(0)
+    assert not sync.done()
+    finish.set()
+    assert await write == {"version": 2}
+    with pytest.raises(V2Error, match="Confirm management"):
+        await sync
+    assert sum(method in ("POST", "PUT") for method, _, _ in e.calls) == 1
+    # Unmanaged panel IDs are never copied into the ownership table.
+    assert await e.service.manual_write(client, "someone-else", lambda: asyncio.sleep(0, result={})) == {}
+    assert e.service.state(e.instance, "group")["panel_id"] == owned
+
+
+async def test_manual_panel_write_refuses_unresolved_managed_result(panel_env):
+    e = panel_env
+    value = await enable(e)
+    current = e.service.state(e.instance, "group")
+    current["pending"] = {"kind": "update"}
+    e.service._save(robot_key(e.instance.identity.robot), "group", current)
+    client = SimpleNamespace(identity=e.instance.identity, check=lambda: None)
+    with pytest.raises(V2Error) as pending:
+        await e.service.manual_write(client, value["panel_id"], lambda: asyncio.sleep(0))
+    assert pending.value.code == "panel_result_unknown"
+    assert e.service.state(e.instance, "group")["enabled"] is True

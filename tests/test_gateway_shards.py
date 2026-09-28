@@ -1,10 +1,12 @@
 """Real loopback WS groups and deterministic robot-wide Session budgets."""
 import asyncio
 import copy
+import sqlite3
 from types import SimpleNamespace
 
 import pytest
 from aiohttp import web
+from test_lifecycle import context
 from test_lifecycle import plugin_module as plugin_module
 from test_transport_http import MappedSession, upstream
 from test_transport_receive import (
@@ -16,6 +18,7 @@ from test_transport_receive import (
     gateway_document,
 )
 
+from v2.connection_config import saved_connection
 from v2.errors import V2Error
 from v2.models import InstanceKey
 from v2.protocol import RawEnvelope, RequestSpec
@@ -387,3 +390,78 @@ async def test_host_reload_group_retains_raw_owner_and_leaves_no_children(group_
         await owner.terminate()
     assert not owner.instances and not owner.delivery_slots.events and not ctx.platform_manager.get_insts()
     assert all(i.gateway.session.closed and not i.gateway.tasks and i.ingress.worker.done() for i in instances)
+
+
+@pytest.mark.parametrize("failure", ["sqlite_readonly", "sqlite_full"])
+async def test_fresh_identify_survives_optional_sqlite_write_failure_without_resurrecting_rosters(plugin_module, config, failure):
+    ctx = context()
+    configs = [saved_connection({**config, "id": f"v2-{name}", "appid": f"robot-{name}",
+                                 "intents": config["intents"] | (1 << 24)}) for name in ("a", "b")]
+    ctx.get_config()["platform"].extend(configs)
+    owner = plugin_module.QQOfficialV2(ctx, {})
+    await owner.initialize()
+    task = None
+    try:
+        a, b = [owner.adapter_class(copy.deepcopy(cfg), {}, asyncio.Queue()) for cfg in configs]
+        store = owner.profiles
+        for instance, group in ((a, "g"), (a, "h"), (b, "g")):
+            robot = instance.identity.robot
+            store.set_continuity(robot, "group", group, True)
+            revision = store.revision(robot, "group", group)
+            assert store.record_roster(robot, "group", group,
+                [{"member_openid": "member", "username": group}],
+                started_revision=revision, started_at=store.clock())
+        first, second = FakeWS([HELLO, READY, 4006]), FakeWS([HELLO, READY])
+        http = FakeGatewayHTTP(a.identity, [first, second])
+        a.ingress.start()
+        gateway = Gateway(http, a.ingress, guard=a.check_generation, on_fresh=a.gateway.on_fresh,
+                          sleep=lambda delay: asyncio.sleep(0), jitter=lambda: 0)
+        a.gateway.gateways = [gateway]
+        other = Gateway(FakeGatewayHTTP(b.identity, []), b.ingress, guard=b.check_generation)
+        b.gateway.gateways = [other]
+        other.connected, other.last_ack = True, other.clock()
+        assert b.profiles.cached_roster("g") is not None
+        original_gap = store.mark_gap
+        if failure == "sqlite_readonly":
+            store.db.execute("PRAGMA query_only=ON")
+        else:
+            def disk_full(*args, **kwargs):
+                raise sqlite3.OperationalError("database or disk is full")
+            store.mark_gap = disk_full
+        task = asyncio.create_task(gateway.run())
+        await asyncio.wait_for(second.idle.wait(), 2)
+        assert [ws.sent[0]["op"] for ws in (first, second)] == [2, 2]
+        assert owner.profiles.last_error == "profile_storage_unavailable"
+        assert all(a.profiles.get_roster_status(group)["continuous"] is False for group in ("g", "h"))
+        assert b.profiles.cached_roster("g") is not None
+        assert b.profiles.get_roster_status("g")["complete"] is True
+        assert gateway.online and a.runtime_status()["profiles"]["last_error"] == "profile_storage_unavailable"
+        store.db.execute("PRAGMA query_only=OFF")
+        store.mark_gap = original_gap
+        rows = []
+        async def refresh(group, cursor, *, guard=None):
+            if guard is not None:
+                guard()
+            rows.append((group, cursor))
+            return {"members": [{"member_openid": "member", "username": "now"}], "next_cursor": ""}
+        a.profiles.reads.get_group_member_list = refresh
+        assert (await a.profiles.refresh_roster("g"))["continuous"] is True
+        assert rows == [("g", "")]
+        assert a.profiles.cached_roster("g") is not None
+        assert a.profiles.get_roster_status("h")["continuous"] is False
+        assert b.profiles.cached_roster("g") is not None
+        assert (await a.profiles.refresh_roster("h"))["continuous"] is True
+        assert a.profiles.cached_roster("h") is not None and owner.profiles.last_error is None
+        a._revoked = True
+        with pytest.raises(RuntimeError) as stale:
+            a.gateway.on_fresh()
+        assert stale.value.code == "stale_generation"
+        a._revoked = False
+    finally:
+        if "original_gap" in locals():
+            store.mark_gap = original_gap
+        owner.profiles.db.execute("PRAGMA query_only=OFF")
+        if task:
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+        await owner.terminate()

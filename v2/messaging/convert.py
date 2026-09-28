@@ -162,14 +162,14 @@ def convert_chat(identity, envelope, *, isolated=False, bot_id=""):
     scope = f"{scene}:{target}"
     observations, attachments, references = [], [], []
 
-    def observe(user):
+    def observe(user, *, source="current_chat", as_of=sent_at):
         if not isinstance(user, dict):
             invalid()
         user_id = user.get(field)
         if user_id is None:
             return None
         user_id = text_id(user_id)
-        record = {"user_id": user_id, "id_kind": kind, "scope": scope}
+        record = {"user_id": user_id, "id_kind": kind, "scope": scope, "source": source, "as_of": as_of}
         if isinstance(user.get("username"), str) and len(user["username"]) <= 256:
             record["nickname"] = user["username"]
         avatar = safe_avatar(user.get("avatar"))
@@ -315,10 +315,11 @@ def convert_chat(identity, envelope, *, isolated=False, bot_id=""):
         for node in selected:
             quoted_author = node[0].get("author")
             if quoted_author is not None and quoted_author.get(field) is not None:
-                authors.append((text_id(quoted_author[field]), quoted_author))
+                authors.append((text_id(quoted_author[field]), quoted_author, node[0].get("timestamp")))
         quoted_user, quoted_name = None, None
-        if authors and len({user for user, _ in authors}) == 1:
-            quoted_user = observe(authors[0][1])
+        if authors and len({user for user, _, _ in authors}) == 1:
+            from ..profiles.store import observation_time
+            quoted_user = observe(authors[0][1], source="chat_history", as_of=observation_time(authors[0][2]))
             quoted_name = authors[0][1].get("username")
             if not isinstance(quoted_name, str) or len(quoted_name) > 256:
                 quoted_name = None

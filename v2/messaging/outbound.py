@@ -1,5 +1,6 @@
 """One preflight/send/quota path; unknown writes are never replayed or refunded."""
 import asyncio
+import copy
 import hashlib
 import html
 import json
@@ -255,7 +256,8 @@ class SendingCore:
         elif not self.is_online():
             raise V2Error("transport_not_ready", "No authenticated transport is ready to send.", status=503)
 
-    async def send(self, route, message, *, source=None, onebot=False, auto_escape=False, markdown=None, operation_id=None, keyboard=None):
+    async def send(self, route, message, *, source=None, onebot=False, auto_escape=False, markdown=None, operation_id=None, keyboard=None, guard=lambda: None):
+        guard()
         self.check(route, source)
         if len(self.tasks) >= 32:
             raise V2Error("send_capacity", "Too many pending sends.", status=429)
@@ -302,6 +304,7 @@ class SendingCore:
         attempted, wire_started, prepared, upload = False, None, None, None
         published_here = False
         def check_source():
+            guard()
             self.check(route, source)
             if prepared:
                 self.media.check(route)
@@ -443,6 +446,108 @@ class SendingCore:
             if prepared:
                 prepared.close()
             self.tasks.discard(task)
+
+    async def send_native(self, route, path, body, *, operation_id=None, prepared=None, response_check=None, guard=lambda: None):
+        """Send an exact native body through the existing durable message lane."""
+        self.check(route, None)
+        self.connected(route)
+        if len(self.tasks) >= 32:
+            raise V2Error("send_capacity", "Too many pending sends.", status=429)
+        wire = copy.deepcopy(body)
+        message_id, event_id = wire.get("msg_id"), wire.get("event_id")
+        if message_id is not None and event_id is not None:
+            raise V2Error("invalid_source", "A native send accepts one passive source.")
+        kind = "message" if message_id is not None else "event" if event_id is not None else None
+        source_id = message_id if message_id is not None else event_id
+        seq_requested = wire.get("msg_seq")
+        op_id = uuid4().hex if operation_id is None else text_id(operation_id)
+        stream = ({"index": wire["index"], "id": wire.get("stream_msg_id")}
+                  if path.endswith("/stream_messages") else None)
+        try:
+            descriptor = prepared.descriptor() if prepared is not None else None
+            fingerprint = hashlib.sha256(json.dumps([path, wire, descriptor], sort_keys=True, ensure_ascii=False, allow_nan=False).encode()).hexdigest()
+        except (TypeError, ValueError):
+            raise V2Error("invalid_request", "Native request must contain finite JSON fields.") from None
+        task = asyncio.current_task()
+        self.tasks.add(task)
+        attempted = False
+        try:
+            if prepared is not None and (self.media is None or prepared.closed or
+                                         prepared.binding != self.media.binding(route) or prepared.blob is None):
+                raise V2Error("invalid_media_handle", "Native multipart image must be an owned, live local blob.")
+            seq = self.store.reserve_native(route, kind, source_id, fingerprint, op_id, requested_seq=seq_requested, stream=stream)
+            delivery = self.store.operation(route.robot, op_id)["result"]["delivery"]
+            if kind is not None and route.scene in {"group", "c2c"}:
+                wire["msg_seq"] = seq
+            if prepared is not None:
+                form = {key: json.dumps(value, ensure_ascii=False) if isinstance(value, (dict, list)) else str(value) for key, value in wire.items()}
+                form["file_image"] = FilePart(prepared.blob, prepared.input.name, "application/octet-stream", lambda: self.check(route, None))
+                spec = RequestSpec(route.robot.environment, "POST", path, multipart=form)
+            else:
+                spec = RequestSpec(route.robot.environment, "POST", path, json_body=wire)
+            def before_send():
+                nonlocal attempted
+                guard()
+                self.check(route, None)
+                self.connected(route)
+                if prepared is not None:
+                    self.media.check(route)
+                    if prepared.binding != self.media.binding(route):
+                        raise V2Error("media_policy_changed", "Media policy changed before native send.", status=409)
+                self.store.mark_in_flight(route.robot, op_id)
+                delivery["attempts"][-1]["wire_attempts"] += 1
+                delivery["attempts"][-1]["state"] = "in_flight"
+                delivery["attempts"][-1].setdefault("wire_started", self.store.now())
+                self.store.save_delivery(route.robot, op_id, delivery)
+                attempted = True
+            try:
+                response = await self.http.request(spec, before_send=before_send)
+                data = response.data
+                if not isinstance(data, dict) or not isinstance(data.get("id"), str) or not 1 <= len(data["id"]) <= 512:
+                    raise V2Error("invalid_send_response", "QQ message result has no usable ID.", status=502, phase="result_unknown",
+                                  http_status=response.status, trace_id=response.trace_id)
+                if stream is not None and stream["id"] is not None and data["id"] != stream["id"]:
+                    raise V2Error("stream_id_mismatch", "QQ changed a confirmed stream ID.", status=502, phase="result_unknown")
+                if response_check is not None:
+                    response_check(data)
+                summary = {"message_id": data["id"], "operation_id": op_id, "msg_seq": seq, "state": "sent"}
+                if stream is not None:
+                    summary["native_stream"] = {"index": stream["index"], "id": data["id"],
+                                                "finished": wire["input_state"] == 10}
+                if isinstance(data.get("timestamp"), str) and len(data["timestamp"]) <= 80:
+                    summary["timestamp"] = data["timestamp"]
+                ext = data.get("ext_info")
+                if isinstance(ext, dict) and isinstance(ext.get("ref_idx"), str) and ext["ref_idx"]:
+                    summary["ref_idx"] = text_id(ext["ref_idx"])
+                self.store.finish(route.robot, op_id, "sent", result=summary)
+                return data
+            except asyncio.CancelledError as exc:
+                phase = getattr(exc, "phase", "result_unknown" if attempted else "not_sent")
+                self.store.finish(route.robot, op_id, "unknown" if phase == "result_unknown" else "not_sent")
+                raise
+            except V2Error as exc:
+                phase = exc.phase
+                if attempted and (exc.business_code in AMBIGUOUS_CODES or exc.http_status == 408 or
+                                  exc.http_status is not None and exc.http_status >= 500 and exc.code != "token_refresh_failed"):
+                    phase = "result_unknown"
+                outcome = {"not_sent": "not_sent", "rejected": "rejected"}.get(phase, "unknown")
+                self.store.finish(route.robot, op_id, outcome, error=exc.as_dict())
+                raise V2Error(exc.code, str(exc), retcode=exc.retcode, status=exc.status, business_code=exc.business_code,
+                              trace_id=exc.trace_id, retry_after=exc.retry_after, phase=phase, http_status=exc.http_status,
+                              operation_id=op_id, details=exc.details) from None
+            except Exception:
+                self.store.finish(route.robot, op_id, "unknown" if attempted else "not_sent")
+                raise V2Error("send_state_failure", "Native result could not be retained; inspect its operation.",
+                              status=503, phase="result_unknown" if attempted else "not_sent", operation_id=op_id) from None
+        except sqlite3.Error:
+            self.storage_failed = True
+            raise V2Error("send_state_failure", "Native write state failed; preserve the ledger before retrying.",
+                          status=503, phase="result_unknown" if attempted else "not_sent", operation_id=op_id) from None
+        finally:
+            if prepared is not None:
+                prepared.close()
+            self.tasks.discard(task)
+
 
     async def close(self):
         self.closed = True

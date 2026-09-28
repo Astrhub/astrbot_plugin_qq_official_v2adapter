@@ -31,12 +31,21 @@ async def messaging_roundtrip(lifecycle, client, headers, owner, instance, callb
                 assert request.query["scope"] in {"group", "c2c", "channel", "dm"}
                 return web.json_response({"records": [p for p in panels.values() if p["scope"] == request.query["scope"]], "is_end": True, "next_cursor": ""})
             if request.method == "GET":
-                return web.json_response(panels["assembly-panel"])
+                return web.json_response(panels[request.path.rsplit("/", 1)[-1]])
+            if request.method == "PUT":
+                panel = panels[request.path.rsplit("/", 1)[-1]]
+                panel["panel"] = (await request.json())["panel"]
+                panel["version"] += 1
+                return web.json_response({"version": panel["version"]})
+            if request.method == "DELETE":
+                panels.pop(request.path.rsplit("/", 1)[-1])
+                return web.json_response({})
             assert request.method == "POST" and request.path == "/v2/panels"
             data = await request.json()
             assert data["scope"] == "group" and data["target_type"] == "all" and len(data["panel"]["items"]) == 1
-            panels["assembly-panel"] = {**data, "panel_id": "assembly-panel", "version": 1}
-            return web.json_response({"panel_id": "assembly-panel"})
+            panel_id = "assembly-panel" if panel_requests.count(("POST", "/v2/panels")) == 1 else "assembly-panel-2"
+            panels[panel_id] = {**data, "panel_id": panel_id, "version": 1}
+            return web.json_response({"panel_id": panel_id})
         assert request.method == "POST" and request.path in {"/v2/groups/group-one/messages", "/v2/users/user-one/messages"}
         assert request.headers["X-Union-Appid"] == "new-fixture-app"
         assert request.headers["Authorization"].startswith("QQBot ")
@@ -106,6 +115,31 @@ async def messaging_roundtrip(lifecycle, client, headers, owner, instance, callb
             assert response.status_code == 200, response.text
             assert response.json()["panel_id"] == "assembly-panel" and response.json()["state"] == "synced"
             assert panel_requests.count(("POST", "/v2/panels")) == 1
+            previous_policy = instance.management.settings
+            instance.management.settings = lambda: {"management_writes": True}
+            try:
+                manual_panel = copy.deepcopy(panels["assembly-panel"]["panel"])
+                manual_panel["remark"] = "assembly-manual"
+                assert (await instance.client.qq.update_panel("assembly-panel", manual_panel, operation_id="assembly-override"))["version"] == 2
+                assert not owner.panels.state(instance, "group")["enabled"]
+                plan = (await client.post(prefix + "/panels/plan", json=body, headers=headers)).json()
+                assert (await client.post(prefix + "/panels/enable", json={**body, "plan_fingerprint": plan["fingerprint"]}, headers=headers)).status_code == 400
+                assert panel_requests.count(("PUT", "/v2/panels/assembly-panel")) == 1
+                recovered = await client.post(prefix + "/panels/enable", json={**body, "plan_fingerprint": plan["fingerprint"], "confirm": True}, headers=headers)
+                assert recovered.status_code == 200, recovered.text
+                assert recovered.json()["previous"]["panel"]["remark"] == "assembly-manual"
+                assert recovered.json()["panel_id"] == "assembly-panel"
+                assert panel_requests.count(("PUT", "/v2/panels/assembly-panel")) == 1
+                assert await instance.client.qq.delete_panel("assembly-panel", operation_id="assembly-delete") == {}
+                assert "assembly-panel" not in panels and not owner.panels.state(instance, "group")["enabled"]
+                plan = (await client.post(prefix + "/panels/plan", json=body, headers=headers)).json()
+                assert panel_requests.count(("POST", "/v2/panels")) == 1
+                recreated = await client.post(prefix + "/panels/enable", json={**body, "plan_fingerprint": plan["fingerprint"], "confirm": True}, headers=headers)
+                assert recreated.status_code == 200, recreated.text
+                assert recreated.json()["panel_id"] == "assembly-panel-2"
+                assert panel_requests.count(("POST", "/v2/panels")) == 2
+            finally:
+                instance.management.settings = previous_policy
             stopped = await client.post(prefix + "/panels/disable", json={**body, "confirm": True}, headers=headers)
             assert stopped.status_code == 200 and not stopped.json()["enabled"] and len(panels) == 1
             await extension_roundtrip(lifecycle, client, headers, owner, instance, callback, base, replies, completed, probe, event, monkeypatch)

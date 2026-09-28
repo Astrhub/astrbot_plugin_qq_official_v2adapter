@@ -14,6 +14,7 @@ from astrbot.core.platform.register import (
     unregister_platform_adapters_by_module,
 )
 from astrbot.core.star.context import Context
+from host_display import display_service
 from test_onboarding import HostConfig
 
 from v2 import PLATFORM_TYPE, PLUGIN_NAME
@@ -38,10 +39,13 @@ def plugin_module(monkeypatch):
     for name in list(sys.modules):
         if name.startswith(package.__name__ + "."):
             sys.modules.pop(name)
+    from astrbot.core.provider.register import llm_tools
     from astrbot.core.star.star import star_map, star_registry
     from astrbot.core.star.star_handler import star_handlers_registry
     star_map.pop(module.__name__, None)
     star_registry[:] = [m for m in star_registry if m.module_path != module.__name__]
+    llm_tools.func_list[:] = [tool for tool in llm_tools.func_list
+        if getattr(tool.handler, "__module__", None) != module.__name__ and tool.handler_module_path != module.__name__]
     for h in list(star_handlers_registry):
         if h.handler_module_path == module.__name__:
             star_handlers_registry.remove(h)
@@ -86,20 +90,22 @@ async def test_registration_uses_bundled_qq_logo(plugin_module):
 
 
 async def test_platform_form_uses_chinese_labels_without_changing_config(plugin_module):
-    from astrbot.dashboard.services.config_service import ConfigDisplayService
-    baseline = await ConfigDisplayService(SimpleNamespace(astrbot_config={})).get_astrbot_config()
+    baseline = await display_service(SimpleNamespace(astrbot_config={})).get_astrbot_config()
     sandbox_metadata = dict(baseline["metadata"]["platform_group"]["metadata"]["platform"]["items"]["is_sandbox"])
     owner = plugin_module.QQOfficialV2(context(), {})
     await owner.initialize()
     try:
-        data = await ConfigDisplayService(
-            SimpleNamespace(astrbot_config={})
-        ).get_astrbot_config()
+        data = await display_service(SimpleNamespace(astrbot_config={})).get_astrbot_config()
         platform_meta = data["metadata"]["platform_group"]["metadata"]["platform"]
         items = platform_meta["items"]
         assert items["is_sandbox"] == sandbox_metadata and items["is_sandbox"]["type"] == "bool"
-        for key in ("environment", "transport", "intents", "shard", "shard_mode", "onebot", "logo_token"):
+        for key in ("environment", "transport", "intents", "shard", "shard_mode", "onebot"):
             assert items[key]["invisible"] is True
+        template = platform_meta["config_template"][PLATFORM_TYPE]
+        if "logo_token" in items:
+            assert items["logo_token"]["invisible"] is True
+        else:
+            assert template["logo_url"] == f"/api/v1/logos/platform/{PLATFORM_TYPE}"
         assert platform_meta["config_template"][PLATFORM_TYPE]["onebot"]["enable"] is False
         assert platform_meta["config_template"][PLATFORM_TYPE]["shard_mode"] == "auto"
         assert "shard" not in platform_meta["config_template"][PLATFORM_TYPE]

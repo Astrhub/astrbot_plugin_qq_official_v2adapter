@@ -5,6 +5,7 @@ from urllib.parse import quote
 
 from ..errors import V2Error
 from ..messaging.store import robot_key
+from ..models import text_id
 from ..protocol import RequestSpec
 from .callbacks import CallbackTickets
 from .events import ExtensionEvent
@@ -118,6 +119,77 @@ class ExtensionDispatcher:
             self.update(key, ack=outcome, business="not_executed", error=error)
             self.last_error = error["code"]
             return False
+
+    async def reply_interaction(self, interaction_id, code, *, operation_id=None, guard=lambda: None):
+        """ACK only non-managed interactions through the existing durable ACK lane."""
+        self.adapter.check_generation()
+        guard()
+        if self.closed or self.state.closed or self.store.closed:
+            raise V2Error("service_stopped", "Interaction ACK lane is stopped.", status=503)
+        interaction_id = text_id(interaction_id)
+        if interaction_id.startswith("INTERACTION_CREATE:") or type(code) is not int or code not in range(6):
+            raise V2Error("invalid_interaction", "Use d.id and one official result code 0..5.")
+        key = "interaction:" + interaction_id
+        op_id = text_id(operation_id) if operation_id is not None else "ack-" + digest(interaction_id)
+        spec = RequestSpec(self.adapter.identity.robot.environment, "PUT",
+                           "/interactions/" + quote(interaction_id, safe=""), json_body={"code": code})
+        with self.store.transaction():
+            row = self.store.db.execute("SELECT ack,metadata FROM extension_events WHERE robot=? AND event_key=?", (self.robot, key)).fetchone()
+            if not row:
+                raise V2Error("interaction_not_observed", "The current bot has no retained interaction.", status=404)
+            metadata = json.loads(row["metadata"])
+            if metadata.get("interaction_type") in (11, 12):
+                raise V2Error("interaction_owned", "The core owns this button or menu ACK, even for invalid tickets.", status=409)
+            prior = metadata.get("native_ack")
+            if prior is not None:
+                if prior["code"] != code:
+                    raise V2Error("operation_conflict", "An interaction cannot change its ACK code.", status=409)
+                if row["ack"] == "succeeded":
+                    return {}
+                if row["ack"] in ("pending", "unknown") and self.state.confirmed_ack(
+                        self.adapter.identity.robot, prior["operation_id"], spec, code):
+                    self.store.db.execute("UPDATE extension_events SET ack='succeeded',error=NULL,updated=? "
+                                          "WHERE robot=? AND event_key=?", (self.store.now(), self.robot, key))
+                    return {}
+                raise V2Error("extension_result_unknown" if row["ack"] in ("pending", "unknown") else "operation_already_attempted",
+                              "The retained interaction ACK cannot be replayed.", status=409)
+            if row["ack"] != "not_required":
+                raise V2Error("interaction_owned", "Another ACK owner already claimed this interaction.", status=409)
+            deadline = min(metadata["sent_at"], metadata["received_at"]) + 300
+            if self.store.now() >= deadline:
+                raise V2Error("interaction_expired", "Interaction ACK window has expired.", status=409)
+            metadata["native_ack"] = {"code": code, "operation_id": op_id}
+            self.store.db.execute("UPDATE extension_events SET metadata=?,ack='pending',updated=? WHERE robot=? AND event_key=?",
+                                  (json.dumps(metadata), self.store.now(), self.robot, key))
+        captured = []
+        def validate(data):
+            if data not in (None, {}):
+                raise V2Error("invalid_ack_response", "QQ ACK response is not empty.", status=502, phase="result_unknown")
+            captured.append(data)
+            return {"code": code}
+        def before_send():
+            guard()
+            self.adapter.check_generation()
+            if self.store.now() >= deadline:
+                raise V2Error("interaction_expired", "Interaction ACK window has expired.", status=409)
+        try:
+            await self.state.execute(self.ack_http, spec, op_id=op_id, kind="interaction_ack", priority=True,
+                                     validate=validate, before_send=before_send)
+            if not captured:
+                raise V2Error("operation_result_not_retained", "Interaction ACK payload was not retained.", status=410)
+            self.update(key, ack="succeeded")
+            return captured[0]
+        except asyncio.CancelledError:
+            self.update(key, ack="unknown")
+            raise
+        except V2Error:
+            try:
+                retained = self.state.operation(self.adapter.identity.robot, op_id)["state"]
+            except V2Error:
+                retained = "not_sent"
+            self.update(key, ack=retained if retained in ("unknown", "not_sent", "rejected") else "unknown")
+            raise
+
 
     async def process(self, key, event):
         task = asyncio.current_task()

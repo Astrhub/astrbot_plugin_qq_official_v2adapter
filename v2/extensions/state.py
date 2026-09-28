@@ -21,7 +21,7 @@ class ExtensionStore:
         self.closed = False
         self.storage_failed = False
         if self.db.execute("SELECT 1 FROM sqlite_master WHERE name='extension_schema'").fetchone():
-            if self.db.execute("SELECT version FROM extension_schema").fetchone()[0] not in (1, 2):
+            if self.db.execute("SELECT version FROM extension_schema").fetchone()[0] not in (1, 2, 3, 4):
                 raise V2Error("extension_state_corrupt", "Unsupported extension schema; nothing was reset.", status=503)
         self.db.executescript("""
             CREATE TABLE IF NOT EXISTS extension_schema (version INTEGER NOT NULL);
@@ -38,10 +38,16 @@ class ExtensionStore:
             CREATE TABLE IF NOT EXISTS extension_events(robot TEXT,event_key TEXT,name TEXT,received REAL,metadata TEXT,
                 ack TEXT,business TEXT,error TEXT,updated REAL,PRIMARY KEY(robot,event_key));
         """)
-        if "context" not in {row[1] for row in self.db.execute("PRAGMA table_info(extension_ops)")}:
-            self.db.execute("ALTER TABLE extension_ops ADD COLUMN context TEXT")
-        self.db.execute("UPDATE extension_schema SET version=2")
-        self.db.commit()
+        with self.db:
+            if "context" not in {row[1] for row in self.db.execute("PRAGMA table_info(extension_ops)")}:
+                self.db.execute("ALTER TABLE extension_ops ADD COLUMN context TEXT")
+            if self.db.execute("SELECT version FROM extension_schema").fetchone()[0] < 4:
+                self.db.execute("""CREATE TABLE IF NOT EXISTS tool_ops(
+                robot TEXT NOT NULL, op_id TEXT NOT NULL, platform_id TEXT NOT NULL, scope TEXT NOT NULL,
+                actor TEXT NOT NULL, umo TEXT NOT NULL, kind TEXT NOT NULL, request_hash TEXT NOT NULL,
+                request TEXT NOT NULL, created REAL NOT NULL, PRIMARY KEY(robot,op_id))""")
+                self.db.execute("CREATE INDEX IF NOT EXISTS tool_ops_age ON tool_ops(created)")
+                self.db.execute("UPDATE extension_schema SET version=4")
         with self.messages.transaction():
             self.db.execute("UPDATE extension_ops SET state='unknown' WHERE state='in_flight'")
             self.db.execute("UPDATE extension_ops SET state='not_sent' WHERE state='reserved'")
@@ -52,6 +58,7 @@ class ExtensionStore:
         now = self.messages.now()
         self.db.execute("DELETE FROM extension_rates WHERE stamp<=?", (now - 60,))
         self.db.execute("DELETE FROM extension_ops WHERE updated<=? AND state NOT IN ('reserved','in_flight','unknown')", (now - 86400,))
+        self.db.execute("DELETE FROM tool_ops WHERE created<? AND NOT EXISTS (SELECT 1 FROM extension_ops e WHERE e.robot=tool_ops.robot AND e.op_id=tool_ops.op_id AND e.state IN ('reserved','in_flight','unknown'))", (now - 86400,))
         self.db.execute("UPDATE extension_ops SET result=NULL,error=NULL,context=NULL,state='history_evicted' WHERE rowid IN (SELECT rowid FROM extension_ops WHERE state IN ('succeeded','partial','not_sent','rejected') ORDER BY updated DESC,rowid DESC LIMIT -1 OFFSET ?)", (self.capacity,))
 
     def begin(self, robot, op_id, kind, binding, *, context=None):
@@ -66,13 +73,14 @@ class ExtensionStore:
         with self.messages.transaction():
             self.prune()
             row = self.db.execute("SELECT * FROM extension_ops WHERE robot=? AND op_id=?", key).fetchone()
+            self.messages._bind_operation(robot, op_id, "extension", digest([kind, binding]))
             if row:
                 if (row["kind"], row["binding"]) != (kind, binding):
                     raise V2Error("operation_conflict", "This operation is bound to another extension request.", status=409)
                 if row["state"] == "succeeded":
                     return False, json.loads(row["result"]) if row["result"] else None
                 raise V2Error("extension_result_unknown" if row["state"] == "unknown" else "operation_already_attempted", "The retained extension operation cannot be replayed.", status=409, operation_id=op_id,
-                              phase="result_unknown" if row["state"] in {"unknown", "in_flight"} else "not_sent")
+                              phase="result_unknown" if row["state"] in {"unknown", "in_flight"} else "partial" if row["state"] == "partial" else "not_sent")
             ack = int(kind == "interaction_ack")
             count = self.db.execute("SELECT count(*) FROM extension_ops WHERE state IN ('reserved','in_flight','unknown') AND (kind='interaction_ack')=?", (ack,)).fetchone()[0]
             if count >= (128 if ack else self.capacity):
@@ -95,6 +103,8 @@ class ExtensionStore:
             raise V2Error("extension_result_too_large", "Extension result exceeds its retained limit.", status=502, phase="result_unknown")
         with self.messages.transaction():
             self.db.execute("UPDATE extension_ops SET state=?,updated=?,result=?,error=? WHERE robot=? AND op_id=? AND state IN ('reserved','in_flight')", (state, self.messages.now(), encoded, json.dumps(error) if error else None, robot_key(robot), op_id))
+            if state == "not_sent":
+                self.db.execute("DELETE FROM sdk_sequences WHERE robot=? AND op_id=?", (robot_key(robot), op_id))
             self.prune()
 
     def recent(self, robot, limit=10):
@@ -109,6 +119,73 @@ class ExtensionStore:
             raise V2Error("operation_not_found", "No extension operation belongs to this robot.", status=404)
         return {**dict(row), "result": json.loads(row["result"]) if row["result"] else None,
                 "error": json.loads(row["error"]) if row["error"] else None, "context": json.loads(row["context"]) if row["context"] else None}
+
+    def confirmed_ack(self, robot, op_id, spec, code):
+        """Read only a successful ACK with the exact original robot, request and result."""
+        if self.closed or self.messages.closed:
+            raise V2Error("service_stopped", "Extension operations are stopped.", status=503)
+        if self.storage_failed:
+            raise V2Error("extension_storage_unavailable", "ACK state is not reliable.", status=503)
+        binding = digest([spec.method, spec.path, spec.params, spec.json_body])
+        result = json.dumps({"code": code}, ensure_ascii=False, allow_nan=False)
+        return self.db.execute("SELECT 1 FROM extension_ops WHERE robot=? AND op_id=? AND kind='interaction_ack' "
+                               "AND binding=? AND state='succeeded' AND result=?",
+                               (robot_key(robot), text_id(op_id), binding, result)).fetchone() is not None
+
+    def panel_write_result(self, robot, op_id, kind, binding, *, missing_ok=False):
+        """Inspect one exact native panel mutation without scheduling a write."""
+        if self.closed or self.messages.closed:
+            raise V2Error("service_stopped", "Extension operations are stopped.", status=503)
+        if self.storage_failed:
+            raise V2Error("extension_storage_unavailable", "Panel operation state is not reliable.", status=503)
+        row = self.db.execute("SELECT kind,binding,state,result FROM extension_ops WHERE robot=? AND op_id=?",
+                              (robot_key(robot), text_id(op_id))).fetchone()
+        if row is None:
+            if missing_ok:
+                return "missing"
+            raise V2Error("panel_result_unknown", "The manual panel operation has no retained result.", status=409, phase="result_unknown")
+        if (row["kind"], row["binding"]) != (kind, binding):
+            raise V2Error("operation_conflict", "The retained operation belongs to a different panel request.", status=409)
+        if row["state"] == "succeeded" and row["result"] == json.dumps({"state": "succeeded"}, ensure_ascii=False, allow_nan=False):
+            return "succeeded"
+        if row["state"] in {"not_sent", "rejected"}:
+            return row["state"]
+        raise V2Error("panel_result_unknown", "The manual panel result cannot be proven; do not recreate or replay it.",
+                      status=409, phase="result_unknown")
+
+
+    def claim_tool(self, robot, op_id, platform, scope, actor, umo, kind, request, *, logical=None):
+        """Freeze a caller-visible tool request before any management side effect."""
+        key = robot_key(robot), text_id(op_id)
+        metadata = [text_id(value) for value in (platform, scope, actor, umo, kind)]
+        try:
+            serialized = json.dumps(request, sort_keys=True, ensure_ascii=False, allow_nan=False)
+        except (TypeError, ValueError):
+            raise V2Error("invalid_tool_request", "Tool arguments must be finite JSON values.") from None
+        if len(serialized.encode()) > 16384:
+            raise V2Error("invalid_tool_request", "Tool request exceeds 16 KiB.", status=413)
+        fingerprint = digest([*metadata, request if logical is None else logical])
+        with self.messages.transaction():
+            self.prune()
+            row = self.db.execute("SELECT platform_id,scope,actor,umo,kind,request_hash,request FROM tool_ops WHERE robot=? AND op_id=?", key).fetchone()
+            if row:
+                if tuple(row[:6]) != (*metadata, fingerprint):
+                    raise V2Error("operation_conflict", "Tool operation was already bound to a different actor or request.", status=409)
+                return json.loads(row["request"])
+            if self.db.execute("SELECT count(*) FROM tool_ops WHERE robot=?", (key[0],)).fetchone()[0] >= self.capacity:
+                raise V2Error("tool_capacity", "Retained tool operations are at capacity.", status=503)
+            self.db.execute("INSERT INTO tool_ops VALUES(?,?,?,?,?,?,?,?,?,?)",
+                            (*key, *metadata, fingerprint, serialized, self.messages.now()))
+        return request
+
+    def tool_owner(self, robot, op_id, platform, scope, actor, umo):
+        """Return only the same event-session actor's retained tool operation kind."""
+        values = robot_key(robot), text_id(op_id), *(text_id(value) for value in (platform, scope, actor, umo))
+        row = self.db.execute("SELECT kind FROM tool_ops WHERE robot=? AND op_id=? AND platform_id=? AND scope=? AND actor=? AND umo=?", values).fetchone()
+        if row is None:
+            raise V2Error("operation_not_found", "No tool operation belongs to this actor and session.", status=404)
+        return row["kind"]
+
 
     async def execute(self, *args, **kwargs):
         if self.storage_failed:

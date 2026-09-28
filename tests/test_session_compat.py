@@ -233,7 +233,7 @@ def test_persisted_observations_resolve_without_schema_changes_or_touching_unkno
     try:
         for session_id in ("group-one", "user-one_group-one", chat.route.encode()):
             assert store.resolve_session(identity.robot, MessageType.GROUP_MESSAGE, session_id).target == "group-one"
-        assert list(store.db.iterdump()) == before and store.db.execute("PRAGMA user_version").fetchone()[0] == 2
+        assert list(store.db.iterdump()) == before and store.db.execute("PRAGMA user_version").fetchone()[0] == 4
         with pytest.raises(V2Error) as exc:
             store.reserve(chat.route, chat.source, "digest", "preserved")
         assert exc.value.code == "send_result_unknown"

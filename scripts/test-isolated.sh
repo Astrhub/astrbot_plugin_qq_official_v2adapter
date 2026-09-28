@@ -29,4 +29,5 @@ ulimit -f 131072
 ulimit -t 180
 ulimit -n 512
 ulimit -v 8388608
-exec timeout --signal=TERM --kill-after=10s 240s bwrap "${args[@]}" -- /opt/venv/bin/python -m pytest /plugin/tests -p no:cacheprovider -o asyncio_mode=auto -o 'markers=assembly: isolated real AstrBot lifecycle assembly' "$@"
+# Keep pytest's retained tmp_path data in the existing 512 MiB /work sandbox.
+exec timeout --signal=TERM --kill-after=10s 240s bwrap "${args[@]}" -- /opt/venv/bin/python -m pytest /plugin/tests -p no:cacheprovider -o asyncio_mode=auto -o 'markers=assembly: isolated real AstrBot lifecycle assembly' --basetemp=/work/pytest-tmp "$@"

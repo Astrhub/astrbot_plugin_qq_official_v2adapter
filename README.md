@@ -37,6 +37,13 @@
 
 OneBot 接入通过 Pages“连接配置”管理，每实例单独端口和专用token，复用现有动作与发送防重账本；字符串ID与`qq_event`扩展不伪装完整v11。HTTP/WS路由、被动回复、限制和回退见[网络接入说明](docs/ONEBOT.md)。
 
+进程内原生 `client.qq` 覆盖 96 个有效 HTTP 端点，`client.api/call_action` 保留 OneBot OpenID 子集；13 个 `qq_v2_` 群工具按事件绑定群与操作者权限。订阅 56 种业务事件及 READY/RESUMED 仅观察现有接收链路，不提供业务重放。用法见 [SDK](docs/SDK.md)、[群工具](docs/GROUP_TOOLS.md) 与 [覆盖台账](docs/SDK_COVERAGE.md)。
+```python
+client = event.bot  # 当前 V2 事件已绑定的机器人/群/来源
+member = await client.qq.get_group_member_info(event.route.target, "成员 OpenID")
+legacy = await client.api.get_group_member_info(group_id=event.route.target, user_id="成员 OpenID")
+```
+
 | 扩展 | 实现与条件 |
 |---|---|
 | 群/C2C媒体 | 图片、语音、视频、文件；格式接受由QQ判断，URL转存及prepare→PUT→finish→files；整链预检，不静默丢caption或拆多条 |
@@ -109,7 +116,7 @@ print(result["message_id"])
 
 扩展未完成/unknown限2048，ACK独立128，完整终态明细2048；旧结果压缩后保留24小时防重记录，不挤占未完成预算，仍受整库128MiB上限约束。
 
-ID 均为字符串。群/C2C必须提供场景专用OpenID，不用通用 `id` 补缺；频道/DM仍使用其 `id`。`get_stranger_info` 仅查未过期聊天缓存，实例级查询须给 `id_kind` 和 `scope`；`no_cache=True` 不支持。头像优先真实事件 URL。
+ID 均为字符串。群/C2C 提供场景专用 OpenID，不由 QQ 号反推；频道/DM 使用官方对应 ID。`get_stranger_info` 优先保留真实聊天来源/原时间，也可返回明确标记的历史 `profile_cache`（无伪造消息 ID）；实例级查询须给 `id_kind`/`scope`，`no_cache=True` 不支持。头像优先真实事件 URL。
 
 ## 本地测试
 
@@ -137,6 +144,9 @@ astrbot_plugin_qq_official_v2adapter/
 │   ├── messaging/        #   真实聊天消费、持久身份/发送账本、统一发送
 │   ├── media/            #   有界媒体I/O与目标隔离上传
 │   ├── extensions/       #   扩展账本、互动票据、ACK与具名管理
+│   ├── sdk/             #   原生具名 API、事件判别与订阅
+│   ├── profiles/        #   持久资料、当前名单与展示字段
+│   ├── group_tools.py  #   事件绑定的 13 个受控群工具
 │   ├── help.py           #   文本与 Markdown 指令帮助
 │   ├── panels.py         #   有所有权保护的托管面板
 │   ├── connections.py    #   本体连接配置写入口与重载

@@ -1,26 +1,48 @@
 """One client, one generation and one explicit capability boundary."""
 
+import sqlite3
+import weakref
+
 from . import PLATFORM_TYPE, VERSION
 from .errors import V2Error, not_ready, unsupported
-from .extensions.management import MANAGEMENT_ACTIONS, NATIVE_ACTIONS
+from .extensions.management import (
+    MANAGEMENT_ACTIONS,
+    NATIVE_ACTIONS,
+    NATIVE_READ_ACTIONS,
+)
 from .messaging.reply import ACTIVE_FALLBACK_CODES
 from .models import SessionRoute, text_id
 from .protocol import avatar_url
+from .sdk.api.group_admin import NativeGroupAdminMixin
+from .sdk.api.guild_admin import NativeGuildAdminMixin
+from .sdk.api.media import NativeMediaMixin
+from .sdk.api.menus import NativeMenuMixin
+from .sdk.api.messages import NativeMessageMixin
+from .sdk.api.reads import NativeReadMixin
 
 REMOTE_ACTIONS = {
     "send_group_msg", "send_private_msg", "send_msg", "delete_msg", "get_msg",
     "get_login_info", "get_group_info", "get_group_member_info", "get_group_member_list",
     "set_group_ban", "set_group_kick", "set_group_add_request",
+    "set_group_kick_members", "get_group_shut_list", "_qq_get_group_blacklist",
+    "_qq_set_group_blacklist", "_qq_get_join_approval_strategies",
 }
 UNSUPPORTED_ACTIONS = {
     "get_friend_list", "get_group_list", "set_group_whole_ban", "set_friend_add_request",
     "set_group_card", "set_group_admin", "set_group_name", "set_group_leave",
     "send_like", "send_group_forward_msg", "upload_group_file",
 }
+NATIVE_READ_ALIASES = frozenset(name for name in vars(NativeReadMixin) if not name.startswith("_")) - REMOTE_ACTIONS | {"iter_group_members"}
+NATIVE_WRITE_ALIASES = frozenset(name for name in vars(NativeMessageMixin) if not name.startswith("_")) - REMOTE_ACTIONS
+NATIVE_WRITE_ALIASES |= frozenset(name for name in vars(NativeMediaMixin) if not name.startswith("_"))
+NATIVE_WRITE_ALIASES |= frozenset(name for mixin in (NativeGroupAdminMixin, NativeGuildAdminMixin, NativeMenuMixin)
+                                for name in vars(mixin) if not name.startswith("_"))
+
 LOCAL_ACTIONS = {"get_status", "get_version_info", "get_stranger_info", "_qq_get_avatar",
                  "_qq_get_capabilities", "can_send_image", "can_send_record"}
 SEND_ACTIONS = {"send_group_msg", "send_private_msg", "send_msg"}
-WRITE_ACTIONS = SEND_ACTIONS | {"delete_msg", "set_group_ban", "set_group_kick", "set_group_add_request"}
+WRITE_ACTIONS = SEND_ACTIONS | {"delete_msg", "set_group_ban", "set_group_kick", "set_group_add_request",
+                                "set_group_kick_members", "_qq_set_group_blacklist"}
 LOCAL_ACTIONS |= {"_qq_get_send_status", "_qq_get_extension_status"}
 # Shared descriptors are used by the network normalizer and capability projection, not a second dispatcher.
 ACTION_PARAMS = {
@@ -32,10 +54,15 @@ ACTION_PARAMS = {
     "get_login_info": {},
     "get_group_info": {"group_id": "id", "no_cache": "bool"},
     "get_group_member_info": {"group_id": "id", "user_id": "id", "no_cache": "bool"},
-    "get_group_member_list": {"group_id": "id"},
+    "get_group_member_list": {"group_id": "id", "no_cache": "bool"},
     "set_group_ban": {"group_id": "id", "user_id": "id", "duration": "int", "_qq_operation_id": "id"},
     "set_group_kick": {"group_id": "id", "user_id": "id", "reject_add_request": "bool", "_qq_operation_id": "id"},
     "set_group_add_request": {"flag": "id", "sub_type": "str", "approve": "bool", "reason": "str"},
+    "set_group_kick_members": {"group_id": "id", "user_ids": "list", "reject_add_request": "bool", "_qq_operation_id": "id"},
+    "get_group_shut_list": {"group_id": "id"},
+    "_qq_get_group_blacklist": {"group_id": "id", "cursor": "str", "limit": "int"},
+    "_qq_set_group_blacklist": {"group_id": "id", "op": "str", "user_ids": "list", "_qq_operation_id": "id"},
+    "_qq_get_join_approval_strategies": {"cursor": "str", "limit": "int"},
     "delete_msg": {"message_id": "id", "_qq_operation_id": "id"},
     "_qq_get_send_status": {"operation_id": "id"}, "_qq_get_extension_status": {"operation_id": "id"},
 }
@@ -44,7 +71,7 @@ ACTION_RETURNS = {
     "get_status": ["online", "good", "state", "platform_id", "generation", "network"],
     "get_version_info": ["app_name", "app_version", "protocol_version"],
     "get_login_info": ["user_id", "nickname", "id_kind", "source"],
-    "get_stranger_info": ["user_id", "id_kind", "scope", "nickname?", "source", "partial", "first_seen", "last_seen", "source_message_id"],
+    "get_stranger_info": ["user_id", "id_kind", "scope", "nickname?", "source", "partial", "first_seen?", "last_seen?", "source_message_id?", "_qq?"],
     "get_group_info": ["group_id", "group_name", "member_count", "partial", "permission"],
     "get_group_member_info": ["group_id", "user_id", "nickname", "role", "bot", "partial", "id_kind"],
     "get_group_member_list": ["array of get_group_member_info"],
@@ -54,6 +81,11 @@ ACTION_RETURNS = {
     "_qq_get_capabilities": ["actions", "network_api", "compatibility"],
     "set_group_ban": ["state"], "delete_msg": ["state"], "set_group_add_request": ["state"],
     "set_group_kick": ["state", "removed"],
+    "set_group_kick_members": ["state", "removed", "blacklist_failed?"],
+    "get_group_shut_list": ["array of real member mutes"],
+    "_qq_get_group_blacklist": ["users", "next_cursor"],
+    "_qq_set_group_blacklist": ["fail_openids"],
+    "_qq_get_join_approval_strategies": ["strategies", "next_cursor"],
     "can_send_image": ["yes", "implemented", "permission", "reason"],
     "can_send_record": ["yes", "implemented", "permission", "reason"],
 }
@@ -74,6 +106,26 @@ class ClientState:
         self.extensions = None
         self.extension_state = None
         self.network = None
+        self.panels = None
+        self.revoked_owners = []
+        self.events = None
+        self.profiles = None
+        self.reads = None
+
+    def revoke_owner(self, owner):
+        """Invalidate views of an unloaded plugin without retaining live instances."""
+        self.revoked_owners = [ref for ref in self.revoked_owners if ref() is not None]
+        try:
+            ref = weakref.ref(owner)
+        except TypeError:
+            def ref(owner=owner):
+                return owner
+        self.revoked_owners.append(ref)
+
+    def check_owner(self, owner):
+        if owner is not None and any(ref() is owner for ref in self.revoked_owners):
+            raise V2Error("stale_owner", "The owning plugin was unloaded.", status=409)
+
 
     def check(self, generation):
         if self.closed or generation != self.identity.generation:
@@ -81,20 +133,130 @@ class ClientState:
         self.guard()
 
 
-class NativeView:
-    def __init__(self, client, *, actor=None):
+class NativeView(NativeMenuMixin, NativeGuildAdminMixin, NativeGroupAdminMixin, NativeMediaMixin, NativeMessageMixin, NativeReadMixin):
+    def __init__(self, client, *, actor=None, options=None):
+        from .sdk.types import CallOptions
         self._client = client
         self._actor = actor
+        self._options = options or CallOptions()
+        self._profile_view = None
+
+    def _check(self):
+        self._client.check()
+        self._client._state.check_owner(self._options.owner)
+
+
+    def with_options(self, *, operation_id=None, owner=None):
+        """Return a per-call view without changing the shared client state."""
+        from .sdk.types import CallOptions
+        if operation_id is not None:
+            text_id(operation_id)
+        self._check()
+        return NativeView(self._client, actor=self._actor, options=CallOptions(operation_id, owner))
+
+    def _operation_id(self, explicit):
+        self._check()
+        default = self._options.operation_id
+        if default is not None and explicit is not None and explicit != default:
+            raise V2Error("operation_conflict", "Call options and explicit operation ID disagree.", status=409)
+        return explicit if explicit is not None else default
+
+    @property
+    def events(self):
+        self._check()
+        if self._client._state.events is None:
+            raise not_ready()
+        return self._client._state.events
+
+    @property
+    def profiles(self):
+        self._check()
+        service = self._client._state.profiles
+        if service is None:
+            raise not_ready()
+        if self._options.owner is None:
+            return service
+        if self._profile_view is None:
+            from .profiles.service import ProfileView
+            self._profile_view = ProfileView(service, self._check)
+        return self._profile_view
+
+    async def get_group_member_info(self, group_openid: str, member_openid: str) -> dict:
+        """Read current QQ member data and merge scoped profile evidence."""
+        self._check()
+        if self._client._state.reads is None:
+            raise not_ready()
+        profiles = self._client._state.profiles
+        revision = profiles.store.revision(self._client.identity.robot, "group", group_openid) if profiles else 0
+        started = profiles.store.clock() if profiles else None
+        data = await self._client._state.reads.get_group_member_info(group_openid, member_openid, guard=self._check)
+        self._check()
+        if profiles:
+            try:
+                profiles.store.query_member(self._client.identity.robot, "group", group_openid, member_openid,
+                    started_revision=revision, started_at=started, fields={
+                        "nickname": data.get("username"), "last_known_role": data.get("member_role"),
+                        "joined_at": data.get("joined_at"), "bot": data.get("bot"),
+                        "union_openid": data.get("union_openid")})
+            except V2Error as exc:
+                if exc.code != "cache_capacity":
+                    raise
+            except sqlite3.Error:
+                profiles.store.last_error = "cache_storage_unavailable"
+        return data
+
+    async def get_group_member_list(self, group_openid: str, cursor: str = "") -> dict:
+        """Read one native member page including its official next_cursor."""
+        self._check()
+        if self._client._state.reads is None:
+            raise not_ready()
+        profiles = self._client._state.profiles
+        started = profiles.store.clock() if profiles else None
+        page = await self._client._state.reads.get_group_member_list(group_openid, cursor, guard=self._check)
+        self._check()
+        if profiles:
+            for member in page["members"]:
+                if not isinstance(member, dict) or not isinstance(member.get("member_openid"), str):
+                    continue
+                try:
+                    profiles.store.merge(self._client.identity.robot, "group", group_openid, member["member_openid"],
+                        {"nickname": member.get("username"), "joined_at": member.get("joined_at"),
+                         "last_known_role": member.get("member_role"), "bot": member.get("bot"),
+                         "union_openid": member.get("union_openid")},
+                        source="member_page", as_of=started)
+                except V2Error as exc:
+                    if exc.code != "cache_capacity":
+                        raise
+                except sqlite3.Error:
+                    profiles.store.last_error = "cache_storage_unavailable"
+        return page
+
+    async def iter_group_members(self, group_openid: str):
+        """Yield members across bounded native pages."""
+        self._check()
+        if self._client._state.reads is None:
+            raise not_ready()
+        async for row in self._client._state.reads.iter_group_members(group_openid, fetch=self.get_group_member_list):
+            yield row
+
+    async def get_group_info(self, group_openid: str) -> dict:
+        """Read the native group response without a OneBot projection."""
+        self._check()
+        if self._client._state.management is None:
+            raise not_ready()
+        response = await self._client._state.management.group_info(group_openid, guard=self._check)
+        self._check()
+        return response
 
     def callback_button(self, function, *, label, data=None, audience="actor"):
-        self._client.check()
+        self._check()
         service = self._client._state.extensions
         if service is None or self._client._route is None or self._actor is None:
             raise unsupported("Callback buttons require a live QQ V2 event and extension service.")
         return service.callbacks.issue(self._client._route, self._actor, function, label=label, data=data, audience=audience)
 
     def avatar_url(self, openid, size=100):
-        self._client.check()
+        self._check()
         return avatar_url(self._client.identity.robot, openid, size)
 
     user_avatar_url = avatar_url
@@ -102,16 +264,18 @@ class NativeView:
 
     async def send(self, scene, target, message, *, markdown=None, operation_id=None):
         route = self._client.route_for(scene, target)
-        return await self._client.send(route, message, markdown=markdown, operation_id=operation_id)
+        return await self._client._send_owned(route, message,
+            {"markdown": markdown, "operation_id": self._operation_id(operation_id)}, guard=self._check)
 
     def streaming_mode(self, scene, target, *, use_fallback=False):
-        self._client.check()
+        self._check()
         if self._client._state.streaming is None:
             raise not_ready()
         return self._client._state.streaming.mode(self._client.route_for(scene, target), use_fallback)
 
     async def send_streaming(self, scene, target, generator, *, input_mode="append", use_fallback=False, operation_id=None):
-        return await self._client.stream(self._client.route_for(scene, target), generator, input_mode=input_mode, use_fallback=use_fallback, operation_id=operation_id)
+        return await self._client._stream_owned(self._client.route_for(scene, target), generator,
+            {"input_mode": input_mode, "use_fallback": use_fallback, "operation_id": self._operation_id(operation_id)}, guard=self._check)
 
     async def send_file(self, scene, target, file, *, name="upload", kind="file", allow_file_fallback=True, operation_id=None):
         from .media.types import MediaInput
@@ -119,15 +283,15 @@ class NativeView:
 
     async def typing(self, scene, target, *, seconds=10):
         client = self._client
-        client.check()
+        self._check()
         route = client.route_for(scene, target)
         if client._state.typing is None:
             raise unsupported("Typing service is not attached.")
         source = client._source if client._source and route == client._source.route else None
-        return await client._state.typing.start(route, source, seconds=seconds)
+        return await client._state.typing.start(route, source, seconds=seconds, guard=self._check)
 
     def send_status(self, operation_id):
-        self._client.check()
+        self._check()
         if self._client._state.sender is None:
             raise not_ready()
         result = self._client._state.sender.store.operation(self._client.identity.robot, operation_id)
@@ -138,38 +302,47 @@ class NativeView:
             raise AttributeError(name)
         async def call(*args, **kwargs):
             import inspect
-            self._client.check()
+            self._check()
             service = self._client._state.management
             if service is None:
                 raise not_ready()
             method = getattr(service, name)
+            if self._options.operation_id is not None and "operation_id" in inspect.signature(method).parameters:
+                kwargs = dict(kwargs)
+                kwargs["operation_id"] = self._operation_id(kwargs.get("operation_id"))
+            kwargs = {**kwargs, "guard": self._check}
             try:
                 inspect.signature(method).bind(*args, **kwargs)
             except TypeError:
                 raise V2Error("invalid_params", "Unknown or missing named operation parameters.") from None
-            return await method(*args, **kwargs)
+            result = await method(*args, **kwargs)
+            if name in NATIVE_READ_ACTIONS:
+                self._check()
+            return result
         return call
 
     def extension_events(self, limit=32):
-        self._client.check()
+        self._check()
         if self._client._state.extensions is None:
             raise not_ready()
         return self._client._state.extensions.records(limit)
 
     def extension_status(self, operation_id):
-        self._client.check()
+        self._check()
         if self._client._state.extension_state is None:
             raise not_ready()
         return self._client._state.extension_state.operation(self._client.identity.robot, operation_id)
 
     async def request(self, spec):
-        self._client.check()
+        self._check()
         http = self._client._state.http
         if http is None:
             raise not_ready()
         if spec.method not in {"GET", "HEAD"}:
             raise unsupported("Arbitrary native writes cannot bypass the shared send/menu policy.")
-        return await http.request(spec)
+        result = await http.request(spec, before_send=self._check)
+        self._check()
+        return result
 
 
 class V2Client:
@@ -222,6 +395,12 @@ class V2Client:
                 **({name: {"support": "conditional", "permission": "unknown", "reason": "real_response_and_retained_scope_required; writes_opt_in"}
                     for name in MANAGEMENT_ACTIONS} if self._state.management else {}),
             },
+            "sdk": {"contract_version": 1, "http_targets": 96, "legacy_sdk_methods": 64,
+                    "business_events": 56, "native_implemented": sorted(NATIVE_READ_ALIASES | NATIVE_WRITE_ALIASES | {
+                        "get_group_info", "get_group_member_info", "get_group_member_list"}),
+                    "event_observation": "live_bounded" if self._state.events else "not_attached",
+                    "profiles": "durable" if self._state.profiles else "not_attached",
+                    "account_permission": "unverified"},
             "identity_cache": "durable, robot/kind/scene/target-scoped chat observations" if self._state.cache is not None else "not_ready",
         }
         for name, entry in result["actions"].items():
@@ -262,6 +441,34 @@ class V2Client:
                     raise V2Error("invalid_params", "Message type does not match target.")
             route = self.route_for(scene, params.get("group_id" if scene == "group" else "user_id"))
             return await self.send(route, params["message"], onebot=True, auto_escape=params.get("auto_escape", False), operation_id=params.get("_qq_operation_id"))
+        if action in {"get_group_member_info", "get_group_member_list"} and self._state.profiles is not None:
+            from .onebot_profiles import OneBotProfiles
+            if params.keys() - ACTION_PARAMS[action] or type(params.get("no_cache", False)) is not bool:
+                raise V2Error("invalid_params", "Group profile options must match the declared action.")
+            compat = OneBotProfiles(self)
+            group = params.get("group_id")
+            if action == "get_group_member_info":
+                return await compat.member(group, params.get("user_id"), refresh=params.get("no_cache", False))
+            return await compat.members(group, refresh=params.get("no_cache", False))
+        if action in {"set_group_kick_members", "get_group_shut_list", "_qq_get_group_blacklist",
+                      "_qq_set_group_blacklist", "_qq_get_join_approval_strategies"}:
+            if params.keys() - ACTION_PARAMS[action] or self._state.management is None:
+                raise V2Error("invalid_params", "Unknown management parameters or unavailable service.")
+            group = text_id(params.get("group_id")) if "group_id" in ACTION_PARAMS[action] else None
+            if action == "set_group_kick_members":
+                return await self._state.management.group_kick(group, params.get("user_ids"),
+                    blacklist=params.get("reject_add_request", False), operation_id=params.get("_qq_operation_id"))
+            if action == "get_group_shut_list":
+                data = await self._state.management.group_mutes(group)
+                return [{"group_id": group, "user_id": text_id(row.get("member_openid")),
+                         "nickname": row.get("username"), "mute_expire_at": row.get("mute_expire_at"),
+                         "_qq": {"source": "official_query"}} for row in data["members"]]
+            if action == "_qq_get_group_blacklist":
+                return await self.qq.get_group_member_blacklist(group, params.get("cursor"), params.get("limit"))
+            if action == "_qq_set_group_blacklist":
+                return await self.qq.set_group_member_blacklist(group, params.get("op"), params.get("user_ids"),
+                    operation_id=params.get("_qq_operation_id"))
+            return await self.qq.get_join_approval_strategies(params.get("cursor"), params.get("limit"))
         if action in MANAGEMENT_ACTIONS and self._state.management is not None:
             return await self._state.management.onebot(action, params)
         if action in REMOTE_ACTIONS:
@@ -307,6 +514,9 @@ class V2Client:
             scope = f"{self._route.scene}:{self._route.target}"
         if not isinstance(kind, str) or not isinstance(scope, str):
             raise V2Error("identity_scope_required", "Explicit id_kind and scope are required outside a bound chat route.")
+        if action == "get_stranger_info" and self._state.profiles is not None:
+            from .onebot_profiles import OneBotProfiles
+            return OneBotProfiles(self).stranger(user_id, kind, scope)
         if self._state.cache is None:
             raise not_ready()
         record = self._state.cache.lookup(self.identity.robot, kind, scope, user_id)
@@ -321,6 +531,8 @@ class V2Client:
                 "source": "qqapp", "verified": False}
 
     def __getattr__(self, name):
+        if name in NATIVE_READ_ALIASES | NATIVE_WRITE_ALIASES:
+            return getattr(self.qq, name)
         if name not in REMOTE_ACTIONS | UNSUPPORTED_ACTIONS | LOCAL_ACTIONS:
             raise AttributeError(name)
 
@@ -334,26 +546,34 @@ class V2Client:
         return SessionRoute(self.identity.robot, scene, target, user)
 
     async def stream(self, route, generator, **options):
+        return await self._stream_owned(route, generator, options, guard=self.check)
+
+    async def _stream_owned(self, route, generator, options, *, guard):
+        guard()
         self.check()
         if self._state.streaming is None:
             raise unsupported("Streaming service is not attached.")
         source = self._source if self._source and route == self._source.route else None
         try:
-            return await self._state.streaming.send(route, generator, source=source, **options)
+            return await self._state.streaming.send(route, generator, source=source, guard=guard, **options)
         finally:
             if self._state.typing and source is not None:
                 await self._state.typing.stop(route, source=source)
 
     async def send(self, route, message, **options):
+        return await self._send_owned(route, message, options, guard=self.check)
+
+    async def _send_owned(self, route, message, options, *, guard):
         if options.keys() - {"onebot", "auto_escape", "markdown", "operation_id", "keyboard"}:
             raise V2Error("invalid_params", "Unsupported send options.")
+        guard()
         self.check()
         if route.robot != self.identity.robot:
             raise V2Error("identity_mismatch", "Cannot send into another robot's session.", status=409)
         if self._state.sender:
             source = self._source if self._source and route == self._source.route else None
             try:
-                return await self._state.sender.send(route, message, source=source, **options)
+                return await self._state.sender.send(route, message, source=source, guard=guard, **options)
             finally:
                 if self._state.typing and source is not None:
                     await self._state.typing.stop(route, source=source)
