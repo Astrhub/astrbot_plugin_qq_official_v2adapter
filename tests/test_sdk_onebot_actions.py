@@ -5,7 +5,7 @@ from urllib.parse import urlsplit
 
 import pytest
 
-from v2.client import ClientState, V2Client
+from v2.client import ACTION_RETURNS, ClientState, V2Client
 from v2.errors import V2Error
 
 pytest_plugins = ("test_management", "test_sdk_native_writes")
@@ -44,7 +44,8 @@ async def test_onebot_blacklist_page_strategy_and_write_keep_native_parameters(n
         if spec.method == "GET" and urlsplit(spec.url).path.endswith("/member_blacklist"):
             data = {"users": [{"member_openid": "001", "username": "Nick"}], "next_cursor": "next"}
         elif spec.method == "GET":
-            data = {"list": [], "next_cursor": ""}
+            data = {"strategies": [{"strategy_id": "strategy-1", "remark": "mine", "group_openids": ["another-group"], "unknown": 0}],
+                    "next_cursor": "follow-up", "official_extra": {"marker": False}}
         else:
             data = {"fail_openids": []}
         return SimpleNamespace(data=data, status=200, trace_id="fixture")
@@ -54,7 +55,10 @@ async def test_onebot_blacklist_page_strategy_and_write_keep_native_parameters(n
     assert page["users"][0]["member_openid"] == "001"
     assert calls[-1] == ("GET", "https://api.bot.qq.com/v2/groups/g/member_blacklist?cursor=0&limit=20", {"cursor": "0", "limit": 20}, None)
     strategies = await m.client.call_action("_qq_get_join_approval_strategies", limit=10)
-    assert strategies == {"list": [], "next_cursor": ""}
+    assert strategies == {"strategies": [{"strategy_id": "strategy-1", "remark": "mine",
+                                          "group_openids": ["another-group"], "unknown": 0}],
+                          "next_cursor": "follow-up", "official_extra": {"marker": False}}
+    assert ACTION_RETURNS["_qq_get_join_approval_strategies"] == ["strategies", "next_cursor"]
     assert calls[-1] == ("GET", "https://api.bot.qq.com/v2/groups/join_approval_strategy?limit=10", {"limit": 10}, None)
     result = await m.client.call_action("_qq_set_group_blacklist", group_id="g", op="add", user_ids=["001"],
                                         _qq_operation_id="ob-blacklist")

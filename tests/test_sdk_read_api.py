@@ -34,7 +34,9 @@ READ_CASES = [
     ("get_group_member_blacklist", ("g", "", 0), {}, None, None),
     ("get_group_member_blacklist", ("g", "", 20), {}, "https://api.bot.qq.com/v2/groups/g/member_blacklist?cursor=&limit=20", None),
     ("get_group_join_requests", ("g", "c&+", 4), {}, "https://api.bot.qq.com/v2/groups/g/join_request_list?cursor=c%26%2B&limit=4", None),
-    ("get_join_approval_strategies", (), {}, "https://api.bot.qq.com/v2/groups/join_approval_strategy", None),
+    ("get_join_approval_strategies", (), {}, "https://api.bot.qq.com/v2/groups/join_approval_strategy",
+     {"strategies": [{"strategy_id": "strategy-1", "is_enable": "on", "group_openids": ["other-group"]}],
+      "next_cursor": "", "official_extra": {"zero": 0}}),
     ("get_menu", (), {}, "https://api.bot.qq.com/v2/menu", None),
     ("get_panels", ("group",), {}, "https://api.bot.qq.com/v2/panels?scope=group", None),
     ("get_panels", ("dm", "", 2), {}, "https://api.bot.qq.com/v2/panels?scope=dm&cursor=&limit=2", None),
@@ -176,6 +178,42 @@ async def test_native_read_cancellation_does_not_return_cached_state(client):
     with pytest.raises(asyncio.CancelledError):
         await client.qq.get_guild_member("g", "u")
 
+
+@pytest.mark.parametrize("last", [[], [{"strategy_id": "strategy-2", "is_enable": "off"}]])
+async def test_official_strategy_page_and_two_page_iterator_preserve_cursor_and_raw_fields(client, last):
+    first = {"strategies": [{"strategy_id": "strategy-1", "group_openids": ["other-group"]}],
+             "next_cursor": "next&1", "official_extra": {"zero": 0}}
+    second = {"strategies": last, "next_cursor": "", "official_extra": False}
+    calls = []
+    class HTTP:
+        async def request(self, spec):
+            calls.append((spec.method, spec.url, spec.json_body))
+            return SimpleNamespace(data=second if spec.params and spec.params.get("cursor") == "next&1" else first)
+    client._state.http = HTTP()
+    assert await client.qq.get_join_approval_strategies() is first
+    assert [row async for row in client.qq.iter_join_approval_strategies()] == first["strategies"] + last
+    base = "https://api.bot.qq.com/v2/groups/join_approval_strategy"
+    assert calls == [("GET", base, None), ("GET", base + "?cursor=", None),
+                     ("GET", base + "?cursor=next%261", None)]
+
+
+@pytest.mark.parametrize("malformed", [
+    {"list": [{"strategy_id": "wrong-field"}], "next_cursor": ""},
+    {"next_cursor": ""},
+    {"strategies": None, "next_cursor": ""},
+    {"strategies": []},
+])
+async def test_strategy_page_missing_official_fields_fails_explicitly(client, malformed):
+    async def request(spec):
+        assert spec.method == "GET" and spec.url.startswith("https://api.bot.qq.com/v2/groups/join_approval_strategy")
+        return SimpleNamespace(data=malformed)
+    client._state.http = SimpleNamespace(request=request)
+    with pytest.raises(V2Error) as direct:
+        await client.qq.get_join_approval_strategies()
+    assert direct.value.code == "pagination_incomplete"
+    with pytest.raises(V2Error) as iterated:
+        [row async for row in client.qq.iter_join_approval_strategies()]
+    assert iterated.value.code == "pagination_incomplete"
 
 
 async def test_cursor_pagination_detects_repetition_without_partial_list(client):

@@ -81,7 +81,7 @@ ACTION_RETURNS = {
     "get_group_shut_list": ["array of real member mutes"],
     "_qq_get_group_blacklist": ["users", "next_cursor"],
     "_qq_set_group_blacklist": ["fail_openids"],
-    "_qq_get_join_approval_strategies": ["list", "next_cursor"],
+    "_qq_get_join_approval_strategies": ["strategies", "next_cursor"],
     "can_send_image": ["yes", "implemented", "permission", "reason"],
     "can_send_record": ["yes", "implemented", "permission", "reason"],
 }

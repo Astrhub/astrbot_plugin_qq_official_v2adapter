@@ -15,7 +15,7 @@
 | `change_blacklist` | `op=add/del`，1–20 个显式 OpenID；不会暗中先踢人。 |
 | `list_join_requests` | 官方待处理申请单页，返回当前有效 `flag`；重新查询可能更新旧 flag。 |
 | `approve_join_request` | 上一项的真实待处理 `flag`、明确批准/拒绝与有限拒绝理由。 |
-| `list_join_strategies` | 机器人级策略单页摘要，不向模型默认展示跨群名单。 |
+| `list_join_strategies` | 机器人级策略官方游标单页，返回 `strategies` 摘要及 `next_cursor`；不向模型展示跨群名单。 |
 | `get_operation_status` | 仅本群同会话、同操作者提交的工具写操作；未知/部分成功只查状态。 |
 
 查询仍受宿主启用与插件会话过滤；群管理查询/写入要求 AstrBot 管理员或本群实时 QQ owner/admin，不能用历史 `last_known_role` 授权。机器人级策略要求 AstrBot 管理员。QQ 执行权限与宿主操作者权限分别校验，管理写还受默认关闭的 `management_writes` 开关和实际 QQ 响应约束。仅管理调用需要时联网核实操作者，不为每轮模型描述全群名单。

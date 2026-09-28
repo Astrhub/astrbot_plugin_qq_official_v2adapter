@@ -106,7 +106,12 @@ class NativeReadMixin:
             params["cursor"] = page_cursor(cursor)
         if limit is not None:
             params["limit"] = page_limit(limit, 50)
-        return await self._native_read("/v2/groups/join_approval_strategy", params=params)
+        page = await self._native_read("/v2/groups/join_approval_strategy", params=params)
+        if (not isinstance(page, dict) or not isinstance(page.get("strategies"), list)
+                or not isinstance(page.get("next_cursor"), str)
+                or any(not isinstance(item, dict) for item in page["strategies"])):
+            raise pagination_error("QQ returned an incomplete strategy page.")
+        return page
 
     async def get_menu(self) -> dict:
         """Fetch the current native global menu."""

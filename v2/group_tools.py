@@ -187,7 +187,7 @@ class GroupTools:
         if name == "list_join_strategies":
             page = await qq.get_join_approval_strategies(args.get("cursor"), args.get("limit", 20))
             return {"strategies": [{key: row.get(key) for key in ("strategy_id", "remark", "is_enable")}
-                                   for row in page.get("list", [])], "next_cursor": page["next_cursor"]}
+                                   for row in page["strategies"]], "next_cursor": page["next_cursor"]}
         if name == "get_operation_status":
             op_id = text_id(args["operation_id"])
             kind = self.owner.extension_state.tool_owner(event.bot.identity.robot, op_id,

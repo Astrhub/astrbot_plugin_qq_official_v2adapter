@@ -61,7 +61,15 @@ async def tool_env(native, tmp_path):
         elif parsed.path == "/v2/groups/g/approval_join_request/u":
             data = {}
         elif parsed.path == "/v2/groups/join_approval_strategy":
-            data = {"list": [{"strategy_id": "strategy", "remark": "mine", "is_enable": "on", "group_openids": ["other-secret-group"]}], "next_cursor": ""}
+            if mode[0] == "bad_strategy":
+                data = {"list": [{"strategy_id": "wrong-field"}], "next_cursor": ""}
+            elif spec.params and spec.params.get("cursor") == "next&1":
+                data = {"strategies": [{"strategy_id": "strategy-two", "remark": "second", "is_enable": "off",
+                                       "group_ids": ["hidden-number"]}], "next_cursor": ""}
+            else:
+                data = {"strategies": [{"strategy_id": "strategy", "remark": "mine", "is_enable": "on",
+                                       "group_openids": ["other-secret-group"], "union_openid": "secret"}],
+                        "next_cursor": "next&1", "extra": {"internal": "secret"}}
         else:
             raise AssertionError(parsed.path)
         return SimpleNamespace(data=data, status=200, trace_id="fixture")
@@ -133,12 +141,35 @@ async def test_bound_scope_session_and_member_role_are_rechecked_before_any_mana
     event.role = "admin"
     strategies = await t.tools.call(event, "list_join_strategies")
     assert strategies["strategies"] == [{"strategy_id": "strategy", "remark": "mine", "is_enable": "on"}]
+    assert strategies["next_cursor"] == "next&1"
     assert "other-secret-group" not in json.dumps(strategies)
     private = t.event()
     private.message_obj.group_id = "different"
     with pytest.raises(V2Error) as wrong:
         await t.tools.call(private, "get_group")
     assert wrong.value.code == "tool_scope_unavailable"
+
+
+async def test_strategy_tool_follows_official_cursor_without_exposing_cross_group_data(tool_env):
+    t = tool_env
+    event = t.event()
+    event.role = "admin"
+    first = await t.tools.call(event, "list_join_strategies")
+    second = await t.tools.call(event, "list_join_strategies", cursor=first["next_cursor"])
+    assert first == {"strategies": [{"strategy_id": "strategy", "remark": "mine", "is_enable": "on"}],
+                     "next_cursor": "next&1"}
+    assert second == {"strategies": [{"strategy_id": "strategy-two", "remark": "second", "is_enable": "off"}],
+                      "next_cursor": ""}
+    assert [call[:5] for call in t.requests] == [
+        ("GET", "https", "api.bot.qq.com", "/v2/groups/join_approval_strategy", "limit=20"),
+        ("GET", "https", "api.bot.qq.com", "/v2/groups/join_approval_strategy", "cursor=next%261&limit=20"),
+    ]
+    assert all("secret" not in json.dumps(page) and "hidden-number" not in json.dumps(page)
+               for page in (first, second))
+    t.mode[0] = "bad_strategy"
+    with pytest.raises(V2Error) as malformed:
+        await t.tools.call(event, "list_join_strategies")
+    assert malformed.value.code == "pagination_incomplete"
 
 
 async def test_tool_caches_are_group_scoped_pages_not_complete_or_identity_guessing(tool_env):
