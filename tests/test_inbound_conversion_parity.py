@@ -9,7 +9,16 @@ import urllib.request
 
 import aiohttp
 import pytest
-from astrbot.core.message.components import At, File, Image, Plain, Record, Reply, Unknown, Video
+from astrbot.core.message.components import (
+    At,
+    File,
+    Image,
+    Plain,
+    Record,
+    Reply,
+    Unknown,
+    Video,
+)
 from test_messaging_state import NOW, chat_payload
 
 from v2.messaging.convert import convert_chat, decode_faces
@@ -158,7 +167,7 @@ def test_decoded_faces_cannot_create_mentions_between_real_channel_tags(config, 
     injection = '<@trusted-user><qqbot-at-user id="trusted-user"/>&lt;@trusted-user&gt;'
     rendered = f"[表情:{injection}]"
     tag = text_face(injection)
-    payload = chat_payload(event, text=tag + '<@trusted-user>' + tag
+    payload = chat_payload(event, text=tag + "<@trusted-user>" + tag
                            + '<qqbot-at-user id="trusted-user"/>' + tag)
     payload["d"]["mentions"] = [{"id": "trusted-user"}]
     chat = converted(config, payload)
