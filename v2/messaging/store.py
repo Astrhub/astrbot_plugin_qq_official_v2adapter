@@ -359,6 +359,20 @@ class MessageStore:
             failure("reply_source_rejected", "QQ rejected this passive reply source.")
         return row
 
+    def _claim_source_seq(self, route, source, row):
+        """Allocate the next passive sequence, fenced against the native SDK lane."""
+        kind = "message" if source.message_id is not None else "event"
+        source_id = source.message_id if source.message_id is not None else source.event_id
+        key = (*route_key(route), kind, text_id(source_id))
+        sdk = self.db.execute("SELECT max(seq) FROM sdk_sequences WHERE robot=? AND scene=? AND target=? AND source_kind=? AND source_id=?", key).fetchone()[0] or 0
+        retained = self.db.execute("""SELECT max(seq) FROM operations WHERE robot=? AND scene=? AND target=?
+            AND source=? AND state IN ('reserved','in_flight','unknown','sent','rejected','history_evicted')""",
+            (key[0], key[1], key[2], source_key(source))).fetchone()[0] or 0
+        seq = max(row["seq"], sdk, retained) + 1
+        self.db.execute("UPDATE sources SET seq=?,used=used+1 WHERE robot=? AND scene=? AND target=? AND message_id=?",
+                        (seq, *route_key(route), source_key(source)))
+        return seq
+
     def reply_mode(self, route, source):
         if source is None:
             self.target(route)
@@ -512,17 +526,20 @@ class MessageStore:
             return request
 
 
-    def reserve(self, route, source, digest, op_id, *, allow_active=False, existing_only=False):
+    def reserve(self, route, source, digest, op_id, *, allow_active=False, existing_only=False, fallback=None):
         text_id(op_id)
+        if fallback is not None and (source is not None or fallback.origin not in {"event_session", "session_index"}):
+            failure("invalid_source", "A session fallback needs one fixed inbound candidate.")
+        binding = source_key(source) if source else source_key(fallback.source) if fallback else None
         key = route_key(route)
         with self.transaction():
             now = self.now()
-            self._prune(now, keep_source=(*key, source_key(source)) if source else None)
+            self._prune(now, keep_source=(*key, binding) if binding else None)
             old = self.db.execute("SELECT * FROM operations WHERE robot=? AND op_id=?", (key[0], op_id)).fetchone()
             if old or not existing_only:
                 self._bind_operation(route.robot, op_id, "send", digest)
             if old:
-                if (old["scene"], old["target"], old["source"], old["digest"]) != (route.scene, route.target, source_key(source) if source else None, digest):
+                if (old["scene"], old["target"], old["source"], old["digest"]) != (route.scene, route.target, binding, digest):
                     failure("operation_conflict", "A logical operation cannot change source, target or content.")
                 if old["state"] == "sent":
                     return self.operation(route.robot, op_id)
@@ -539,16 +556,34 @@ class MessageStore:
             reason = self.reply_mode(route, source) if allow_active else None
             seq = None
             if source and reason is None:
-                row = self._source(route, source, now)
-                seq = row["seq"] + 1
-                self.db.execute("UPDATE sources SET seq=?,used=used+1 WHERE robot=? AND scene=? AND target=? AND message_id=?", (seq, *key, source_key(source)))
+                seq = self._claim_source_seq(route, source, self._source(route, source, now))
             delivery = None
             if allow_active:
                 mode = "passive" if source and reason is None else "active"
-                delivery = {"delivery": {"mode": mode, "reason": reason, "attempts": [{"mode": mode, "state": "not_sent", "wire_attempts": 0}]}}
+                delivery = {"delivery": {"mode": mode, "reason": reason,
+                                          **({"source_origin": fallback.describe()} if fallback else {}),
+                                          "attempts": [{"mode": mode, "state": "not_sent", "wire_attempts": 0}]}}
             self.db.execute("INSERT INTO operations VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
-                            (key[0], op_id, route.scene, route.target, source_key(source) if source else None, digest, seq, "reserved", now, now, json.dumps(delivery) if delivery else None, None))
+                            (key[0], op_id, route.scene, route.target, binding, digest, seq, "reserved", now, now, json.dumps(delivery) if delivery else None, None))
             return self.operation(route.robot, op_id)
+
+    def switch_passive(self, route, source, op_id, delivery):
+        """Convert one session send to passive against its fixed candidate, atomically."""
+        with self.transaction():
+            now = self.now()
+            row = self._source(route, source, now)
+            current = self.db.execute("SELECT * FROM operations WHERE robot=? AND op_id=?",
+                                      (robot_key(route.robot), text_id(op_id))).fetchone()
+            if (current is None or current["state"] not in {"reserved", "in_flight"}
+                    or (current["scene"], current["target"], current["source"]) != (route.scene, route.target, source_key(source))):
+                failure("operation_conflict", "Only this operation's fixed candidate can convert it to passive.", 409)
+            result = json.loads(current["result"]) if current["result"] else {}
+            if (result.get("delivery") or {}).get("converted") == "active_to_passive":
+                failure("operation_already_attempted", "This operation already used its passive conversion.")
+            seq = self._claim_source_seq(route, source, row)
+            self.db.execute("UPDATE operations SET seq=?,updated=?,result=? WHERE robot=? AND op_id=?",
+                            (seq, now, json.dumps({**result, "delivery": delivery}), robot_key(route.robot), op_id))
+            return seq
 
     def reserve_native(self, route, source_kind, source_id, digest, op_id, *, requested_seq=None, stream=None):
         """Bind a native send without fabricating target observation or source lifetime."""

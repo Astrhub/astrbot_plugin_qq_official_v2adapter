@@ -24,24 +24,24 @@ from v2.errors import V2Error
 from v2.models import InstanceKey
 
 
-@pytest.mark.parametrize("fields,transport,environment,mode", [
-    ({}, "websocket", "production", "auto"),
-    ({"type": WEBHOOK_TYPE}, "webhook", "production", "auto"),
-    ({"environment": "sandbox", "transport": "webhook", "shard": [0, 1]}, "webhook", "sandbox", "manual"),
-    ({"shard": [1, 2]}, "websocket", "production", "manual"),
-    ({"is_sandbox": True, "shard_mode": "auto"}, "websocket", "sandbox", "auto"),
+@pytest.mark.parametrize("fields,transport,mode", [
+    ({}, "websocket", "auto"),
+    ({"type": WEBHOOK_TYPE}, "webhook", "auto"),
+    ({"environment": "sandbox", "is_sandbox": True, "transport": "webhook", "shard": [0, 1]}, "webhook", "manual"),
+    ({"shard": [1, 2]}, "websocket", "manual"),
+    ({"is_sandbox": "legacy-value", "shard_mode": "auto"}, "websocket", "auto"),
 ])
-def test_legacy_and_new_configuration_keep_identity_and_topology(fields, transport, environment, mode):
+def test_legacy_and_new_configuration_keep_identity_and_topology(fields, transport, mode):
     config = {"id": "官机", "appid": "app", **fields}
     snapshot = copy.deepcopy(config)
     identity = InstanceKey.from_config(config)
-    assert (identity.transport, identity.robot.environment, identity.shard_mode) == (transport, environment, mode)
-    assert json.loads(identity.settings_key) == ["官机", "app", environment]
+    assert (identity.transport, identity.robot.environment, identity.shard_mode) == (transport, "production", mode)
+    assert json.loads(identity.settings_key) == ["官机", "app", "production"]
     assert config == snapshot
 
 
 @pytest.mark.parametrize("fields", [
-    {"environment": "sandbox", "is_sandbox": False}, {"is_sandbox": 1},
+    {"use_markdown": 1}, {"use_markdown": "yes"},
     {"type": WEBHOOK_TYPE, "transport": "websocket"}, {"shard_mode": "invalid"},
     {"type": WEBHOOK_TYPE, "shard": [1, 2]}, {"shard_mode": "auto", "shard": [1, 2]},
     {"shard": [False, 1]}, {"intents": True}, {"intents": 2**32},
@@ -49,6 +49,14 @@ def test_legacy_and_new_configuration_keep_identity_and_topology(fields, transpo
 def test_conflicting_aliases_and_invalid_topology_reject_without_side_effects(fields):
     with pytest.raises(V2Error):
         normalize_connection(fields)
+
+
+def test_sandbox_inputs_are_ignored_and_markdown_defaults_on():
+    value = normalize_connection({"appid": "app", "is_sandbox": True, "environment": "sandbox"})
+    assert value["environment"] == "production" and "is_sandbox" not in value
+    assert value["use_markdown"] is True
+    saved = normalize_connection({"appid": "app", "use_markdown": False, "is_sandbox": 7})
+    assert saved["use_markdown"] is False
 
 
 async def test_both_registered_forms_leave_shared_host_management_metadata_unchanged(plugin_module):
@@ -59,19 +67,21 @@ async def test_both_registered_forms_leave_shared_host_management_metadata_uncha
     await owner.initialize()
     try:
         form = (await service.get_astrbot_config())["metadata"]["platform_group"]["metadata"]["platform"]
-        for key in ("id", "enable", "unified_webhook_mode", "webhook_uuid", "is_sandbox"):
+        for key in ("id", "enable", "unified_webhook_mode", "webhook_uuid", "is_sandbox", "use_markdown"):
             assert form["items"].get(key) == before.get(key)
         for kind, title in [(PLATFORM_TYPE, "QQ 官方 V2（WebSocket）"), (WEBHOOK_TYPE, "QQ 官方 V2（Webhook）")]:
             meta = next(m for m in platform_registry if m.name == kind)
             template = form["config_template"][kind]
             visible = {k for k in template if not form["items"].get(k, {}).get("invisible")}
-            assert visible - {"logo_url"} == {"id", "enable", "appid", "secret", "is_sandbox"}
+            assert visible - {"logo_url"} == {"id", "enable", "appid", "secret", "use_markdown"}
             if "logo_url" in template:
                 assert template["logo_url"] == f"/api/v1/logos/platform/{kind}"
             assert meta.adapter_display_name == title and meta.logo_path == "assets/qq.png"
-            assert template["is_sandbox"] is False and template["shard_mode"] == "auto"
+            assert template["use_markdown"] is True and template["shard_mode"] == "auto"
+            assert "is_sandbox" not in template and "environment" not in template
+            assert form["items"]["use_markdown"]["type"] == "bool"
             assert form["items"]["secret"]["secret"] is True
-            assert "unified_webhook_mode" not in template and "transport" not in template and "environment" not in template
+            assert "unified_webhook_mode" not in template and "transport" not in template
         for kind in PLATFORM_TYPES:
             event = SimpleNamespace(get_platform_name=lambda: kind, raw_data={"t": "GROUP_AT_MESSAGE_CREATE"})
             assert plugin_module.V2Only().filter(event, {}) and plugin_module.V2Addressed().filter(event, {})
@@ -99,22 +109,23 @@ async def test_second_registration_collision_rolls_back_only_owned_class(plugin_
         unregister_platform_adapters_by_module(Other.__module__)
 
 
-async def test_legacy_webhook_save_is_explicit_canonicalization_without_ledger_rekey(owner, config):
+async def test_legacy_webhook_save_ignores_sandbox_and_persists_production(owner, config):
     host = owner.context.get_config()
-    host["platform"][0].update(transport="webhook", environment="sandbox", webhook_uuid="4c4eb5e4c98340118deec38fed41bd75", unified_webhook_mode=True, logo_token="not-status")
+    host["platform"][0].update(transport="webhook", environment="sandbox", is_sandbox=True,
+                               webhook_uuid="4c4eb5e4c98340118deec38fed41bd75", unified_webhook_mode=True, logo_token="not-status")
     host.save_config()
     original = copy.deepcopy(dict(host))
-    prior = InstanceKey.from_config(host["platform"][0]).settings_key
     view = owner.connections.view(config["id"])
-    assert view["fields"]["type"] == WEBHOOK_TYPE and view["fields"]["is_sandbox"] is True
-    assert view["fields"]["shard_mode"] == "manual" and "logo_token" not in json.dumps(view)
+    assert view["fields"]["type"] == WEBHOOK_TYPE and view["fields"]["use_markdown"] is True
+    assert "is_sandbox" not in view["fields"] and view["fields"]["shard_mode"] == "manual"
+    assert "logo_token" not in json.dumps(view)
     assert dict(host) == original
-    saved = await owner.connections.save(config["id"], view["fingerprint"], {"intents": 7}, confirm=True)
+    saved = await owner.connections.save(config["id"], view["fingerprint"], {"intents": 7, "is_sandbox": True, "environment": "sandbox"}, confirm=True)
     persisted = host["platform"][0]
-    assert InstanceKey.from_config(persisted).settings_key == prior
-    assert persisted["type"] == WEBHOOK_TYPE and persisted["is_sandbox"] is True
+    assert json.loads(InstanceKey.from_config(persisted).settings_key) == [config["id"], config["appid"], "production"]
+    assert persisted["type"] == WEBHOOK_TYPE and persisted["use_markdown"] is True
     assert persisted["secret"] == config["secret"] and persisted["webhook_uuid"] == original["platform"][0]["webhook_uuid"]
-    assert not ({"environment", "transport", "logo_token", "unified_webhook_mode"} & persisted.keys())
+    assert not ({"environment", "transport", "logo_token", "unified_webhook_mode", "is_sandbox"} & persisted.keys())
     assert not owner.context.platform_manager.calls
     assert saved["runtime"]["state"] == "configured"
 

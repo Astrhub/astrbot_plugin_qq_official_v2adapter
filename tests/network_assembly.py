@@ -29,7 +29,7 @@ async def network_roundtrip(client, headers, owner, instance, callback, replies,
             assert response.status_code == 200
             host_reply = await asyncio.wait_for(replies.get(), 5)
             event = await asyncio.wait_for(completed.get(), 5)
-            assert "权限不足" in host_reply["content"] and host_reply["msg_seq"] == 1
+            assert "权限不足" in host_reply["markdown"]["content"] and host_reply["msg_seq"] == 1
             assert event.role == "member" and event.raw_data == payload
             one, two = await events.receive_json(timeout=2), await mixed.receive_json(timeout=2)
             assert one == two and one["message_id"] == payload["d"]["id"]

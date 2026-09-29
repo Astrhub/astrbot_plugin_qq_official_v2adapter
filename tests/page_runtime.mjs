@@ -30,7 +30,7 @@ const events = new Map(), timers = new Map(); let failSave = false, timerId = 0,
 const binding = {ticket: 'fixture-ticket', platform_id: 'fixture', state: 'pending', hint: '请用手机 QQ 扫码，并在 QQ 里确认授权。',
   expires_in: 180, lease_seconds: 30, qr_matrix: [[true, false], [false, true]], appid: null, commit_handle: null};
 const connection = {platform_id: 'fixture', fingerprint: 'connection-fingerprint', exists: true,
-  fields: {appid: 'fixture-app', is_sandbox: false, type: 'qq_official_v2', intents: 33554432, shard_mode: 'auto', shard: [0, 1], enable: false, onebot: {host: '127.0.0.1', port: 5700, writes: false, enable: false}},
+  fields: {appid: 'fixture-app', use_markdown: true, type: 'qq_official_v2', intents: 33554432, shard_mode: 'auto', shard: [0, 1], enable: false, onebot: {host: '127.0.0.1', port: 5700, writes: false, enable: false}},
   credentials_configured: true, runtime: {state: 'configured', online: false}, reload: 'not_requested'};
 let retainedRows = [{receipt: 7, version: 'a'.repeat(64), confirmation: 'fixture-confirmation', event_type: '<script>plain text</script>', state: 'extension', reason: 'unsupported', received_at: 1800000000, size: 100}];
 const bridge = {
@@ -195,9 +195,9 @@ await nodes.get('connect-save').onclick();
 assert.deepEqual(calls.at(-1)[2].patch, {shard_mode: 'manual', shard: [1, 3]});
 nodes.get('connect-type').value = 'qq_official_v2_webhook'; nodes.get('connect-type').onchange();
 assert.equal(nodes.get('ws-settings').hidden, true);
-nodes.get('connect-sandbox').checked = true; nodes.get('connect-confirm-identity').checked = true;
+nodes.get('connect-markdown').checked = false; nodes.get('connect-confirm-identity').checked = true;
 await nodes.get('connect-save').onclick();
-assert.deepEqual(calls.at(-1)[2].patch, {type: 'qq_official_v2_webhook', is_sandbox: true, shard: [0, 1]});
+assert.deepEqual(calls.at(-1)[2].patch, {type: 'qq_official_v2_webhook', use_markdown: false, shard: [0, 1]});
 assert.equal(nodes.get('connect-intents').value, '1');
 assert.equal(nodes.get('connect-secret').value, '');
 nodes.get('connect-type').value = 'qq_official_v2'; nodes.get('connect-type').onchange();

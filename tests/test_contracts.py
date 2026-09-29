@@ -245,7 +245,7 @@ async def test_client_uses_only_attached_durable_identity_view_and_close_keeps_h
         store.close()
 
 
-@pytest.mark.parametrize("field,value", [("environment", "custom"), ("shard", [1, 1]), ("shard", [True, 1]), ("intents", -1), ("id", "a:b")])
+@pytest.mark.parametrize("field,value", [("shard", [1, 1]), ("shard", [True, 1]), ("intents", -1), ("id", "a:b"), ("use_markdown", 1)])
 def test_invalid_platform_config(config, field, value):
     config[field] = value
     with pytest.raises(V2Error):

@@ -49,11 +49,11 @@ async def test_slow_shard_close_forces_socket_and_recovers_without_stopping_host
         event = await asyncio.wait_for(queue.get(), 1)
         await event.send(MessageChain([Plain("healthy reply")]))
         event.cleanup_temporary_local_files()
-        assert e.messages[-1] == ("/v2/groups/group-one/messages", {"msg_id": "healthy-after-slow-close", "msg_seq": 1, "msg_type": 0, "content": "healthy reply"})
+        assert e.messages[-1] == ("/v2/groups/group-one/messages", {"msg_id": "healthy-after-slow-close", "msg_seq": 1, "msg_type": 2, "markdown": {"content": "healthy reply"}})
         e.message_errors.append(40034128)
         await event.send(MessageChain([Plain("active healthy reply")]))
         assert len(e.messages) == 3 and e.messages[-2][1]["msg_seq"] == 2
-        assert e.messages[-1] == ("/v2/groups/group-one/messages", {"msg_type": 0, "content": "active healthy reply"})
+        assert e.messages[-1] == ("/v2/groups/group-one/messages", {"msg_type": 2, "markdown": {"content": "active healthy reply"}})
         assert instance.runtime_status()["online"] and instance.runtime_status()["message_ready"]
         node = instance.gateway.status()["shards"][1]
         assert node["state"] == "online" and node["recovery"] is None and node["attempts"] >= 2

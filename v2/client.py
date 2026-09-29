@@ -377,9 +377,15 @@ class V2Client:
             "sending": {"source": "exact event or conservative active policy", "permission": "unknown",
                         "active_fallback": {"default": True, "rejected_codes": sorted(ACTIVE_FALLBACK_CODES),
                                             "local_expiry": "retained_source_evidence_and_current_target_required", "unknown": "never_replay"},
+                        "session_fallback": {"trigger_business_code": 40034105, "conversions": 1,
+                                              "candidate": "bound event source or current-generation latest inbound chat",
+                                              "unknown": "never_replay"},
                         "delivery_fields": {"mode": "passive|active", "reason": "null or code/business_code",
+                                            "source_origin?": "session candidate kind and message id",
+                                            "fallback_skipped?": "why a 40034105 rejection did not convert",
                                             "attempts": "at most two mode attempts: mode/state/wire_attempts/wire_started?/code?/business_code?/http_status?/trace_id?"},
                         "legacy_results": "delivery may be absent in pre-upgrade receipts",
+                        "markdown_default": "instance use_markdown applies only to unspecified text chains and streams",
                         "markdown_segment": "nonstandard extension", "max_characters": 4096,
                         "channel_dm": "online WebSocket required",
                         "media": {"support": "conditional", "group_c2c": ["image", "record", "video", "file"], "channel": ["image_http_url", "image_multipart"], "dm": ["image_http_url"]} if self._state.sender and self._state.sender.media else "not_implemented"},
@@ -561,10 +567,19 @@ class V2Client:
                 await self._state.typing.stop(route, source=source)
 
     async def send(self, route, message, **options):
+        if "session" in options:
+            # The host session fallback policy is an internal pathway, not a public send option.
+            raise V2Error("invalid_params", "Unsupported send options.")
         return await self._send_owned(route, message, options, guard=self.check)
 
+    async def _send_session(self, route, message, policy):
+        """Host session send: active first, with one fixed bounded fallback candidate."""
+        if policy is not None and policy.source is not None and policy.source.route.robot != self.identity.robot:
+            raise V2Error("identity_mismatch", "Session source belongs to another robot.", status=409)
+        return await self._send_owned(route, message, {"session": policy}, guard=self.check)
+
     async def _send_owned(self, route, message, options, *, guard):
-        if options.keys() - {"onebot", "auto_escape", "markdown", "operation_id", "keyboard"}:
+        if options.keys() - {"onebot", "auto_escape", "markdown", "operation_id", "keyboard", "session"}:
             raise V2Error("invalid_params", "Unsupported send options.")
         guard()
         self.check()
@@ -572,8 +587,12 @@ class V2Client:
             raise V2Error("identity_mismatch", "Cannot send into another robot's session.", status=409)
         if self._state.sender:
             source = self._source if self._source and route == self._source.route else None
+            session = options.get("session")
+            if session is not None and source is not None:
+                raise V2Error("invalid_params", "A session send cannot bind an event source.")
             try:
-                return await self._state.sender.send(route, message, source=source, guard=guard, **options)
+                return await self._state.sender.send(route, message, source=source, guard=guard,
+                                                     session=session, **{k: v for k, v in options.items() if k != "session"})
             finally:
                 if self._state.typing and source is not None:
                     await self._state.typing.stop(route, source=source)

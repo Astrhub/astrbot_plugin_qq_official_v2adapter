@@ -247,7 +247,37 @@ async def test_real_result_decorate_and_respond_reach_v2_http(sending, host_conf
     assert event._has_send_oper and event.get_result() is None
 
 
+@pytest.mark.parametrize("mention,quote", [(False, False), (True, True)])
+async def test_disabled_auto_mention_keeps_explicit_plugin_components(sending, host_config, monkeypatch, mention, quote):
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
 
+    from astrbot.core.pipeline.context import PipelineContext
+    from astrbot.core.pipeline.respond.stage import RespondStage
+    from astrbot.core.pipeline.result_decorate import stage as decorating
+    from astrbot.core.star.star_handler import StarHandlerRegistry
+    registry = StarHandlerRegistry()
+    monkeypatch.setattr(decorating, "star_handlers_registry", registry)
+    chat, client = sending.observe()
+    event = make_event(chat, client)
+    host_config["platform_settings"].update(reply_with_mention=mention, reply_with_quote=quote)
+    ctx = PipelineContext(host_config, SimpleNamespace(context=SimpleNamespace(get_using_tts_provider_async=AsyncMock(return_value=None))), "selected-profile")
+    decorate, respond = decorating.ResultDecorateStage(), RespondStage()
+    await decorate.initialize(ctx)
+    await respond.initialize(ctx)
+    # The plugin's own At/Reply must survive both decoration settings exactly once.
+    event.set_result(event.chain_result([At(qq="user-one"), Reply(id="msg-one"), Plain("explicit")]))
+    assert [part async for part in decorate.process(event)] == []
+    chain = event.get_result().chain
+    # Explicit plugin At/Reply stay regardless of the auto settings; decoration adds no duplicates.
+    assert len([p for p in chain if isinstance(p, At)]) == 1
+    assert len([p for p in chain if isinstance(p, Reply)]) == 1
+    await respond.process(event)
+    body = sending.calls[0][1]
+    assert body["content"].count('<qqbot-at-user id="user-one" />') == 1
+    assert body["content"].endswith("explicit")
+    assert body["message_reference"] == {"message_id": "REFIDX_msg-one"}
+    assert len(sending.calls) == 1
 async def test_host_result_pipeline_keeps_json_card_atomic_with_segmentation_and_t2i(sending, host_config, monkeypatch):
     from types import SimpleNamespace
     from unittest.mock import AsyncMock

@@ -13,7 +13,7 @@ from v2.extensions.management import Management
 from v2.extensions.state import ExtensionStore
 from v2.messaging.convert import convert_chat
 from v2.messaging.store import robot_key
-from v2.models import InstanceKey
+from v2.models import InstanceKey, RobotKey
 from v2.panels import PanelService
 from v2.protocol import RawEnvelope
 
@@ -178,10 +178,13 @@ async def test_confirmed_scope_cannot_authorize_unobserved_alternatives(panel_en
     target, instance = "group-one", e.instance
     if changed == "target":
         target = "unobserved"
+    elif changed == "environment":
+        # The sandbox robot key stays an internal identity even though configs ignore sandbox fields.
+        instance = SimpleNamespace(identity=InstanceKey(config["id"], RobotKey(config["appid"], "sandbox"),
+                                                       "websocket", tuple(config["shard"]), config["intents"]))
     else:
-        field = {"platform": "id", "appid": "appid", "environment": "environment"}[changed]
-        value = "sandbox" if changed == "environment" else "other"
-        instance = SimpleNamespace(identity=InstanceKey.from_config({**config, field: value}))
+        field = {"platform": "id", "appid": "appid"}[changed]
+        instance = SimpleNamespace(identity=InstanceKey.from_config({**config, field: "other"}))
     with pytest.raises(V2Error) as exc:
         e.service.plan(instance, "group", target_type="specific", targets=[target])
     assert exc.value.code == "identity_not_observed"

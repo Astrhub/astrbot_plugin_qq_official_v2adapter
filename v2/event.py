@@ -4,6 +4,7 @@ import copy
 from dataclasses import dataclass
 from pathlib import Path
 
+from astrbot.api import logger
 from astrbot.core.message.components import At, AtAll
 from astrbot.core.platform.astr_message_event import AstrMessageEvent
 from astrbot.core.platform.astrbot_message import Group
@@ -11,6 +12,7 @@ from astrbot.core.platform.astrbot_message import Group
 from .errors import V2Error, unsupported
 from .media.service import FILE_TYPES
 from .media.types import MediaInput
+from .messaging.diagnostics import log_send_failure
 from .models import text_id
 from .sdk.identifiers import child_operation_id
 
@@ -38,7 +40,7 @@ class V2MessageEvent(AstrMessageEvent):
         message.session_id = session.session_id
         super().__init__(message.message_str, message, meta, session.session_id)
         # A public ID alone may match several QQ scenes; this binding stays event-local.
-        self.session._qq_v2_route = (client.identity, route, session.session_id)
+        self.session._qq_v2_route = (client.identity, route, session.session_id, getattr(message, "v2_source", None))
         self.is_at_or_wake_command = self.raw_data.get("t") in {"GROUP_AT_MESSAGE_CREATE", "AT_MESSAGE_CREATE"} and not self.raw_data.get("derived_from_interaction")
 
     def get_message_outline(self):
@@ -102,7 +104,11 @@ class V2MessageEvent(AstrMessageEvent):
 
 
     async def send(self, message):
-        result = await self.bot.send(self.route, message)
+        try:
+            result = await self.bot.send(self.route, message)
+        except V2Error as exc:
+            log_send_failure(logger, exc, boundary="event.send")
+            raise
         self.set_extra("qq_send_result", result)
         await super().send(message)
 
@@ -117,6 +123,7 @@ class V2MessageEvent(AstrMessageEvent):
         except V2Error as exc:
             if exc.phase in {"not_sent", "rejected"}:
                 keyboard.revoke()
+            log_send_failure(logger, exc, boundary="event.send_card")
             raise
         self.set_extra("qq_send_result", result)
         await super().send(chain)
@@ -184,7 +191,11 @@ class V2MessageEvent(AstrMessageEvent):
         if self.bot._state.streaming is None:
             raise unsupported("Streaming service is not attached.")
         self.set_extra("qq_stream_mode", self.bot._state.streaming.mode(self.route, use_fallback))
-        result = await self.bot.stream(self.route, generator, use_fallback=use_fallback)
+        try:
+            result = await self.bot.stream(self.route, generator, use_fallback=use_fallback)
+        except V2Error as exc:
+            log_send_failure(logger, exc, boundary="event.send_streaming")
+            raise
         self.set_extra("qq_send_result", result)
         await super().send_streaming(generator, use_fallback)
 

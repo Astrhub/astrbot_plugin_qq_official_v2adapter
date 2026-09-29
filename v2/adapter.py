@@ -16,7 +16,9 @@ from .extensions.interactions import ExtensionDispatcher
 from .extensions.management import Management
 from .media.service import MediaService
 from .messaging.delivery import ChatConsumer
+from .messaging.diagnostics import log_send_failure
 from .messaging.outbound import SendingCore
+from .messaging.session_sources import SessionSendPolicy, SessionSourceIndex
 from .messaging.store import IdentityView
 from .messaging.streaming import StreamingCore
 from .messaging.typing import TypingCore
@@ -35,7 +37,7 @@ from .transport.webhook import Webhook
 
 DEFAULT_PLATFORM_CONFIG = {
     "id": "qq_v2", "type": PLATFORM_TYPE, "enable": False,
-    "appid": "", "secret": "", "is_sandbox": False,
+    "appid": "", "secret": "", "use_markdown": True,
     "intents": DEFAULT_INTENTS, "shard_mode": "auto", "webhook_uuid": "",
     "onebot": dict(DEFAULT_NETWORK),
 }
@@ -81,6 +83,8 @@ class V2Adapter(Platform):
         self.failure_details = None
         self.local_settings = self.owner.store.get(identity.settings_key)["applied"]
         self.config_fingerprint = self.owner.control.fingerprint(platform_config)
+        self.markdown_default = normalize_connection(platform_config)["use_markdown"]
+        self.session_sources = SessionSourceIndex(identity, capacity=self.owner.messages.source_capacity)
         self.client = V2Client(identity)
         self.bot_id = ""
         self.session_isolated = platform_settings.get("unique_session", False) is True
@@ -116,7 +120,8 @@ class V2Adapter(Platform):
             settings=lambda: self.owner.store.get(identity.settings_key)["applied"].get("extensions", {}), guard=self.check_generation)
         self.sender = SendingCore(identity, self.http, self.owner.messages, guard=self.check_generation,
             is_online=lambda: self.runtime_status()["message_ready"],
-            ws_online=lambda: self.runtime_status()["ws_available"], media=self.media)
+            ws_online=lambda: self.runtime_status()["ws_available"], media=self.media,
+            markdown_default=self.markdown_default)
         self.client._state.sender = self.sender
         self.streaming = StreamingCore(self.sender, self.owner.extension_state, settings=self.media.settings)
         self.typing = TypingCore(self.sender, settings=self.media.settings)
@@ -184,6 +189,7 @@ class V2Adapter(Platform):
 
     def revoke(self):
         self._revoked = True
+        self.session_sources.revoke()
         self.client._state.events.invalidate()
         self._stop.set()
         self.network.revoke()
@@ -304,16 +310,27 @@ class V2Adapter(Platform):
         self.client.check()
         binding = getattr(session, "_qq_v2_route", None)
         if binding is not None:
-            identity, route, public_id = binding
+            identity, route, public_id, bound_source = binding
             if identity.platform_id != self.identity.platform_id or route.robot != self.identity.robot:
                 raise V2Error("identity_mismatch", "Session belongs to another instance or robot.", status=409)
             if identity != self.identity:
                 raise V2Error("stale_generation", "The event session belongs to a previous generation.", status=409)
             if session.session_id != public_id or session.message_type != route.message_type:
                 raise V2Error("invalid_session", "The bound event session was changed.")
+            policy = None
+            if bound_source is not None:
+                # A bound non-chat source neither becomes a candidate nor borrows the index.
+                policy = self.session_sources.policy_for_bound_session(route, bound_source)
+            if policy is None:
+                policy = SessionSendPolicy(None, "none")
         else:
             route = self.owner.messages.resolve_session(self.identity.robot, session.message_type, session.session_id)
-        await self.client.send(route, message_chain)
+            policy = self.session_sources.policy_for_route(route) or SessionSendPolicy(None, "none")
+        try:
+            await self.client._send_session(route, message_chain, policy)
+        except V2Error as exc:
+            log_send_failure(logger, exc, boundary="send_by_session")
+            raise
         await super().send_by_session(session, message_chain)
 
     def unified_webhook(self):

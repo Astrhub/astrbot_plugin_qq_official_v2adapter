@@ -16,11 +16,12 @@ def normalize_connection(config):
     transport = value.get("transport", "webhook" if kind == WEBHOOK_TYPE else "websocket")
     if transport not in {"websocket", "webhook"} or kind == WEBHOOK_TYPE and transport != "webhook":
         raise V2Error("config_conflict", "Platform type and legacy transport disagree.")
-    environment = value.get("environment", "sandbox" if value.get("is_sandbox") is True else "production")
-    if environment not in {"production", "sandbox"}:
-        raise V2Error("invalid_environment", "Use production or sandbox.")
-    if "is_sandbox" in value and (type(value["is_sandbox"]) is not bool or value["is_sandbox"] != (environment == "sandbox")):
-        raise V2Error("config_conflict", "Sandbox switch and legacy environment disagree.")
+    # Legacy sandbox inputs are ignored outright: this adapter always connects to production.
+    value.pop("is_sandbox", None)
+    value.pop("environment", None)
+    use_markdown = value.get("use_markdown", True)
+    if type(use_markdown) is not bool:
+        raise V2Error("invalid_config", "use_markdown must be a boolean.")
     mode = value.get("shard_mode", "manual" if "shard" in value else "auto")
     shard = value.get("shard", [0, 1])
     if mode not in {"auto", "manual"}:
@@ -34,7 +35,7 @@ def normalize_connection(config):
     if type(intents) is not int or not 0 <= intents < 2**32:
         raise V2Error("invalid_intents", "Expected a uint32 intents mask.")
     value.update(type=WEBHOOK_TYPE if transport == "webhook" else PLATFORM_TYPE, transport=transport,
-                 environment=environment, is_sandbox=environment == "sandbox", shard_mode=mode,
+                 environment="production", use_markdown=use_markdown, shard_mode=mode,
                  shard=list(shard), intents=intents)
     return value
 

@@ -20,13 +20,16 @@ class ReplyDelivery:
     def __init__(self, store, route, source, operation):
         self.store, self.route, self.source = store, route, source
         self.operation_id, self.seq = operation["op_id"], operation["seq"]
+        self.fallback = None  # Fixed session candidate set by the sending core.
         self.data = copy.deepcopy((operation["result"] or {}).get("delivery")) or {
             "mode": "passive" if source else "active", "reason": None,
             "attempts": [{"mode": "passive" if source else "active", "state": "not_sent", "wire_attempts": 0}]}
 
     @property
     def wire_source(self):
-        return self.source if self.data["mode"] == "passive" else None
+        if self.data["mode"] != "passive":
+            return None
+        return self.source if self.source is not None else self.fallback
 
     def finish_attempt(self, outcome, error=None):
         attempt = self.data["attempts"][-1]
@@ -38,11 +41,27 @@ class ReplyDelivery:
     def switch(self, reason, *, outcome="not_sent", error=None):
         if not self.wire_source:
             raise V2Error("operation_already_attempted", "This logical send already selected active delivery.")
+        if self.data.get("converted") == "active_to_passive":
+            raise V2Error("operation_already_attempted", "A converted session send cannot alternate delivery modes.")
         self.finish_attempt(outcome, error)
         self.data.update(mode="active", reason=reason)
         self.data["attempts"].append({"mode": "active", "state": "not_sent", "wire_attempts": 0})
         self.store.switch_active(self.route, self.source, self.operation_id, self.data)
         self.seq = None
+
+    def switch_passive(self, reason, *, outcome="not_sent", error=None):
+        """One bounded active-to-passive conversion using the fixed session candidate."""
+        if self.data["mode"] != "active" or self.source is not None or self.fallback is None:
+            raise V2Error("operation_already_attempted", "This logical send has no session fallback.")
+        snapshot = copy.deepcopy(self.data)
+        try:
+            self.finish_attempt(outcome, error)
+            self.data.update(mode="passive", reason=reason, converted="active_to_passive")
+            self.data["attempts"].append({"mode": "passive", "state": "not_sent", "wire_attempts": 0})
+            self.seq = self.store.switch_passive(self.route, self.fallback, self.operation_id, self.data)
+        except BaseException:
+            self.data, self.seq = snapshot, None
+            raise
 
     def before_send(self, *, continuation=False, retried_auth=False):
         if retried_auth and not continuation and self.data["mode"] == "active" and self.data["reason"]:

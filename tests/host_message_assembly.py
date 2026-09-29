@@ -51,8 +51,8 @@ async def host_message_roundtrip(lifecycle, client, owner, instance, callback, r
         assert owner.context.get_config()["wake_prefix"] == ["/"]
         event, bodies = await receive("#sid")
         assert event.is_at_or_wake_command and event.get_message_str() == "sid"
-        assert len(bodies) == 1 and "UMO: 「webhook-fixture:GroupMessage:group-one」" in bodies[0]["content"]
-        assert "message_reference" not in bodies[0] and "qqbot-at-user" not in bodies[0]["content"]
+        assert len(bodies) == 1 and "UMO: 「webhook-fixture:GroupMessage:group-one」" in bodies[0]["markdown"]["content"]
+        assert "message_reference" not in bodies[0] and "qqbot-at-user" not in bodies[0]["markdown"]["content"]
         from astrbot.core import sp
         from data.plugins.astrbot_plugin_qq_official_v2adapter.v2 import PLUGIN_NAME
         from data.plugins.astrbot_plugin_qq_official_v2adapter.v2.errors import V2Error
@@ -82,7 +82,7 @@ async def host_message_roundtrip(lifecycle, client, owner, instance, callback, r
         assert event.trace.message_outline == event.get_message_outline() == " 你好"
         assert event.message_str == "你好" and event.message_obj.message_str == " 你好"
         assert any(isinstance(p, At) and p.qq == GROUP_BOT for p in event.get_messages())
-        assert len(bodies) == 1 and "未找到任何可用的对话模型" in bodies[0]["content"]
+        assert len(bodies) == 1 and "未找到任何可用的对话模型" in bodies[0]["markdown"]["content"]
         group = builtin.group_chat_context
         records = group.raw_records[event.unified_msg_origin]
         assert any("[DIRECTED AT YOU]" in record and "[At: ]" in record and "你好" in record for record in records)
@@ -101,7 +101,7 @@ async def host_message_roundtrip(lifecycle, client, owner, instance, callback, r
         selected.save_config()
         await lifecycle.reload_pipeline_scheduler(profile)
         event, bodies = await receive("#sid")
-        assert len(bodies) == 1 and bodies[0]["content"].startswith('<qqbot-at-user id="user-one" />\nselected:')
+        assert len(bodies) == 1 and bodies[0]["markdown"]["content"].startswith('<qqbot-at-user id="user-one" />\nselected:')
         assert bodies[0]["message_reference"] == {"message_id": "REFIDX_" + event.message_obj.message_id}
         assert bodies[0]["msg_id"] == event.message_obj.message_id and bodies[0]["msg_seq"] == 1
         event, bodies = await receive(f"<@{GROUP_BOT}> #sid", mention=True, sender=GROUP_BOT)

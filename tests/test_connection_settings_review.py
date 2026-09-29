@@ -24,11 +24,10 @@ from test_onboarding import HostConfig
     ("production", "websocket", [1, 3]),
     ("sandbox", "webhook", [0, 1]),
 ])
-async def test_legacy_host_form_merge_preserves_environment_and_manual_topology(
+async def test_legacy_host_form_merge_preserves_manual_topology_in_production(
     plugin_module, config, tmp_path, environment, transport, shard
 ):
-    legacy = {**config, "environment": environment, "transport": transport, "shard": shard}
-    legacy.pop("is_sandbox", None)
+    legacy = {**config, "environment": environment, "is_sandbox": True, "transport": transport, "shard": shard}
     legacy.pop("shard_mode", None)
     host = HostConfig(tmp_path / "host.json", legacy)
     ctx = context()
@@ -44,12 +43,7 @@ async def test_legacy_host_form_merge_preserves_environment_and_manual_topology(
         identity = models.InstanceKey.from_config(merged)
         assert identity.shard_mode == "manual"
         assert identity.shard == tuple(shard)
-        assert identity.robot.environment == environment
-        assert identity.transport == transport
-        merged["is_sandbox"] = environment != "sandbox"
-        switched = models.InstanceKey.from_config(merged)
-        assert switched.robot.environment == ("production" if environment == "sandbox" else "sandbox")
-        assert switched.settings_key != identity.settings_key
+        assert identity.robot.environment == "production" and identity.transport == transport
         assert saved["id"] == config["id"] and saved["appid"] == config["appid"]
     finally:
         await owner.terminate()
@@ -117,8 +111,8 @@ async def test_healthy_shard_keeps_delivering_and_replying_during_peer_recovery(
         await channel_event.send(MessageChain([Plain("healthy channel reply")]))
         channel_event.delivery_finished()
         assert e.messages == [
-            ("/v2/groups/group-one/messages", {"content": "healthy group reply", "msg_type": 0, "msg_id": "healthy-peer-during-recovery", "msg_seq": 1}),
-            ("/channels/channel-one/messages", {"content": "healthy channel reply", "msg_id": "healthy-channel-during-recovery"}),
+            ("/v2/groups/group-one/messages", {"markdown": {"content": "healthy group reply"}, "msg_type": 2, "msg_id": "healthy-peer-during-recovery", "msg_seq": 1}),
+            ("/channels/channel-one/messages", {"markdown": {"content": "healthy channel reply"}, "msg_id": "healthy-channel-during-recovery"}),
         ]
         healthy = instance.gateway.gateways[0]
         previous_clock = healthy.clock
@@ -174,15 +168,15 @@ async def test_initialization_normalizes_one_batch_preserves_foreign_and_is_idem
         assert host.saves == saves + 1 and not first.instances
         ws, wh, other = host["platform"]
         assert other is foreign and other == {**config, "type": "qq_official", "id": "native", "environment": "untouched", "logo_token": "native-logo", "secret": "native-fixture"}
-        assert ws["type"] == "qq_official_v2" and ws["is_sandbox"] is False and ws["shard_mode"] == "manual" and ws["shard"] == [1, 3]
-        assert wh["type"] == "qq_official_v2_webhook" and wh["is_sandbox"] is True and wh["shard_mode"] == "manual"
+        assert ws["type"] == "qq_official_v2" and ws["use_markdown"] is True and ws["shard_mode"] == "manual" and ws["shard"] == [1, 3]
+        assert wh["type"] == "qq_official_v2_webhook" and wh["use_markdown"] is True and wh["shard_mode"] == "manual"
         assert wh["webhook_uuid"] == hook["webhook_uuid"]
         models = importlib.import_module(plugin_module.__package__ + ".v2.models")
         assert json.loads(models.InstanceKey.from_config(ws).settings_key) == ["legacy-manual", config["appid"], "production"]
-        assert json.loads(models.InstanceKey.from_config(wh).settings_key) == ["legacy-hook", "hook-app", "sandbox"]
+        assert json.loads(models.InstanceKey.from_config(wh).settings_key) == ["legacy-hook", "hook-app", "production"]
         for value, old in ((ws, legacy), (wh, hook)):
             assert all(value[k] == old[k] for k in ("id", "appid", "secret", "intents", "shard", "enable"))
-            assert not ({"environment", "transport", "unified_webhook_mode", "logo_token"} & value.keys())
+            assert not ({"environment", "transport", "unified_webhook_mode", "logo_token", "is_sandbox"} & value.keys())
         assert json.loads(Path(host.config_path).read_text()) == dict(host)
         frozen = Path(host.config_path).read_bytes()
         first.connections.prepare_webhooks()
@@ -198,12 +192,12 @@ async def test_initialization_normalizes_one_batch_preserves_foreign_and_is_idem
         await second.terminate()
 
 
-@pytest.mark.parametrize("failure", ["save", "environment", "transport", "shard", "uuid"])
+@pytest.mark.parametrize("failure", ["save", "markdown", "transport", "shard", "uuid"])
 async def test_initialization_batch_failure_restores_all_records_without_partial_writes(plugin_module, config, tmp_path, failure):
     host = HostConfig(tmp_path / "host.json", config)
     bad = {**config, "id": "second", "transport": "webhook"}
-    if failure == "environment":
-        bad.update(is_sandbox=False, environment="sandbox")
+    if failure == "markdown":
+        bad.update(use_markdown="yes")
     elif failure == "transport":
         bad.update(type="qq_official_v2_webhook", transport="websocket")
     elif failure == "shard":
@@ -220,7 +214,7 @@ async def test_initialization_batch_failure_restores_all_records_without_partial
     owner = plugin_module.QQOfficialV2(ctx, {})
     with pytest.raises(RuntimeError) as exc:
         await owner.initialize()
-    assert exc.value.code == {"save": "config_save_failed", "environment": "config_conflict",
+    assert exc.value.code == {"save": "config_save_failed", "markdown": "invalid_config",
         "transport": "config_conflict", "shard": "invalid_shard", "uuid": "invalid_webhook_uuid"}[failure]
     assert dict(host) == before and Path(host.config_path).read_bytes() == disk and host.saves == saves
     assert all(a is b for a, b in zip(host["platform"], records))

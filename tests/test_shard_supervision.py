@@ -79,7 +79,7 @@ async def test_retrying_shard_preserves_host_delivery_and_recovers_without_reloa
         assert event.message_obj.message_id == "healthy-while-peer-retrying"
         await event.send(MessageChain([Plain("still receiving")]))
         event.cleanup_temporary_local_files()
-        assert e.messages == [("/v2/groups/group-one/messages", {"content": "still receiving", "msg_type": 0,
+        assert e.messages == [("/v2/groups/group-one/messages", {"markdown": {"content": "still receiving"}, "msg_type": 2,
             "msg_id": "healthy-while-peer-retrying", "msg_seq": 1})]
         assert instance.http.session.calls[-1][1] == "https://api.bot.qq.com/v2/groups/group-one/messages"
         status = instance.runtime_status()

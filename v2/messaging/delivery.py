@@ -134,6 +134,7 @@ class ChatConsumer:
             # No await between queue admission and the durable delivery marker.
             self.enqueued.add(receipt)
             self.store.mark_delivered(chat)
+            self.adapter.session_sources.record(chat, self.store.now())
             self.inbox.acknowledge(self.owner_key, receipt)
             self.enqueued.discard(receipt)
             if network := getattr(self.adapter, "network", None):

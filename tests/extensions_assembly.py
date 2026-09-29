@@ -102,7 +102,7 @@ async def extension_roundtrip(lifecycle, client, headers, owner, instance, callb
     execution = interaction(cfg, token=run_button["action"]["data"], event_id="assembly-execute-outer", interaction_id="assembly-execute-inner")
     execution["d"]["timestamp"] = datetime.now(UTC).isoformat()
     output, executed = await receive(execution)
-    assert "UMO:" in output["content"] and "user-one" in output["content"]
+    assert "UMO:" in output["markdown"]["content"] and "user-one" in output["markdown"]["content"]
     assert executed.command_admitted and not executed.call_llm
     assert [h.handler_name for h in executed.get_extra("activated_handlers")] == ["sid"]
 
@@ -125,7 +125,7 @@ async def extension_roundtrip(lifecycle, client, headers, owner, instance, callb
         denied = interaction(cfg, token=ticket, event_id="assembly-denied-outer", interaction_id="assembly-denied-inner")
         denied["d"]["timestamp"] = datetime.now(UTC).isoformat()
         denial, blocked = await receive(denied)
-        assert "权限不足" in denial["content"] and denial["event_id"] == "assembly-denied-outer"
+        assert "权限不足" in denial["markdown"]["content"] and denial["event_id"] == "assembly-denied-outer"
         assert not blocked.command_admitted and not blocked.call_llm and blocked.role == "member"
         assert instance.extensions.records()[0]["business"] == "rejected"
     config["admins_id"] = ["not-the-fixture-user"]

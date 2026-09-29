@@ -20,7 +20,7 @@ from test_transport_receive import (
 
 from v2.errors import V2Error
 from v2.models import InstanceKey, RobotKey
-from v2.onboarding import PORTAL, Onboarding
+from v2.onboarding import PORTAL
 from v2.protocol import RequestSpec, avatar_url
 from v2.transport.http import HTTPTransport
 from v2.transport.inbox import Ingress, RawInbox
@@ -127,10 +127,10 @@ async def test_gateway_response_requires_a_nonempty_url(config, data):
 
 
 @pytest.mark.parametrize("entrypoint", ["start", "token", "request", "exchange"])
-async def test_sandbox_fails_before_session_or_token_creation(config, entrypoint):
+async def test_sandbox_environment_fails_before_session_or_token_creation(config, entrypoint):
     def forbidden_session():
         pytest.fail("Unconfirmed sandbox created a network session")
-    identity = InstanceKey.from_config({**config, "environment": "sandbox"})
+    identity = InstanceKey("sandbox-fixture", RobotKey(config["appid"], "sandbox"), "websocket", (0, 1), config["intents"])
     http = HTTPTransport(identity, config["secret"], session_factory=forbidden_session)
     try:
         with pytest.raises(V2Error) as exc:
@@ -149,55 +149,43 @@ async def test_sandbox_fails_before_session_or_token_creation(config, entrypoint
         await http.close()
 
 
-async def test_sandbox_gateway_has_no_request_or_fallback(config):
+async def test_sandbox_environment_gateway_has_no_request_or_fallback(config):
     class HTTP(FakeGatewayHTTP):
         async def request(self, spec):
             pytest.fail("Sandbox requested a production gateway")
-    http = HTTP(InstanceKey.from_config({**config, "environment": "sandbox"}), [])
+    http = HTTP(InstanceKey("sandbox-fixture", RobotKey(config["appid"], "sandbox"), "websocket", (0, 1), config["intents"]), [])
     gateway = Gateway(http, SimpleNamespace(last_sequence=None))
     with pytest.raises(V2Error) as exc:
         await gateway.run()
     assert exc.value.code == "unsupported_environment" and http.connects == 0 and gateway.attempts == 1
 
 
-async def test_sandbox_configuration_is_retained_but_binding_does_not_start(owner, config):
+async def test_legacy_sandbox_fields_are_ignored_and_onboarding_targets_production(owner, config):
     conn, cfg = owner.connections, owner.context.get_config()
     saved = await conn.save(config["id"], conn.view(config["id"])["fingerprint"],
-                            {"environment": "sandbox", "enable": False}, confirm=True, confirm_identity=True)
-    original = copy.deepcopy(dict(cfg))
-    onboarding = Onboarding(owner, session_factory=lambda: pytest.fail("Sandbox contacted the binding portal"))
-    try:
-        with pytest.raises(V2Error) as exc:
-            await onboarding.start("fixture-admin", config["id"], saved["fingerprint"], confirm=True)
-        assert exc.value.code == "unsupported_environment"
-        assert dict(cfg) == original and cfg["platform"][0]["is_sandbox"] is True
-        assert cfg["platform"][0]["secret"] == config["secret"]
-        assert not onboarding.bindings and onboarding.session is None
-        assert not owner.context.platform_manager.calls
-    finally:
-        await onboarding.close()
+                            {"environment": "sandbox", "is_sandbox": True, "enable": False}, confirm=True)
+    persisted = cfg["platform"][0]
+    assert "environment" not in persisted and "is_sandbox" not in persisted
+    assert InstanceKey.from_config(persisted).robot.environment == "production"
+    assert saved["fields"]["use_markdown"] is True
+    assert not owner.context.platform_manager.calls
 
 
 @pytest.mark.parametrize("mode", ["websocket", "webhook"])
-async def test_sandbox_adapter_never_registers_as_ready_or_sends_a_request(plugin_module, config, mode):
+async def test_legacy_sandbox_configuration_loads_as_production_without_sandbox_fields(plugin_module, config, mode):
     ctx = context()
-    cfg = {**config, "environment": "sandbox", "transport": mode, "unified_webhook_mode": mode == "webhook",
-           "webhook_uuid": "4c4eb5e4c98340118deec38fed41bd75"}
+    cfg = {**config, "environment": "sandbox", "is_sandbox": True, "transport": mode, "unified_webhook_mode": mode == "webhook",
+           "webhook_uuid": "4c4eb5e4c98340118deec38fed41bd75", "enable": False}
     ctx.get_config()["platform"].append(cfg)
     owner = plugin_module.QQOfficialV2(ctx, {})
     await owner.initialize()
-    cfg = ctx.get_config()["platform"][0]
     try:
-        original = copy.deepcopy(cfg)
-        instance = owner.adapter_class(cfg, {}, asyncio.Queue())
-        instance.http._factory = lambda: pytest.fail("Sandbox adapter attempted a network session")
-        with pytest.raises(RuntimeError) as exc:
-            await asyncio.create_task(instance.run())
-        assert exc.value.code == "unsupported_environment"
-        assert not instance.ready.is_set() and not instance.runtime_status()["online"]
-        assert instance.http.session is None and cfg == original
+        instance = owner.adapter_class(ctx.get_config()["platform"][0], {}, asyncio.Queue())
+        assert instance.identity.robot.environment == "production"
+        assert instance.config["environment"] == "production" and "is_sandbox" not in instance.config
+        assert instance.markdown_default is True
         if mode == "webhook":
-            assert (await instance.webhook_callback(None))[1] == 503
+            assert instance.unified_webhook()
     finally:
         await owner.terminate()
 
