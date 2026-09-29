@@ -1,6 +1,5 @@
 """Host session sends convert to passive once, only on an explicit 40034105."""
 import asyncio
-import base64
 from types import SimpleNamespace
 
 import pytest
@@ -9,11 +8,10 @@ from astrbot.core.message.message_event_result import MessageChain
 from astrbot.core.platform.message_session import MessageSession
 from astrbot.core.platform.message_type import MessageType
 from astrbot.core.platform.platform_metadata import PlatformMetadata
-from test_media_boundary import PNG
+from test_interactions import interaction
 from test_media_upload import media as media
 from test_messaging_send import sending as sending
 from test_messaging_state import NOW, chat_payload
-from test_interactions import interaction
 
 from v2 import PLATFORM_TYPE
 from v2.adapter import V2Adapter
@@ -21,7 +19,11 @@ from v2.errors import V2Error
 from v2.media.types import MediaInput
 from v2.messaging.convert import convert_chat
 from v2.messaging.outbound import SendingCore
-from v2.messaging.session_sources import ACTIVE_DENIED_CODE, SessionSendPolicy, SessionSourceIndex
+from v2.messaging.session_sources import (
+    ACTIVE_DENIED_CODE,
+    SessionSendPolicy,
+    SessionSourceIndex,
+)
 from v2.models import InstanceKey
 from v2.protocol import RawEnvelope
 
@@ -303,7 +305,7 @@ async def test_crash_between_conversion_and_wire_recovers_without_remaining_fall
     holder = {}
     original_switch = s.store.switch_passive
     def switch(route, source, op_id, delivery):
-        seq = original_switch(route, source, op_id, delivery)
+        original_switch(route, source, op_id, delivery)
         holder["op"] = op_id
         raise asyncio.CancelledError
     monkeypatch.setattr(s.store, "switch_passive", switch)

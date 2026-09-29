@@ -1,6 +1,5 @@
 """Fixed OpenAPI requests and server-discovered WebSocket destinations."""
 import asyncio
-import copy
 from types import SimpleNamespace
 from urllib.parse import parse_qs, urlsplit
 
