@@ -25,7 +25,6 @@ from v2.messaging.convert import convert_chat, decode_faces
 from v2.models import InstanceKey
 from v2.protocol import RawEnvelope
 
-
 EVENTS = (
     "GROUP_AT_MESSAGE_CREATE", "GROUP_MESSAGE_CREATE", "C2C_MESSAGE_CREATE",
     "AT_MESSAGE_CREATE", "MESSAGE_CREATE", "DIRECT_MESSAGE_CREATE",
