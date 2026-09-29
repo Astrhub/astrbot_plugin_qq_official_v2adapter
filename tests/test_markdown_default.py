@@ -1,5 +1,4 @@
 """Instance Markdown defaults resolve once at the host send boundary, three-state."""
-import asyncio
 from types import SimpleNamespace
 
 import pytest
@@ -223,7 +222,6 @@ async def test_stream_default_is_fixed_when_the_stream_starts(md, event):
     result = await md.md_stream.send(chat.route, fragments(), source=chat.source,
                                      operation_id="snapshot-" + event)
     assert result["state"] == "sent"
-    frames = [body for path, body in md.calls]
     if event == "C2C_MESSAGE_CREATE":
         stream_frames = [body for path, body in md.calls if path.endswith("/stream_messages")]
         assert all(body["content_type"] == "markdown" for body in stream_frames)
