@@ -32,6 +32,7 @@ from .reply import (
     ReplyModeChanged,
     definite_source_rejection,
 )
+from .session_sources import ACTIVE_DENIED_CODE, SessionSendPolicy
 
 AMBIGUOUS_CODES = {304023, 304024, 40054005, 50055001, 50055002, 50055006}
 EXPIRED_CODES = {304103, 40034005, 40034024, 40034025, 40034026, 40034027, 40034128}
@@ -49,11 +50,14 @@ def cq_decode(text, *, parameter=False):
     return re.sub("|".join(re.escape(k) for k in replacements), lambda m: replacements[m.group()], text)
 
 
-def parse_message(message, *, onebot=False, auto_escape=False, markdown=None):
-    if type(auto_escape) is not bool or markdown is not None and type(markdown) is not bool:
+def parse_message(message, *, onebot=False, auto_escape=False, markdown=None, default=False):
+    if type(auto_escape) is not bool or markdown is not None and type(markdown) is not bool or type(default) is not bool:
         invalid("auto_escape and markdown must be booleans.")
     if isinstance(message, MessageChain):
-        use_md = message.use_markdown_ is True if markdown is None else markdown
+        if message.use_markdown_ is not None and type(message.use_markdown_) is not bool:
+            invalid("The Markdown flag must be a boolean.")
+        # None keeps the format unresolved until the component kinds are known.
+        use_md = message.use_markdown_ if markdown is None else markdown
         segments = message.chain
     else:
         use_md = markdown is True
@@ -136,6 +140,9 @@ def parse_message(message, *, onebot=False, auto_escape=False, markdown=None):
         atoms.append((kind, value))
     if markdown_segments and (markdown_segments != 1 or any(k == "text" for k, _ in atoms)):
         invalid("Mixed text and Markdown segments cannot be sent as one equivalent message.")
+    if use_md is None:
+        # An unspecified format follows the instance default; media and cards keep their native type.
+        use_md = default and not any(kind in {"media", "card"} for kind, _ in atoms)
     if any(kind == "card" for kind, _ in atoms) and (len(atoms) != 1 or onebot or markdown is not None or use_md):
         raise unsupported("A QQ card must be the sole native Json component with no stream/OneBot/text overrides.")
     return atoms, use_md
@@ -228,10 +235,11 @@ def build_body(route, atoms, markdown, store):
 
 
 class SendingCore:
-    def __init__(self, identity, http, store, *, guard=lambda: None, is_online=lambda: False, ws_online=lambda: False, media=None):
+    def __init__(self, identity, http, store, *, guard=lambda: None, is_online=lambda: False, ws_online=lambda: False, media=None, markdown_default=False):
         self.identity, self.http, self.store, self.guard = identity, http, store, guard
         self.is_online, self.ws_online = is_online, ws_online
         self.media = media
+        self.markdown_default = markdown_default
         self.callbacks = None
         self.tasks = set()
         self.closed = False
@@ -256,12 +264,15 @@ class SendingCore:
         elif not self.is_online():
             raise V2Error("transport_not_ready", "No authenticated transport is ready to send.", status=503)
 
-    async def send(self, route, message, *, source=None, onebot=False, auto_escape=False, markdown=None, operation_id=None, keyboard=None, guard=lambda: None):
+    async def send(self, route, message, *, source=None, onebot=False, auto_escape=False, markdown=None, operation_id=None, keyboard=None, guard=lambda: None, session=None):
+        if session is not None and not isinstance(session, SessionSendPolicy):
+            raise V2Error("invalid_params", "Unsupported session send policy.")
         guard()
         self.check(route, source)
         if len(self.tasks) >= 32:
             raise V2Error("send_capacity", "Too many pending sends.", status=429)
-        atoms, use_md = parse_message(message, onebot=onebot, auto_escape=auto_escape, markdown=markdown)
+        atoms, use_md = parse_message(message, onebot=onebot, auto_escape=auto_escape, markdown=markdown,
+                                      default=self.markdown_default and not onebot)
         op_id = uuid4().hex if operation_id is None else text_id(operation_id)
         cards = [value for kind, value in atoms if kind == "card"]
         callback_actions, callback_tokens = [], []
@@ -328,11 +339,14 @@ class SendingCore:
             except V2Error:
                 callback_tokens = []  # Validation never published a ticket; do not revoke another valid issuance.
                 raise
-            operation = self.store.reserve(route, source, fingerprint, op_id, allow_active=True)
+            operation = self.store.reserve(route, source, fingerprint, op_id, allow_active=True,
+                                           fallback=session if session is not None and session.source is not None else None)
             if operation["state"] == "sent":
                 return operation["result"]
             robot = route.robot
             delivery = ReplyDelivery(self.store, route, source, operation)
+            if session is not None:
+                delivery.fallback = session.source
             response_received = False
             try:
                 self.connected(route)
@@ -381,10 +395,28 @@ class SendingCore:
                     except ReplyModeChanged:
                         attempted = False
                     except V2Error as exc:
-                        if delivery.wire_source and definite_source_rejection(exc, attempted) and exc.business_code in ACTIVE_FALLBACK_CODES:
+                        if (session is None and delivery.wire_source and definite_source_rejection(exc, attempted)
+                                and exc.business_code in ACTIVE_FALLBACK_CODES):
                             self.store.block_source(route, source, exc.business_code, allow_active=True)
                             attempted = False
                             delivery.switch({"code": "passive_source_rejected", "business_code": exc.business_code}, outcome="rejected", error=exc)
+                        elif (session is not None and delivery.data["mode"] == "active"
+                                and definite_source_rejection(exc, attempted) and exc.business_code == ACTIVE_DENIED_CODE):
+                            # One bounded active-to-passive conversion for host session sends.
+                            if session.source is None:
+                                delivery.data["fallback_skipped"] = {"code": "no_session_source"}
+                                raise
+                            converted = False
+                            try:
+                                delivery.switch_passive({"code": "active_source_rejected", "business_code": ACTIVE_DENIED_CODE},
+                                                        outcome="rejected", error=exc)
+                                converted = True
+                            except V2Error as denied:
+                                delivery.data["fallback_skipped"] = {"code": denied.code}
+                            if converted:
+                                attempted = False
+                            else:
+                                raise
                         else:
                             raise
                 result = {"message_id": data["id"], "operation_id": op_id, "msg_seq": delivery.seq, "state": "sent",
@@ -419,7 +451,7 @@ class SendingCore:
                 if response_received:
                     phase = "result_unknown"
                 if delivery.wire_source and definite_source_rejection(exc, attempted) and phase == "rejected" and exc.business_code in EXPIRED_CODES:
-                    self.store.block_source(route, source, exc.business_code, allow_active=exc.business_code in ACTIVE_FALLBACK_CODES)
+                    self.store.block_source(route, delivery.wire_source, exc.business_code, allow_active=exc.business_code in ACTIVE_FALLBACK_CODES)
                 outcome = {"not_sent": "not_sent", "rejected": "rejected"}.get(phase, "unknown")
                 details = {**(details or {}), "delivery": delivery.finish_attempt(outcome, exc)}
                 error = V2Error(exc.code, str(exc), retcode=exc.retcode, status=exc.status, business_code=exc.business_code,

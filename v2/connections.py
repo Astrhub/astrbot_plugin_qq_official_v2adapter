@@ -18,10 +18,11 @@ from .errors import V2Error
 from .models import InstanceKey, text_id
 from .network_config import DEFAULT_NETWORK, NETWORK_FIELDS, network_config
 
-EDITABLE = {"appid", "is_sandbox", "type", "intents", "shard_mode", "shard", "enable"}
-LEGACY_FIELDS = {"environment", "transport"}
+EDITABLE = {"appid", "use_markdown", "type", "intents", "shard_mode", "shard", "enable"}
+LEGACY_FIELDS = {"transport"}
+IGNORED_FIELDS = {"is_sandbox", "environment"}
 DEFAULT_CONNECTION = {"type": PLATFORM_TYPE, "enable": False, "appid": "", "secret": "",
-                      "is_sandbox": False, "intents": DEFAULT_INTENTS, "shard_mode": "auto"}
+                      "use_markdown": True, "intents": DEFAULT_INTENTS, "shard_mode": "auto"}
 EDITABLE |= {"onebot"}
 DEFAULT_CONNECTION["onebot"] = dict(DEFAULT_NETWORK)
 
@@ -151,13 +152,10 @@ class Connections:
                 raise V2Error("instance_capacity", "At most 256 V2 configurations can be managed.", status=409)
             if confirm is not True:
                 raise V2Error("confirmation_required", "Confirm saving connection settings; this does not reload.")
-            if not isinstance(patch, dict) or patch.keys() - EDITABLE - LEGACY_FIELDS:
+            if not isinstance(patch, dict) or patch.keys() - EDITABLE - LEGACY_FIELDS - IGNORED_FIELDS:
                 raise V2Error("invalid_config", "Only documented connection fields may be edited.")
+            patch = {key: value for key, value in patch.items() if key not in IGNORED_FIELDS}
             candidate = normalize_connection(old if old is not None else DEFAULT_CONNECTION)
-            if "is_sandbox" in patch and "environment" not in patch:
-                candidate.pop("environment", None)
-            if "environment" in patch and "is_sandbox" not in patch:
-                candidate.pop("is_sandbox", None)
             if "type" in patch and "transport" not in patch:
                 candidate.pop("transport", None)
             if "transport" in patch and "type" not in patch:
@@ -185,7 +183,7 @@ class Connections:
                 candidate["onebot"]["token"] = network_token if network_token_action == "replace" else ""
             if candidate["onebot"]["writes"] is True and previous_network["writes"] is not True and confirm_network_writes is not True:
                 raise V2Error("network_write_confirmation_required", "Confirm granting this dedicated token network write access.")
-            if old and old.get("appid") and any(normalize_connection(candidate).get(k) != normalize_connection(old).get(k) for k in ("appid", "environment")) and confirm_identity is not True:
+            if old and old.get("appid") and any(normalize_connection(candidate).get(k) != normalize_connection(old).get(k) for k in ("appid",)) and confirm_identity is not True:
                 raise V2Error("identity_confirmation_required", "Confirm rebinding the robot identity.")
             if secret_action not in {"keep", "replace", "clear"}:
                 raise V2Error("invalid_config", "Unknown credential edit action.")

@@ -356,7 +356,7 @@ $("connect-type").onchange = shardControls;
 $("connect-shard-mode").onchange = shardControls;
 function connectionFields() {
   const manual = $("connect-type").value === "qq_official_v2" && $("connect-shard-mode").value === "manual";
-  return {appid: $("connect-appid").value.trim(), is_sandbox: $("connect-sandbox").checked,
+  return {appid: $("connect-appid").value.trim(), use_markdown: $("connect-markdown").checked,
     type: $("connect-type").value, intents: Number($("connect-intents").value),
     shard_mode: $("connect-shard-mode").value,
     shard: manual ? [Number($("connect-shard-index").value), Number($("connect-shard-count").value)] : [0, 1], enable: $("connect-enable").checked,
@@ -370,7 +370,7 @@ function showConnection(value) {
   connectionView = value;
   $("connect-id").value = value.platform_id;
   for (const key of ["appid", "type", "intents", "shard-mode"]) $("connect-" + key).value = String(value.fields[key.replace("-", "_")]);
-  $("connect-sandbox").checked = value.fields.is_sandbox;
+  $("connect-markdown").checked = value.fields.use_markdown !== false;
   $("connect-shard-index").value = String(value.fields.shard[0]); $("connect-shard-count").value = String(value.fields.shard[1]);
   $("connect-enable").checked = value.fields.enable; shardControls();
   const group = value.runtime?.gateway_group;

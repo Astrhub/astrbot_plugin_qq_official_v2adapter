@@ -22,6 +22,7 @@ from v2.event import V2MessageEvent
 from v2.extensions.events import ExtensionEvent
 from v2.extensions.projection import CommandProjection
 from v2.messaging.convert import convert_chat
+from v2.messaging.session_sources import SessionSourceIndex
 from v2.messaging.store import MessageStore
 from v2.models import InstanceKey, RobotKey, SessionRoute
 from v2.protocol import RawEnvelope
@@ -55,6 +56,7 @@ def adapter(sending):
     instance.identity = sending.client.identity
     instance.client = sending.client
     instance.owner = SimpleNamespace(messages=sending.store)
+    instance.session_sources = SessionSourceIndex(sending.client.identity, capacity=sending.store.source_capacity)
     return instance
 
 
@@ -135,8 +137,9 @@ async def test_session_route_rejections_precede_http(sending, adapter, case):
 
 
 async def test_other_robot_and_environment_observations_are_not_public_route_evidence(sending, adapter, config):
-    for cfg in ({**config, "appid": "another-app"}, {**config, "environment": "sandbox"}):
-        chat = convert_chat(InstanceKey.from_config(cfg), RawEnvelope(chat_payload(target="unowned"), NOW))
+    sandbox_identity = InstanceKey("env-fixture", RobotKey(config["appid"], "sandbox"), "websocket", tuple(config["shard"]), config["intents"])
+    for identity in (InstanceKey.from_config({**config, "appid": "another-app"}), sandbox_identity):
+        chat = convert_chat(identity, RawEnvelope(chat_payload(target="unowned"), NOW))
         sending.store.observe(chat)
     with pytest.raises(V2Error) as exc:
         await adapter.send_by_session(MessageSession("test-v2", MessageType.GROUP_MESSAGE, "unowned"), MessageChain([Plain("no")]))

@@ -31,14 +31,14 @@
       <canvas id="bind-qr" hidden></canvas>
       <div class="toolbar">
         <label>AppID <input id="connect-appid" maxlength="128" autocomplete="off"></label>
-        <label><input id="connect-sandbox" type="checkbox">沙箱模式（当前不可联网）</label>
+        <label><input id="connect-markdown" type="checkbox">默认使用 Markdown（同平台表单开关；未显式指定格式的文本）</label>
         <label>适配器 <select id="connect-type"><option value="qq_official_v2">WebSocket</option><option value="qq_official_v2_webhook">Webhook</option></select></label>
         <label><input id="connect-enable" type="checkbox">启用平台（重载后连接）</label>
       </div>
       <label>凭据操作 <select id="connect-secret-action"><option value="keep">保留现有凭据</option><option value="replace">替换凭据</option><option value="clear">清空凭据（先禁用）</option></select></label>
       <label>新 AppSecret <input id="connect-secret" type="password" maxlength="512" autocomplete="new-password" placeholder="未编辑时留空；服务端不返回原凭据"></label>
       <label><input id="connect-confirm-secret" type="checkbox">明确同意替换 / 清空凭据</label>
-      <label><input id="connect-confirm-identity" type="checkbox">明确同意改绑 AppID / 环境</label>
+      <label><input id="connect-confirm-identity" type="checkbox">明确同意改绑 AppID</label>
       <fieldset><legend>QQ 高级连接设置（保存后重载生效）</legend>
         <label>事件意图 <input id="connect-intents" type="number" min="0" max="4294967295"></label>
         <p>uint32 位掩码；保留现有值，不代表 QQ 已授予订阅权限。</p>

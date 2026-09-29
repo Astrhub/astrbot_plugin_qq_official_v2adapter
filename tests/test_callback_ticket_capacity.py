@@ -39,10 +39,10 @@ async def test_callback_ticket_capacity_isolated_by_appid_and_environment(callba
     assert full.value.code == "ticket_capacity"
     assert owner.messages.db.execute("SELECT count(*) FROM callback_tickets WHERE robot=?", (key,)).fetchone()[0] == 4096
 
-    # A different AppID and the same AppID in sandbox share this MessageStore, not a ticket budget.
+    # A different AppID shares this MessageStore, without sharing a ticket budget.
     configs = [
         {**s.config, "id": "second-platform", "appid": "second-app"},
-        {**s.config, "id": "sandbox-platform", "environment": "sandbox", "is_sandbox": True},
+        {**s.config, "id": "third-platform", "appid": "third-app"},
     ]
     siblings = []
     for config in configs:

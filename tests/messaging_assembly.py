@@ -2,6 +2,7 @@
 import asyncio
 import copy
 import importlib
+import json
 import time
 
 from aiohttp import web
@@ -13,16 +14,25 @@ from test_transport_receive import signed
 from v2 import PLUGIN_NAME
 
 
+def wire_text(body):
+    """Outbound text of one body, regardless of the default Markdown selection."""
+    return body["markdown"]["content"] if "markdown" in body else body["content"]
+
+
 async def messaging_roundtrip(lifecycle, client, headers, owner, instance, callback, monkeypatch):
     from extensions_assembly import ExtensionProbe, extension_roundtrip
     probe = ExtensionProbe()
     replies, completed = asyncio.Queue(), asyncio.Queue()
     sent = []
     panels, panel_requests = {}, []
+    reject_next = []
     async def upstream_handler(request):
         result = await probe.handle(request)
         if result is not None:
             return result
+        if reject_next and request.method == "POST" and request.path.endswith("/messages"):
+            assert request.headers["X-Union-Appid"] == "new-fixture-app"
+            return web.json_response({"code": reject_next.pop(0)}, status=400)
         if request.path.startswith("/v2/panels"):
             assert request.headers["X-Union-Appid"] == "new-fixture-app"
             panel_requests.append((request.method, request.path))
@@ -86,17 +96,18 @@ async def messaging_roundtrip(lifecycle, client, headers, owner, instance, callb
                 assert event.get_extra("_session_isolated") is False and event.role == "member"
                 assert owner.messages.lookup(instance.identity.robot, "member_openid", "group:group-one", "user-one")["source_message_id"] == payload["d"]["id"]
                 if number == 0:
-                    assert "系统指令" in body["content"] and "首页" in body["content"]
+                    assert "系统指令" in wire_text(body) and "首页" in wire_text(body)
                     assert any(h.handler_name == "menu" for h in event.get_extra("activated_handlers"))
                 else:
-                    assert "权限不足" in body["content"]
+                    assert "权限不足" in wire_text(body)
             from astrbot.core.message.components import Plain
             from astrbot.core.message.message_event_result import MessageChain
             await instance.send_by_session(event.session, MessageChain([Plain("explicit active send")]))
             active = await asyncio.wait_for(replies.get(), 2)
-            assert active["content"] == "explicit active send" and "msg_id" not in active
+            assert wire_text(active) == "explicit active send" and "msg_id" not in active
             await group_mention_roundtrip(client, owner, instance, callback, replies, completed, monkeypatch)
             await session_compat_roundtrip(lifecycle, client, owner, instance, callback, replies, completed)
+            await session_fallback_roundtrip(client, owner, instance, callback, replies, completed, reject_next)
             from host_message_assembly import host_message_roundtrip
             await host_message_roundtrip(lifecycle, client, owner, instance, callback, replies, completed)
             prefix = f"/api/v1/plugins/extensions/{PLUGIN_NAME}"
@@ -200,10 +211,10 @@ async def group_mention_roundtrip(client, owner, instance, callback, replies, co
                 assert body["msg_id"] == payload["d"]["id"] and body["msg_seq"] == 1 and event._has_send_oper
                 assert event.get_self_id() == (GROUP_MEMBER if index == 2 else GROUP_BOT)
                 if index < 4:
-                    assert "AstrBot v" in body["content"] and event.get_message_str() == "help"
+                    assert "AstrBot v" in wire_text(body) and event.get_message_str() == "help"
                     assert any(h.handler_name == "help" for h in event.get_extra("activated_handlers"))
                 else:
-                    assert "未找到任何可用的对话模型" in body["content"] and event.get_message_str() == "你好"
+                    assert "未找到任何可用的对话模型" in wire_text(body) and event.get_message_str() == "你好"
             else:
                 assert replies.empty() and not event._has_send_oper
             assert owner.messages.db.execute("SELECT count(*) FROM operations").fetchone()[0] == operation_count + int(expected_wake)
@@ -249,10 +260,10 @@ async def session_compat_roundtrip(lifecycle, client, owner, instance, callback,
                 assert event.raw_data == payload and event.bot._source.message_id == payload["d"]["id"]
                 assert body["msg_id"] == payload["d"]["id"] and body["msg_seq"] == 1
                 assert any(h.handler_name == ("sid" if command == "sid" else "menu") for h in event.get_extra("activated_handlers"))
-                assert ("UMO: 「" + umo + "」" if command == "sid" else "!v2menu") in body["content"]
+                assert ("UMO: 「" + umo + "」" if command == "sid" else "!v2menu") in wire_text(body)
             assert await owner.context.send_message(umo, MessageChain([Plain("native UMO active send")]))
             body = await asyncio.wait_for(replies.get(), 2)
-            assert body["content"] == "native UMO active send" and "msg_id" not in body
+            assert wire_text(body) == "native UMO active send" and "msg_id" not in body
             card = {"msg_type": 2, "markdown": {"content": "## active card"}, "keyboard": {"id": "fixture-template"}}
             assert await owner.context.send_message(umo, MessageChain([Json(card)]))
             body = await asyncio.wait_for(replies.get(), 2)
@@ -264,3 +275,31 @@ async def session_compat_roundtrip(lifecycle, client, owner, instance, callback,
         await manager.ucr.update_routing_data(previous_routes)
         lifecycle.pipeline_scheduler_mapping.pop(profile, None)
         await manager.delete_conf(profile)
+
+
+async def session_fallback_roundtrip(client, owner, instance, callback, replies, completed, reject_next):
+    """The real receive chain records the candidate; one 40034105 converts the session send."""
+    from astrbot.core.message.components import Plain
+    from astrbot.core.message.message_event_result import MessageChain
+
+    payload = chat_payload("GROUP_MESSAGE_CREATE", message_id="assembly-fallback-chat", timestamp=time.time(), text="/v2menu")
+    request = signed(payload, appid="new-fixture-app", secret="new-fixture-secret", now=int(time.time()))
+    response = await client.post(callback, content=request.raw, headers=dict(request.headers))
+    assert response.status_code == 200 and response.json() == {"op": 12}
+    event = await asyncio.wait_for(completed.get(), 5)
+    menu_body = await asyncio.wait_for(replies.get(), 2)
+    assert menu_body["msg_id"] == "assembly-fallback-chat" and menu_body["msg_seq"] == 1
+    reject_next.append(40034105)
+    umo = "webhook-fixture:GroupMessage:" + event.message_obj.session_id
+    assert await owner.context.send_message(umo, MessageChain([Plain("assembly fallback")]))
+    assert not reject_next, "the rejection was consumed by the active attempt"
+    passive = await asyncio.wait_for(replies.get(), 2)
+    assert passive["markdown"]["content"] == "assembly fallback"
+    assert passive["msg_id"] == "assembly-fallback-chat" and passive["msg_seq"] == 2
+    row = owner.messages.db.execute(
+        "SELECT result FROM operations WHERE json_extract(result,'$.delivery.converted')='active_to_passive'").fetchone()
+    assert row
+    delivery = json.loads(row[0])["delivery"]
+    assert delivery["source_origin"]["message_id"] == "assembly-fallback-chat"
+    assert [(a["mode"], a["state"]) for a in delivery["attempts"]] == [("active", "rejected"), ("passive", "sent")]
+    print("SESSION_FALLBACK: real webhook receive chain feeds the one-shot 40034105 passive conversion")

@@ -60,6 +60,9 @@ class StreamingCore:
             raise V2Error("invalid_stream", "The stream did not provide an asynchronous iterator.")
         self.tasks.add(task)
         total, format_md = "", None
+        # One logical stream fixes the instance default once; later config changes must not
+        # interrupt or reformat an already started stream.
+        stream_default = self.sender.markdown_default
         operation, last_id, last_result = None, None, None
         delivery = None
         first_wire_started = None
@@ -137,18 +140,23 @@ class StreamingCore:
                     if chain.type not in (None, "plain", "break"):
                         raise unsupported("Private reasoning, tool and audio stream records are not public text fragments.")
                     if chain.type == "break":
-                        chain = MessageChain([Plain("\n")]).use_markdown(format_md is True)
+                        # A structural break is layout only: it keeps its newline but must not
+                        # pick or lock the format before the first real text fragment.
+                        chain = MessageChain([Plain("\n")])
                     if not chain.chain:
                         continue
-                    atoms, markdown = parse_message(chain)
+                    atoms, markdown = parse_message(chain, default=format_md if format_md is not None else stream_default)
                     if any(kind not in {"text", "markdown"} for kind, _ in atoms):
                         raise unsupported("Streams cannot silently drop media, mentions or references.")
                     raw = "".join(value for _, value in atoms)
                     if not raw:
                         continue
-                    if format_md is not None and markdown != format_md:
-                        raise V2Error("stream_format_changed", "A logical stream cannot switch text/Markdown format.")
-                    format_md = markdown
+                    if raw.strip():
+                        # Only real text decides or checks the format; whitespace-only layout
+                        # fragments leave an unset format open for an explicit first text.
+                        if format_md is not None and markdown != format_md:
+                            raise V2Error("stream_format_changed", "A logical stream cannot switch text/Markdown format.")
+                        format_md = markdown
                     candidate = total + raw if input_mode == "append" else raw
                     if index and not candidate.startswith(total):
                         raise V2Error("stream_prefix_changed", "Previously submitted stream content cannot be replaced.")

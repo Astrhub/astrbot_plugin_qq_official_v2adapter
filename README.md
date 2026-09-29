@@ -64,7 +64,7 @@ legacy = await client.api.get_group_member_info(group_id=event.route.target, use
 
 ## 配置
 
-在本体平台管理选择「QQ 官方 V2（WebSocket）」或「QQ 官方 V2（Webhook）」。基础表单填写 AppID、AppSecret，可切换「沙箱模式」；沙箱端点尚未确认，开启后拒绝联网。实例名称、启用沿用宿主管理。
+在本体平台管理选择「QQ 官方 V2（WebSocket）」或「QQ 官方 V2（Webhook）」。基础表单填写 AppID、AppSecret 和「主动消息使用 Markdown」开关（沿用宿主共享字段名 `use_markdown`，界面标题与其他官方适配器一致）；缺字段时默认开启，插件显式 `use_markdown(True/False)` 优先。在 V2 中该开关控制未显式指定格式的普通回复、会话发送与文本流，图片/文件/卡片不受影响。旧配置中的 `is_sandbox`、`environment` 输入一律忽略，实际连接固定正式环境，保存后不再写出这两个字段。实例名称、启用沿用宿主管理。
 
 V2 的入站日志与 Trace 摘要隐藏本事件已确认的自身 At，真实消息链和正文保持不变。唤醒、纯 At 等待、群聊上下文及回复装饰沿用本体配置规则，会话隔离沿用默认配置。
 
@@ -73,7 +73,7 @@ V2 的入站日志与 Trace 摘要隐藏本事件已确认的自身 At，真实�
 各片独立恢复和推进持久接收序号，共享 AppID/环境的 Identify 额度与每 5 秒创建限制；额度耗尽按重置时间等待，Resume 不消耗新建额度，未知新建不退款。控制台显示建议/计划/已连接片数，部分在线标为 degraded，健康片继续交付和回复；全部离线、心跳失效或代次撤销时停止发送。
 暂态断线和网关发现失败持续重试：HTTP `Retry-After` 优先，无值时按 1 秒至 15 分钟的有抖动指数退避；连续失败在稳定心跳 ACK 后清零。失败原因、次数和下次重试时间可在运行状态查看；明确的鉴权/配置拒绝或无法释放的 socket 才需管理员处理，组级致命错误关闭整组。
 
-升级初始化会一次性规范已有自有配置：保留原环境、传输与显式手动分片，写入新类型/沙箱开关/分片模式并清理旧别名，实例 ID、AppID、凭据、已有 Webhook UUID 及账本归属不变；矛盾的显式字段报错，保存失败恢复原内存配置，规范化和页面读取不连接 QQ。
+升级初始化会一次性规范已有自有配置：保留传输与显式手动分片，写入新类型/MD 开关/分片模式并清理旧别名与沙箱字段（环境固定正式），实例 ID、AppID、凭据、已有 Webhook UUID 不变；历史沙箱环境键下的台账不改写也不合并。矛盾的显式字段报错，保存失败恢复原内存配置，规范化和页面读取不连接 QQ。
 
 升级前备份本体平台配置与完整插件数据；回退仍要求 `media_roots` 的旧版本需恢复匹配的配置备份，勿清空消息数据库。
 
@@ -105,10 +105,12 @@ print(result["message_id"])
 # client.call_action(...)、client.api.call_action(...) 与同名方法共用发送核心。
 ```
 
-`event.send`、`send_by_session`、`client.qq.send(scene, target, ...)` 共用策略；无来源的实例调用仅走主动策略，不能借最近消息。CQ 字符串/数组全量校验，`auto_escape=True` 仅对字符串保留字面量；不能等价的组合拒绝，不偷偷拆消息。原生调用可给 `operation_id` 并用 `client.qq.send_status(id)` 查询；未知结果不重试。
+`event.send`、`send_by_session`、`client.qq.send(scene, target, ...)` 共用发送核心；无来源的实例调用仍以主动策略开始。CQ 字符串/数组全量校验，`auto_escape=True` 仅对字符串保留字面量；不能等价的组合拒绝，不偷偷拆消息。原生调用可给 `operation_id` 并用 `client.qq.send_status(id)` 查询；未知结果不重试。
+
+宿主 `send_by_session`（含 `context.send_message(umo, ...)`）在最终消息请求被 QQ 明确拒绝 `40034105`（主动消息无权限）时，允许一次主动→被动转换：绑定事件的会话仅当其绑定来源是真实入站聊天时用该精确来源（交互派生事件如按钮回执不作为候选，也不改借会话缓存），纯 UMO 用当前代次同会话最后接纳的真实入站消息（可能来自同群另一位用户，不保证是触发插件的原事件）。候选在发送开始时固定，后续新消息不替换；无候选、过期、被拒或跨群/跨用户隔离时保留原拒绝结果并在 `delivery.fallback_skipped` 说明原因。上传回执复用，序号在被动提交时分配；超时、断线、408/5xx、unknown、上传失败及其他业务码不触发。被动被拒后不再转回主动。
 
 真实来源到期，或 QQ 明确拒绝被动时效/次数（304103、40034005、40034026、40034128）时，默认在同一操作内最多转主动一次；主动仍受 QQ 权限、接收开关和频控限制。无效/越权来源、429、超时、unknown 和已有输出的部分流不补发；typing 不转主动。
-返回 `delivery` 记录模式、原因及最多两种模式的尝试状态，主动 `msg_seq=null`；原来源绑定不变，上传回执复用，旧失败操作不重放。账本沿用 schema 2，新增诊断存于既有 JSON 字段；回退须使用配套代码与整库备份，不能清理 unknown 或删库重发。
+返回 `delivery` 记录模式、原因、`source_origin`（会话候选来源）及最多两种模式的尝试状态，主动 `msg_seq=null`；原来源绑定不变，上传回执复用，旧失败操作不重放。账本沿用 schema 4，新增诊断存于既有 JSON 字段，未新增 DDL；回退须使用配套代码与整库备份，不能清理 unknown 或删库重发。最终失败在发送边界输出一次白名单安全摘要（业务码、HTTP 状态、phase、operation_id、trace_id、模式与尝试次数），不含正文、票据或凭据。
 
 媒体可用原生组件或CQ数组`image`/`record`/`video`；文件使用显式`_qq_file`段或`client.qq.send_file(scene, target, input, name=...)`。仅支持一项媒体与可等价引用/文本组合，不接受任意原生写请求。流式先用`client.qq.streaming_mode(scene, target)`检查模式，再调用`event.send_streaming`或`client.qq.send_streaming`。
 
