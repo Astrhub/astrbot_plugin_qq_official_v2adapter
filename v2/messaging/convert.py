@@ -1,4 +1,5 @@
 """Bounded conversion of original QQ chat structures, never interaction projections."""
+import base64
 import copy
 import html
 import json
@@ -75,6 +76,25 @@ def bounded_structure(payload):
         invalid()
 
 
+def decode_faces(content):
+    """Decode bounded QQ face descriptions without changing the raw envelope."""
+    def replace_face(match):
+        ext = re.search(r'(?:,|\s)ext="([^"]*)"', match.group(0))
+        if ext is not None and len(ext.group(1)) <= 4096:
+            try:
+                data = json.loads(base64.b64decode(ext.group(1), validate=True).decode("utf-8"))
+                text = data.get("text") if isinstance(data, dict) else None
+                if (isinstance(text, str) and 1 <= len(text) <= 256
+                        and not any(ord(c) < 32 or ord(c) == 127 for c in text)):
+                    text.encode("utf-8")
+                    return f"[表情:{text}]"
+            except (ValueError, UnicodeError, RecursionError):
+                pass
+        return "[表情]"
+
+    return re.sub(r"<faceType=\d[^<>]*>", replace_face, content)
+
+
 def safe_avatar(value):
     if not isinstance(value, str) or len(value) > 2048:
         return None
@@ -104,6 +124,7 @@ def attachment_url(value):
 
 def attachment_component(item):
     kind = item.get("content_type")
+    kind = kind.lower() if isinstance(kind, str) else None
     url = attachment_url(item.get("url"))
     if kind == "voice":
         source = attachment_url(item.get("voice_wav_url")) or url
@@ -113,6 +134,8 @@ def attachment_component(item):
     elif url and isinstance(kind, str):
         if kind.startswith("image/") and len(kind) > len("image/"):
             return Image(file=url, url=url)
+        if kind in {"audio/wav", "audio/x-wav", "audio/mpeg"}:
+            return Record(file=url, url=url)
         if kind == "video/mp4":
             return Video(file=url, url=url)
     if url:
@@ -226,13 +249,14 @@ def convert_chat(identity, envelope, *, isolated=False, bot_id=""):
             user = match.group("old") or html.unescape(match.group("new"))
             if user not in mentioned and user != bot_id:
                 continue
-            text = html.unescape(content[offset:match.start()])
+            text = decode_faces(html.unescape(content[offset:match.start()]))
             if text:
                 parts.append(Plain(text))
                 plain.append(text)
             parts.append(At(qq=user))
             offset = match.end()
     remaining = html.unescape(content[offset:]) if scene in {"channel", "dm"} else content
+    remaining = decode_faces(remaining)
     if remaining:
         parts.append(Plain(remaining))
         plain.append(remaining)
@@ -302,7 +326,7 @@ def convert_chat(identity, envelope, *, isolated=False, bot_id=""):
 
         def quote_parts(node):
             payload, _, children = node
-            result = [Plain(payload["content"])] if payload.get("content") else []
+            result = [Plain(decode_faces(payload["content"]))] if payload.get("content") else []
             result.extend(attachment_parts(payload.get("attachments", [])))
             for child in children:
                 if child[0].get("message_type") not in (101, 102) and (child[1] is None or child[1] == ref):
@@ -341,6 +365,10 @@ def convert_chat(identity, envelope, *, isolated=False, bot_id=""):
     message.session_id, message.self_id, message.message_id = route.public_session(identity.platform_id, sender=sender).session_id, group_self_id or bot_id, message_id
     message.sender = MessageMember(sender, author.get("username") if isinstance(author.get("username"), str) else None)
     message.group_id = target if scene in {"group", "channel"} else ""
+    group_name = data.get("group_name")
+    if (scene == "group" and isinstance(group_name, str) and 1 <= len(group_name) <= 256
+            and not any(ord(c) < 32 or ord(c) == 127 for c in group_name)):
+        message.group.group_name = group_name
     message.message, message.message_str = parts, "".join(plain)
     message.raw_message, message.timestamp = copy.deepcopy(payload), int(sent_at)
     message.v2_source = source
