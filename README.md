@@ -34,10 +34,10 @@ Vue 控制页候选实现提供连接状态、SDK 能力、本地菜单和 QQ �
 <table>
   <tr>
     <td width="72%" align="center">
-      <img src="https://raw.githubusercontent.com/Astrhub/astrbot_plugin_qq_official_v2adapter/04af399a33dcd5c83b37fd8af55f8a7c5fddedff/docs/assets/vue-control-preview-pc.svg" alt="QQ 官方 V2 SDK 控制页桌面预览" width="100%" />
+      <img src="./docs/assets/vue-control-preview-pc.svg" alt="QQ 官方 V2 SDK 控制页桌面预览" width="100%" />
     </td>
     <td width="28%" align="center">
-      <img src="https://raw.githubusercontent.com/Astrhub/astrbot_plugin_qq_official_v2adapter/04af399a33dcd5c83b37fd8af55f8a7c5fddedff/docs/assets/vue-control-preview-mobile.svg" alt="QQ 官方 V2 SDK 控制页手机预览" width="100%" />
+      <img src="./docs/assets/vue-control-preview-mobile.svg" alt="QQ 官方 V2 SDK 控制页手机预览" width="100%" />
     </td>
   </tr>
   <tr>
