@@ -1,7 +1,6 @@
 """Optional instance-owned OneBot HTTP/forward-WS transport over the existing client."""
 import asyncio
 import json
-import logging
 import math
 import re
 import secrets
@@ -166,8 +165,7 @@ class OneBotServer:
         app = web.Application(client_max_size=MAX_FRAME)
         app.router.add_route("*", "/{tail:.*}", self.handle)
         # Neither parser failures nor request URLs may log a query token.
-        logger = logging.Logger("qq-v2-onebot", level=logging.CRITICAL + 1)
-        self.runner = web.AppRunner(app, access_log=None, logger=logger, handler_cancellation=True,
+        self.runner = web.AppRunner(app, access_log=None, handler_cancellation=True,
                                     shutdown_timeout=1, keepalive_timeout=5, max_line_size=4096, max_field_size=4096)
         try:
             await self.runner.setup()

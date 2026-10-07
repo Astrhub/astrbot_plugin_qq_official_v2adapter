@@ -3,7 +3,6 @@
 import asyncio
 import base64
 import json
-import logging
 import secrets
 import time
 from dataclasses import dataclass, field
@@ -11,6 +10,7 @@ from urllib.parse import quote
 
 import aiohttp
 import qrcode
+from astrbot.api import logger
 from astrbot.core.utils.http_ssl import build_ssl_context_with_certifi
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
@@ -19,7 +19,6 @@ from .models import InstanceKey
 from .protocol import openapi_base
 from .transport.http import HTTPTransport, retry_delay
 
-logger = logging.getLogger("astrbot")
 
 PORTAL = "https://q.qq.com"
 ACTIVE = {"creating", "pending", "ready_to_commit"}
