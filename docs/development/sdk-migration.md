@@ -16,6 +16,8 @@ async def on_message(event):
     )
 ```
 
+适配器内部没有事件对象时，从实例调用 `instance.get_client()` 获取 `V2Client`，再使用 `client.qq` 访问根视图。根视图适合明确指定场景和目标的主动调用；宿主聊天回复继续使用事件绑定的 `event.bot`。
+
 `event.send(...)` 会沿用当前事件的回复来源。后台任务或需要明确目标时，调用 `event.bot.qq.send(scene, target, message)`：
 
 ```python
@@ -67,6 +69,8 @@ subscription = event.bot.qq.events.subscribe(
 ```
 
 订阅最多保留 64 条排队事件和 16 MiB 数据。队列或字节预算超限时会收到 `subscription_gap`，回调异常或超时会被记录，订阅会继续运行。插件卸载或平台重载后，旧 owner 和旧 SDK 视图会失效，重新获取当前事件的视图即可。
+
+订阅回调收到的 `notice.client` 是绑定 owner 的根视图，`notice.reply_context` 只在实时聊天事件中携带回复来源。它不会自动回复收到的消息；需要宿主回复时使用 `V2MessageEvent` 的 `event.bot` 和 `event.send(...)`。
 
 ## 兼容调用的边界
 
