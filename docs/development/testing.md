@@ -24,7 +24,7 @@ bash scripts/test-isolated.sh -q
 | 消息与来源 | `test_messaging_delivery.py`, `test_messaging_faults.py`, `test_reply_fallback.py`, `test_streaming.py` |
 | 媒体 | `test_media_contract.py`, `test_media_boundary.py`, `test_media_faults.py`, `test_media_upload.py` |
 | 互动与管理 | `test_button_callbacks.py`, `test_extension_dispatch.py`, `test_management.py`, `test_sdk_group_tools.py` |
-| OneBot | `test_onebot_network.py`, `test_onebot_events_resources.py`, `test_onebot_config_instances.py` |
+| 旧 OneBot 网络兼容 | `test_onebot_network.py`, `test_onebot_events_resources.py`, `test_onebot_config_instances.py` |
 | Pages | `test_page.py`, `test_panel_config_routing.py`, `test_panel_resilience.py` |
 
 ## 编写测试时的约束
@@ -34,6 +34,7 @@ bash scripts/test-isolated.sh -q
 - 覆盖 unknown、partial、stale generation、配置冲突和持久化恢复路径。
 - 发送测试必须断言 operation ledger，而不只断言 HTTP mock 被调用。
 - 修改页面时运行 Node 页面测试，并在 PR 中附页面截图。
+- 旧 OneBot 网络测试用于维护迁移期兼容行为；新增集成能力应在 SDK、事件和发送账本测试中覆盖。
 
 ## CI 变更
 
