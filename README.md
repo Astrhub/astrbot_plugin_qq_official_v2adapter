@@ -2,7 +2,7 @@
 
 `astrbot_plugin_qq_official_v2adapter` 是 AstrBot 的 QQ 官方机器人 V2 适配器。它直接接入 QQ 官方开放平台，提供 WebSocket 与 Webhook 两种接收方式，并把群聊、C2C、频道文字子频道和频道私信接入 AstrBot 的标准消息管线。
 
-插件的目标是让你完成三件事：在 AstrBot 中接入一个 QQ 官方机器人、用现有插件处理 QQ 消息、在需要时使用官方 V2 API 和 OneBot 风格接口。
+插件的目标是让你完成三件事：在 AstrBot 中接入一个 QQ 官方机器人、用现有插件处理 QQ 消息、在插件进程内使用官方 V2 SDK。
 
 > 这不是 QQ 个人号协议，也不会把 QQ 号伪装成官方机器人 OpenID。适配器路由、OpenID 与 OneBot ID 均按字符串处理；个别官方管理字段仍按 QQ API 类型校验。
 
@@ -100,10 +100,24 @@ v2menu kb
 | 互动 | 群/C2C 原生 Json 卡片与键盘、模板/自定义卡片、按钮回调；频道/DM 按 QQ 官方字段限制，回调默认关闭 |
 | 管理 | 群成员、禁言、踢出、黑名单、入群申请、频道管理、撤回、菜单/面板等，权限由 QQ 当次响应决定 |
 | 资料 | 成员与陌生人资料缓存、头像 URL、当前名单状态；历史资料会标注来源，不冒充实时成员 |
-| OneBot | 可选的 OneBot v11 风格 OpenID 子集，复用同一发送账本和权限边界 |
 | SDK | `event.bot.qq` 原生具名 API、事件订阅、媒体上传、管理 API 和操作状态查询 |
+| 旧 OneBot 网络入口 | 现有外部客户端的迁移入口，计划废弃；复用同一发送账本和权限边界 |
 
 频道和 DM 的出站发送需要在线 WebSocket；Webhook 实例可以接收回调，但不能替这两个场景提供发送通道。
+
+### 插件开发者直接使用 SDK
+
+收到事件后，从 `event.bot.qq` 获取绑定当前机器人、场景和代次的 SDK 视图：
+
+```python
+member = await event.bot.qq.get_group_member_info(
+    event.route.target,
+    "成员 OpenID",
+)
+await event.send("你好")
+```
+
+需要订阅原生事件时使用 `event.bot.qq.events.subscribe(...)`。后台任务或明确指定目标时使用 `event.bot.qq.send(scene, target, message)`。SDK 与适配器共用连接、权限检查和发送账本。
 
 入站附件只在消费时按需读取，不会因为收到一条 QQ 消息就下载所有附件。图片、音频、视频和未知 MIME 会按官方类型转换为 AstrBot 组件；无法安全转换时保留为文件或 Unknown，并保留原始元数据。
 
@@ -115,7 +129,7 @@ v2menu kb
 | --- | ---: | --- |
 | `webui_enabled` | `true` | 提供 V2 Pages 管理接口 |
 | `remote_menu_sync` | `false` | 允许托管面板同步到 QQ；默认关闭，不会发布远端菜单 |
-| `onebot_network_enabled` | `false` | 启用可选 OneBot HTTP/正向 WebSocket 入口；仍需为每个实例单独配置监听器 |
+| `onebot_network_enabled` | `false` | 旧 OneBot HTTP/正向 WebSocket 入口，计划废弃；新集成直接使用进程内 SDK |
 | `profile_max_records` | `32768` | 资料库最多保留的记录数 |
 | `profile_max_bytes` | `64 MiB` | 资料库大小上限 |
 | `profile_stale_seconds` | `300` | 资料被标记为过时前的秒数 |
@@ -125,9 +139,9 @@ v2menu kb
 
 设置采用“草稿 → 应用到本地”的流程。应用本地设置不会自动发布 QQ 远端面板；远端托管面板还需要打开 `remote_menu_sync` 并在 Pages 中确认具体作用域。
 
-## OneBot 网络入口
+## 旧 OneBot 网络入口（计划废弃）
 
-OneBot 网络入口默认关闭。打开全局 `onebot_network_enabled` 后，还要在对应平台实例的 `onebot` 配置中设置：
+当前版本仍保留独立 OneBot 网络入口，用于已有外部客户端迁移。新插件和新集成直接使用进程内 SDK。入口默认关闭；打开全局 `onebot_network_enabled` 后，还要在对应平台实例的 `onebot` 配置中设置：
 
 ```json
 {
@@ -175,9 +189,9 @@ OneBot 网络入口默认关闭。打开全局 `onebot_network_enabled` 后，�
 
 确认 `keyboard_enabled=true`，按钮由本插件的 `callback_button` 生成且票据未过期；按钮回调必须绑定已加载 Star 的异步方法。QQ 管理员身份不等于 AstrBot 管理员身份。
 
-### OneBot 返回 `network_not_ready`
+### 旧 OneBot 网络入口返回 `network_not_ready`
 
-检查全局 `onebot_network_enabled`、实例 `onebot.enable`、监听地址/端口和 token，并确认修改后已重载。写动作还需要 `onebot.writes=true`；这不会自动打开插件的 `management_writes`。
+这个错误来自旧网络监听器。已有外部客户端需要检查全局 `onebot_network_enabled`、实例 `onebot.enable`、监听地址/端口和 token，并确认修改后已重载。写动作还需要 `onebot.writes=true`；这不会自动打开插件的 `management_writes`。新集成直接改用 `event.bot.qq`。
 
 ## 开发者入口
 
@@ -189,7 +203,8 @@ OneBot 网络入口默认关闭。打开全局 `onebot_network_enabled` 后，�
 - [持久化与恢复](docs/development/persistence-and-recovery.md)
 - [发送、媒体与幂等](docs/development/delivery-and-media.md)
 - [扩展、按钮与群工具](docs/development/extensions.md)
-- [OneBot 网络协议](docs/ONEBOT.md)
+- [旧 OneBot 网络协议（计划废弃）](docs/ONEBOT.md)
+- [从旧 OneBot 网络入口迁移到 SDK](docs/development/sdk-migration.md)
 - [测试与 CI](docs/development/testing.md)
 
 ## 相关链接
