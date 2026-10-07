@@ -14,9 +14,10 @@
 4. [发送、媒体与幂等](development/delivery-and-media.md)：处理回复来源、流式、上传、unknown 和操作状态。
 5. [扩展、按钮与群工具](development/extensions.md)：接入按钮回调、托管面板和 13 个受控群工具。
 6. [持久化与恢复](development/persistence-and-recovery.md)：理解账本、迁移和 unknown 的恢复边界。
-7. [从旧 OneBot 网络入口迁移到 SDK](development/sdk-migration.md)：把进程外网络调用改为进程内 SDK。
-8. [旧 OneBot 说明](ONEBOT.md)：维护已有外部客户端时查看网络入口和兼容边界。
-9. [测试与 CI](development/testing.md)：在与 CI 相同的隔离环境中运行回归测试。
+7. [Vue 控制页面与 SDK 集成](development/vue-control-page.md)：维护 Plugin Pages 前端、ControlAPI 和统一操作调度的边界。
+8. [从旧 OneBot 网络入口迁移到 SDK](development/sdk-migration.md)：把进程外网络调用改为进程内 SDK。
+9. [旧 OneBot 说明](ONEBOT.md)：维护已有外部客户端时查看网络入口和兼容边界。
+10. [测试与 CI](development/testing.md)：在与 CI 相同的隔离环境中运行回归测试。
 
 ## 文档与源码的对应关系
 
@@ -28,9 +29,12 @@
 | 发送与来源 | `v2/messaging/outbound.py`, `v2/messaging/reply.py`, `v2/messaging/store.py` |
 | 原生 SDK 与事件 | `v2/sdk/`, `v2/client.py`, `v2/event.py` |
 | 媒体与扩展 | `v2/media/`, `v2/extensions/`, `v2/panels.py` |
+| 管理页面 | `pages/control/`, `dash/`, `v2/web_api.py`, `v2/connections.py`, `v2/settings.py` |
 | 旧 OneBot 网络入口 | `v2/network.py`, `v2/network_config.py` |
 | 测试入口 | `tests/`, `scripts/test-isolated.sh`, `.github/workflows/tests.yml` |
 
 ## 稳定性边界
 
 `event.bot.qq`、`event.send`、`event.bot.qq.events` 和 `event.qq` 是插件的主要公共入口。`client.api` 与 `client.call_action` 保留给已有兼容代码；独立 OneBot 网络入口处于计划废弃阶段。`v2/` 内部类、SQLite 表、HTTP 路由实现细节不是跨版本稳定 API；修改它们时必须同步测试、迁移说明和错误契约。
+
+Plugin Pages 的稳定边界是页面与 `ControlAPI` 的请求语义。Vue 前端不能直接访问 QQ OpenAPI、`HTTPTransport` 或 SDK 内部对象；它应在页面桥接对象上调用已登记的控制路由。控制路由在服务端完成管理员认证、CSRF、实例指纹、草稿版本和平台代次检查，再把操作交给当前 SDK、`PanelService` 状态机和对应的操作状态记录。变更这些路由或返回字段时，应同时更新 `dash/`、`pages/control/`、文档和页面测试。

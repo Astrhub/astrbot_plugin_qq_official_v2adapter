@@ -27,6 +27,16 @@ bash scripts/test-isolated.sh -q
 | 旧 OneBot 网络兼容 | `test_onebot_network.py`, `test_onebot_events_resources.py`, `test_onebot_config_instances.py` |
 | Pages | `test_page.py`, `test_panel_config_routing.py`, `test_panel_resilience.py` |
 
+Vue 控制页面的源码在 `dash/`，当前构建产物在迁移验证入口 `pages/test/index.html`。修改 `dash/` 后先执行：
+
+```bash
+npm ci --prefix dash --ignore-scripts
+npm run build --prefix dash
+git diff --exit-code -- pages/test/index.html
+```
+
+CI 会重复执行同一构建并拒绝未提交的产物漂移。`pages/test/_page.json` 只用于在宿主 Plugin Pages 中以验证页面打开 Vue 构建；正式控制台仍是 `pages/control/index.html`，迁移完成前不要把验证入口当作生产入口。
+
 ## 编写测试时的约束
 
 - 使用临时 SQLite 和本地 aiohttp upstream，不要读取操作者的 AstrBot 数据目录。

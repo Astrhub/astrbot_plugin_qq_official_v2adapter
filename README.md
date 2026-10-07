@@ -22,6 +22,7 @@
 - 流式与输入状态：C2C 使用 QQ 原生流；其他场景可配置有界聚合或明确拒绝，C2C typing 受 `typing_enabled` 控制。
 - 管理能力：群成员、禁言、踢出、黑名单、入群申请、频道管理、撤回、菜单和面板。
 - 原生 SDK：`event.bot.qq` 提供具名 API、事件订阅、媒体上传、管理 API 和操作状态查询。
+- 管理页面：Plugin Pages 的 `control` 页面提供连接、扫码、菜单草稿、预览、托管面板和保留事件管理；Vue 源码位于 `dash/`。
 
 ## 安装
 
@@ -116,7 +117,7 @@ v2menu kb
 
 ### 进程内 SDK
 
-具体查看[SDK 使用指南](docs/development/sdk.md)
+具体查看[SDK 使用指南](docs/development/sdk.md)。管理页面的 Vue 前端通过认证的 `ControlAPI` 使用同一套 SDK 服务和操作状态，接入边界见[Vue 控制页面与 SDK 集成](docs/development/vue-control-page.md)。
 
 ### 发送范围
 
@@ -136,6 +137,12 @@ v2menu kb
 
 这是 OpenID 子集，完整边界见 [旧 OneBot 网络说明](docs/ONEBOT.md)。从网络调用迁移到 SDK 的对应关系见 [SDK 迁移指南](docs/development/sdk-migration.md)。
 
+控制页面不通过 OneBot 网络入口执行 QQ 操作。页面请求先经过 Dashboard 管理员认证、CSRF、实例指纹和版本检查，再由 `ControlAPI` 调用连接管理、设置存储、`PanelService` 托管状态机和当前 SDK 服务。已有外部客户端仍可在迁移期间使用 OneBot 网络入口；新页面和新插件应直接使用进程内 SDK。
+
+## Vue 控制页面开发
+
+稳定的 Plugin Pages 入口是 `pages/control/index.html`。`dash/` 是 Vue 源码，迁移阶段的实验构建产物可以输出到 `pages/test`；实验页面不会替代 `control`，也不应当被文档当作正式入口。前端开发、ControlAPI 接口和统一操作调度见[Vue 控制页面与 SDK 集成](docs/development/vue-control-page.md)。
+
 ## 限制与排障
 
 - QQ 权限、配额和频控以当次服务端响应为准。
@@ -153,6 +160,8 @@ astrbot_plugin_qq_official_v2adapter/
 ├── main.py                         # 插件注册与宿主入口
 ├── _conf_schema.json               # 插件设置 Schema
 ├── metadata.yaml                   # 插件元数据
+├── dash/                           # Vue 控制页面源码与 Vite 构建配置
+├── pages/control/                  # 稳定的 Plugin Pages 控制台入口
 ├── v2/
 │   ├── adapter.py                  # 平台实例、重载与生命周期
 │   ├── client.py                   # V2Client 与 NativeView
@@ -173,6 +182,7 @@ astrbot_plugin_qq_official_v2adapter/
 
 - [开发者文档索引](docs/README.md)
 - [SDK 使用指南](docs/development/sdk.md)
+- [Vue 控制页面与 SDK 集成](docs/development/vue-control-page.md)
 - [从旧 OneBot 网络入口迁移到 SDK](docs/development/sdk-migration.md)
 - [事件模型](docs/development/events.md)
 - [发送、媒体与幂等](docs/development/delivery-and-media.md)
@@ -189,6 +199,7 @@ astrbot_plugin_qq_official_v2adapter/
 ## 社区
 > [!NOTE]
 > 欢迎加入QQ群 **1073129740** 一起来讨论
+
 ## 许可
 
 本项目使用 [AGPL-3.0](LICENSE)。平台图标的来源与许可见 [assets/LICENSE.AstrBot-Dashboard](assets/LICENSE.AstrBot-Dashboard)。
