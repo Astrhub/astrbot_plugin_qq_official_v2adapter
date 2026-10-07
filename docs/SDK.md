@@ -10,4 +10,4 @@ member = await client.qq.get_group_member_info(event.route.target, "成员 OpenI
 await event.send("你好")
 ```
 
-`client.qq` 是官方 V2 原生具名 API；`client.api` 是 OneBot v11 风格 OpenID 投影。同名方法的返回结构和能力边界不同，详见 [SDK 指南](development/sdk.md)、[覆盖台账](SDK_COVERAGE.md) 和 [OneBot 说明](ONEBOT.md)。
+`client.qq` 是官方 V2 原生具名 API，属于插件的主要扩展入口。`client.api` 与 `client.call_action` 仍提供进程内兼容调用，方便已有代码迁移；新代码直接使用具名 SDK 方法。独立 OneBot 网络入口处于计划废弃阶段，迁移对应关系见 [SDK 迁移指南](development/sdk-migration.md)，网络边界见 [旧 OneBot 说明](ONEBOT.md)。
