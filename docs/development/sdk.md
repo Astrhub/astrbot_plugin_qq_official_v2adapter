@@ -1,14 +1,15 @@
 # SDK 使用指南
 
-## 选择正确的入口
+## SDK 优先
 
 ```python
 client = event.bot
 native = client.qq       # 官方 V2 具名 API，保留官方字段和响应
-compat = client.api       # OneBot v11 风格 OpenID 子集
 ```
 
-`client.qq.get_group_member_info(group, member)` 返回 QQ 原始响应；`client.api.get_group_member_info(group_id=..., user_id=...)` 返回兼容投影。两者同名但语义不同，不能混用。`client.call_action()` 与 OneBot 分派共用同一发送核心，不会因为调用入口不同而扩大权限。
+插件优先使用 `event.send(...)`、`event.bot.qq` 和 `event.bot.qq.events`。`client.api`、`event.bot.api` 与 `client.call_action()` 保留给已有兼容代码；独立 OneBot 网络入口处于计划废弃阶段。网络调用到 SDK 的对应关系见 [迁移指南](sdk-migration.md)。
+
+`client.qq.get_group_member_info(group, member)` 返回 QQ 原始响应。兼容调用仍接受 OneBot 风格的参数和投影，调用入口不会扩大权限。
 
 ## 发送与读取
 
@@ -33,7 +34,7 @@ member = await event.bot.qq.get_group_member_info(event.route.target, "成员 Op
 - `guild_admin.py`：频道、成员、角色、权限、公告、日程、语音和帖子；
 - `menus.py`：菜单与面板管理。
 
-目录登记 98 个 HTTP target，其中 96 个已实现/可用、2 个明确 excluded；另有 64 个旧 SDK 风格具名方法。逐项目录见 [SDK 覆盖台账](../SDK_COVERAGE.md)；实现不代表账号一定有权调用。
+目录登记 98 个官方 HTTP target，其中 96 个已实现/可用、2 个明确 excluded；另有 64 个旧 SDK 风格具名方法。逐项目录见 [SDK 覆盖台账](../SDK_COVERAGE.md)；实现不代表账号一定有权调用。
 
 ## 管理写入
 
