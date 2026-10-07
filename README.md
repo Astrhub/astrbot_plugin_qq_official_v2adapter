@@ -1,178 +1,201 @@
-# QQ 官方 V2 适配器 (astrbot_plugin_qq_official_v2adapter)
+# QQ 官方 V2 适配器
 
-独立的 AstrBot `qq_official_v2`（WebSocket）与 `qq_official_v2_webhook`（Webhook）适配器，共用业务核心，提供可选 OneBot 兼容。
+`astrbot_plugin_qq_official_v2adapter` 是 AstrBot 的 QQ 官方机器人 V2 适配器。它直接接入 QQ 官方开放平台，提供 WebSocket 与 Webhook 两种接收方式，并把群聊、C2C、频道文字子频道和频道私信接入 AstrBot 的标准消息管线。
 
-## 环境要求
+插件的目标是让你完成三件事：在 AstrBot 中接入一个 QQ 官方机器人、用现有插件处理 QQ 消息、在需要时使用官方 V2 API 和 OneBot 风格接口。
 
-| 依赖 | 版本要求 | 说明 |
-|------|----------|------|
-| Python | >= 3.12 | |
-| AstrBot | >= v4.28.1 | 平台注册与 Plugin Pages |
+> 这不是 QQ 个人号协议，也不会把 QQ 号伪装成官方机器人 OpenID。适配器路由、OpenID 与 OneBot ID 均按字符串处理；个别官方管理字段仍按 QQ API 类型校验。
 
+## 你需要什么
 
-## 功能
+| 项目 | 要求 |
+| --- | --- |
+| AstrBot | `>= 4.28.1` |
+| Python | `>= 3.12` |
+| QQ 机器人 | QQ 开放平台的 AppID 与 AppSecret，或可用的扫码绑定流程 |
+| 网络 | WebSocket 模式需要 AstrBot 能访问 QQ 官方网关；Webhook 模式需要 QQ 能访问 AstrBot 的统一 Webhook 地址 |
 
-当前可用：
-
-- 平台注册/注销、多实例身份与代次隔离、禁用及失败清理
-- 有界 HTTP/token 重试、WS 心跳与恢复、Webhook 原始体验签及持久收件
-- 独立扫码短租约、一次性凭据提交、手填配置；保存与重载分离
-- 六类官方聊天事件进入正常 AstrBot 管线；全量群聊兼容结构化自身 @ 标记，身份、回复凭据与发送结果持久化
-- 文本 / Markdown / At / Reply 共用发送核心；QQ 限速以实际拒绝响应为准，未知结果不自动重放
-- Plugin Pages：真实目录、参数帮助、自选快捷项、分级布局、草稿及版本恢复
-- 默认关闭的托管指令面板；预览、应用本地、确认发布相互独立，只修改自有资源
-- OneBot `send_group_msg` / `send_private_msg` / `send_msg`，缓存资料和头像 URL 查询
-- 外链交QQ转存，本地文件/Base64分片上传；C2C原生流式、其他场景有界聚合、显式C2C typing
-- 互动11/12独立ACK、短期点击者票据与正常权限管线；群/频道具名管理、分享及有真实记录的撤回
-- 群/C2C 原生 Json 卡片、模板/自定义键盘、第三方 Star 受控回调与媒体卡片；[按钮用法与边界](docs/BUTTONS.md)
-
-| 场景 | 基础发送 | 限制 |
-|------|----------|------|
-| 群聊 / C2C | 文本、Markdown、真实引用索引 | At 仅群聊；群回复5分钟、C2C保守60分钟；次数由QQ判定 |
-| 文字子频道 / 频道私信 | 文本、Markdown、真实消息引用 | 需在线 WS；At 仅文字子频道 |
-| 所有场景 | 指令帮助、原生格式会话 ID、保守主动发送 | 主动目标须已观察；配额/权限仍以服务端为准 |
-| 入站附件 | QQ 结构化附件转 AstrBot 标准组件；MIME 不区分大小写，voice 及 audio/wav、audio/x-wav、audio/mpeg 转 Record，未知类型或频道仅 URL 附件降级为 File，原始元数据保留 | 转换时不下载；宿主管线或插件消费时按需读取，可进入 LLM；聊天链接不作附件 |
-
-群/C2C 引用仅从匹配索引或官方无子索引的引用元素还原内容；原作者缺失时保留未知。频道引用只有消息 ID，不补造原作者或正文。
-正文及引用中的 QQ 表情标签解码为 `[表情:描述]`，无效或超限标签降级为 `[表情]`；原始信封保留。群消息自带的合法群名填入标准 Group，不额外查询。
-
-OneBot 接入通过 Pages“连接配置”管理，每实例单独端口和专用token，复用现有动作与发送防重账本；字符串ID与`qq_event`扩展不伪装完整v11。HTTP/WS路由、被动回复、限制和回退见[网络接入说明](docs/ONEBOT.md)。
-
-进程内原生 `client.qq` 覆盖 96 个有效 HTTP 端点，`client.api/call_action` 保留 OneBot OpenID 子集；13 个 `qq_v2_` 群工具按事件绑定群与操作者权限。订阅 56 种业务事件及 READY/RESUMED 仅观察现有接收链路，不提供业务重放。用法见 [SDK](docs/SDK.md)、[群工具](docs/GROUP_TOOLS.md) 与 [覆盖台账](docs/SDK_COVERAGE.md)。
-```python
-client = event.bot  # 当前 V2 事件已绑定的机器人/群/来源
-member = await client.qq.get_group_member_info(event.route.target, "成员 OpenID")
-legacy = await client.api.get_group_member_info(group_id=event.route.target, user_id="成员 OpenID")
-```
-
-| 扩展 | 实现与条件 |
-|---|---|
-| 群/C2C媒体 | 图片、语音、视频、文件；格式接受由QQ判断，URL转存及prepare→PUT→finish→files；整链预检，不静默丢caption或拆多条 |
-| 频道/DM图片 | HTTP(S)图片URL直传；频道本地图片另支持multipart。DM本地文件及两场景语音/视频/文件拒绝 |
-| 流式/typing | C2C原生流；其他场景先声明聚合模式。typing需开关和被动来源，使用一次回复序号、不续期；自动typing跳过不支持、未开启或服务未附加的场景 |
-| 键盘 | 群/C2C 可直接发送原生 Json 模板或自定义卡片；`keyboard_enabled` 启用受控回调，旧 `v2menu kb` 的 `keyboard_execute` 仅限无参指令票据。详见 [插件按钮](docs/BUTTONS.md) |
-| 管理/分享 | 原生具名接口；OneBot同步群资料/成员/禁言/移除/审批、真实bot资料与撤回。写入默认关闭，实际权限由QQ决定 |
-
-本地文件按 AstrBot 读取及进程文件权限，无额外 `media_roots` 白名单；旧字段兼容忽略。
-
-本地字节超过图片/语音/视频软限制时默认按文件类型提交，可传 `allow_file_fallback=false` 禁止降级；硬限制和本地 `media_max_bytes` 仍生效。上传回执的 `ttl=0` 按长期有效处理，内存缓存最长24小时；分片媒体可在当前成功返回中取得 `raw_url`，预签名地址不写入发送账本。
+插件没有单独的构建步骤。运行依赖会从 `requirements.txt` 安装：`aiohttp`、`cryptography` 与 `qrcode`。
 
 ## 安装
 
-1. 在 AstrBot 插件界面选择从链接安装：`https://github.com/Astrhub/astrbot_plugin_qq_official_v2adapter`
-2. 或手动克隆到 `data/plugins/` 后在 WebUI 重载
-3. 在平台对应配置档的插件列表中启用本插件，确保群 @ 唤醒和 `v2menu` 等指令可用
+### 从 AstrBot WebUI 安装
 
-## 配置
+在插件管理中选择“从 Git 仓库安装”，填入：
 
-在本体平台管理选择「QQ 官方 V2（WebSocket）」或「QQ 官方 V2（Webhook）」。基础表单填写 AppID、AppSecret 和「主动消息使用 Markdown」开关（沿用宿主共享字段名 `use_markdown`，界面标题与其他官方适配器一致）；缺字段时默认开启，插件显式 `use_markdown(True/False)` 优先。在 V2 中该开关控制未显式指定格式的普通回复、会话发送与文本流，图片/文件/卡片不受影响。旧配置中的 `is_sandbox`、`environment` 输入一律忽略，实际连接固定正式环境，保存后不再写出这两个字段。实例名称、启用沿用宿主管理。
-
-V2 的入站日志与 Trace 摘要隐藏本事件已确认的自身 At，真实消息链和正文保持不变。唤醒、纯 At 等待、群聊上下文及回复装饰沿用本体配置规则，会话隔离沿用默认配置。
-
-事件意图、WS 分片和 OneBot 网络均在插件 Pages → `control` 配置，保存后另行重载。新 WS 默认自动发现并启动完整分片组（最多 32 片，超限明确报错）；手动输入片号和总数，仅启动指定片，需自行覆盖完整组。同一机器人不能混用自动、Webhook 与手动接收；不同手动片必须总数一致。
-
-各片独立恢复和推进持久接收序号，共享 AppID/环境的 Identify 额度与每 5 秒创建限制；额度耗尽按重置时间等待，Resume 不消耗新建额度，未知新建不退款。控制台显示建议/计划/已连接片数，部分在线标为 degraded，健康片继续交付和回复；全部离线、心跳失效或代次撤销时停止发送。
-暂态断线和网关发现失败持续重试：HTTP `Retry-After` 优先，无值时按 1 秒至 15 分钟的有抖动指数退避；连续失败在稳定心跳 ACK 后清零。失败原因、次数和下次重试时间可在运行状态查看；明确的鉴权/配置拒绝或无法释放的 socket 才需管理员处理，组级致命错误关闭整组。
-
-升级初始化会一次性规范已有自有配置：保留传输与显式手动分片，写入新类型/MD 开关/分片模式并清理旧别名与沙箱字段（环境固定正式），实例 ID、AppID、凭据、已有 Webhook UUID 不变；历史沙箱环境键下的台账不改写也不合并。矛盾的显式字段报错，保存失败恢复原内存配置，规范化和页面读取不连接 QQ。
-
-升级前备份本体平台配置与完整插件数据；回退仍要求 `media_roots` 的旧版本需恢复匹配的配置备份，勿清空消息数据库。
-
-### 基础开关（插件设置）
-
-| 配置项 | 类型 | 默认 | 说明 |
-|--------|------|------|------|
-| `webui_enabled` | bool | true | 启用 V2 管理页面 API |
-| `remote_menu_sync` | bool | false | 托管面板总闸；还须在 Pages 确认具体应用和范围 |
-| `onebot_network_enabled` | bool | false | HTTP/正向WS总闸；还须配置实例监听/独立token并重载，默认只读 |
-
-
-## 使用
-
-### 启用原型
-
-1. 安装并启用插件（验证基线 AstrBot 4.28.1）。
-2. 插件详情 → Pages → `control`，读取接入目标后点「生成二维码」，用手机 QQ 扫码再保存凭据。不需要事先填写 AppSecret。保存后机器人仍关闭。
-3. 勾选启用并重载才会连接。关闭页面会取消还没保存的二维码；不会授予管理员权限。
-4. 下方目录实例独立选择；编辑布局后先预览、再保存草稿，按需应用到本地。插件热重载会恢复已启用的两种自有平台。
-
-### 进程内接口
-
-```python
-client = event.bot  # 真实群聊 V2 事件：绑定该事件的被动回复凭据
-status = await client.api.call_action("get_status")
-result = await client.send_group_msg(group_id=event.route.target, message="你好")
-print(result["message_id"])
-# client.call_action(...)、client.api.call_action(...) 与同名方法共用发送核心。
+```text
+https://github.com/Astrhub/astrbot_plugin_qq_official_v2adapter
 ```
 
-`event.send`、`send_by_session`、`client.qq.send(scene, target, ...)` 共用发送核心；无来源的实例调用仍以主动策略开始。CQ 字符串/数组全量校验，`auto_escape=True` 仅对字符串保留字面量；不能等价的组合拒绝，不偷偷拆消息。原生调用可给 `operation_id` 并用 `client.qq.send_status(id)` 查询；未知结果不重试。
+安装完成后重载插件。
 
-宿主 `send_by_session`（含 `context.send_message(umo, ...)`）在最终消息请求被 QQ 明确拒绝 `40034105`（主动消息无权限）时，允许一次主动→被动转换：绑定事件的会话仅当其绑定来源是真实入站聊天时用该精确来源（交互派生事件如按钮回执不作为候选，也不改借会话缓存），纯 UMO 用当前代次同会话最后接纳的真实入站消息（可能来自同群另一位用户，不保证是触发插件的原事件）。候选在发送开始时固定，后续新消息不替换；无候选、过期、被拒或跨群/跨用户隔离时保留原拒绝结果并在 `delivery.fallback_skipped` 说明原因。上传回执复用，序号在被动提交时分配；超时、断线、408/5xx、unknown、上传失败及其他业务码不触发。被动被拒后不再转回主动。
-
-真实来源到期，或 QQ 明确拒绝被动时效/次数（304103、40034005、40034026、40034128）时，默认在同一操作内最多转主动一次；主动仍受 QQ 权限、接收开关和频控限制。无效/越权来源、429、超时、unknown 和已有输出的部分流不补发；typing 不转主动。
-返回 `delivery` 记录模式、原因、`source_origin`（会话候选来源）及最多两种模式的尝试状态，主动 `msg_seq=null`；原来源绑定不变，上传回执复用，旧失败操作不重放。账本沿用 schema 4，新增诊断存于既有 JSON 字段，未新增 DDL；回退须使用配套代码与整库备份，不能清理 unknown 或删库重发。最终失败在发送边界输出一次白名单安全摘要（业务码、HTTP 状态、phase、operation_id、trace_id、模式与尝试次数），不含正文、票据或凭据。
-
-媒体可用原生组件或CQ数组`image`/`record`/`video`；文件使用显式`_qq_file`段或`client.qq.send_file(scene, target, input, name=...)`。仅支持一项媒体与可等价引用/文本组合，不接受任意原生写请求。流式先用`client.qq.streaming_mode(scene, target)`检查模式，再调用`event.send_streaming`或`client.qq.send_streaming`。
-
-`client.qq.group_members(group)`、`join_requests(group)`返回完整结果或明确失败；审批flag有效5分钟，只来自真实待处理申请查询，不代表好友或机器人受邀审批。管理/分享/撤回需高级区开启`management_writes`；用`client.qq.extension_status(operation_id)`核对扩展结果，`extension_events()`读取typed状态。已发送后超时/取消、部分成功不能整批重放；来源/路由缺失或压缩后不能伪造撤回目标。
-
-扩展未完成/unknown限2048，ACK独立128，完整终态明细2048；旧结果压缩后保留24小时防重记录，不挤占未完成预算，仍受整库128MiB上限约束。
-
-ID 均为字符串。群/C2C 提供场景专用 OpenID，不由 QQ 号反推；频道/DM 使用官方对应 ID。`get_stranger_info` 优先保留真实聊天来源/原时间，也可返回明确标记的历史 `profile_cache`（无伪造消息 ID）；实例级查询须给 `id_kind`/`scope`，`no_cache=True` 不支持。头像优先真实事件 URL。
-
-## 本地测试
-
-复用已有 AstrBot 依赖环境，需要 Linux、bubblewrap、Python 3.12、Node 24：
+### 手动安装
 
 ```bash
-ASTRBOT_SOURCE=/patch/AstrBot bash scripts/test-isolated.sh -q
+cd /path/to/AstrBot/data/plugins
+git clone https://github.com/Astrhub/astrbot_plugin_qq_official_v2adapter.git
 ```
 
-脚本使用独立用户/PID/网络命名空间、只读源码与临时数据，QQ 上游仅用本地模拟服务，不读取现有实例配置。依赖 `requirements.txt`。
+然后在 AstrBot WebUI 重载插件。插件会在首次初始化时创建自己的数据目录，不需要手动建表。
 
-## 项目结构
+## 五分钟接入
 
+### 1. 选择接收方式
+
+在 AstrBot 的平台配置中选择其中一个平台类型：
+
+- **QQ 官方 V2（WebSocket）**：适合大多数部署。插件主动连接 QQ 网关，不需要从公网暴露入站端口。
+- **QQ 官方 V2（Webhook）**：适合已经有公网 HTTPS 入口、希望由 QQ 回调事件的部署。需要为实例保存唯一的统一 Webhook UUID，并让 QQ 回调 AstrBot 暴露的统一路径 `/api/platform/webhook/{webhook_uuid}`。
+
+同一个机器人不能同时启用冲突的 WebSocket、Webhook 或分片接收实例。不同实例也不能重复占用同一个机器人和冲突的分片。
+
+### 2. 填写凭据
+
+手动配置时填写 AppID 和 AppSecret。插件只连接正式环境；旧配置中的 `environment`、`is_sandbox` 会被忽略，不要把它们当作当前可用的沙箱开关。
+
+启用 `webui_enabled` 后，在插件 Pages 的 `control` 页面使用扫码绑定：
+
+1. 点击“生成二维码”，确认本次操作。
+2. 使用手机 QQ 扫码。
+3. 等待页面显示凭据已准备好，再确认身份并提交。
+4. 回到实例配置，勾选启用并重载平台。
+
+扫码租约是短期的，取消页面或过期后需要重新生成；提交前不会把凭据写入平台配置。扫码完成后机器人仍保持关闭，必须显式启用并重载才会连接。
+
+### 3. 选择消息格式
+
+平台配置中的 `use_markdown` 默认是 `true`。它只影响没有显式指定格式的普通文本回复和文本流；图片、文件、卡片和显式指定的消息格式不会被它改写。
+
+### 4. 启用并重载
+
+保存平台配置后，启用实例并重载。Pages 的状态页可以查看：
+
+- `online`：传输是否在线；
+- `message_ready`：是否具备消息收发条件；
+- WebSocket 分片状态或 Webhook 最近一次验签回调；
+- 最近一次失败原因、重试计划和收件箱积压。
+
+WebSocket 自动模式会按 QQ 网关返回的推荐值启动完整分片组，最多 32 片。手动分片只启动配置的 `[index, count]`，需要你自己保证所有片的配置完整且总数一致。部分分片异常时健康分片仍可继续工作；整组无法运行时请按状态页提示处理并重载。
+
+### 5. 验证消息
+
+在已配置的群中 @机器人发送一条消息，或向机器人发送 C2C 消息。插件还注册了 `v2menu` 帮助命令（也支持查询词和分页）：
+
+```text
+v2menu
+v2menu md
+v2menu kb
 ```
-astrbot_plugin_qq_official_v2adapter/
-├── main.py               # 插件主入口：注册/注销两种自有平台
-├── assets/               # QQ 官方平台图标与来源许可
-├── api.py                # 第三方插件公共按钮 API
-├── v2/                   # 适配器核心
-│   ├── adapter.py        #   平台适配器与实例生命周期
-│   ├── event.py          #   V2 事件与发送入口
-│   ├── client.py         #   OneBot 风格调用客户端
-│   ├── protocol.py       #   信封、请求、重放保护、错误与头像契约
-│   ├── transport/        #   HTTP/token、WS、Webhook 与有界原始收件箱
-│   ├── messaging/        #   真实聊天消费、持久身份/发送账本、统一发送
-│   ├── media/            #   有界媒体I/O与目标隔离上传
-│   ├── extensions/       #   扩展账本、互动票据、ACK与具名管理
-│   ├── sdk/             #   原生具名 API、事件判别与订阅
-│   ├── profiles/        #   持久资料、当前名单与展示字段
-│   ├── group_tools.py  #   事件绑定的 13 个受控群工具
-│   ├── help.py           #   文本与 Markdown 指令帮助
-│   ├── panels.py         #   有所有权保护的托管面板
-│   ├── connections.py    #   本体连接配置写入口与重载
-│   ├── onboarding.py     #   扫码租约、解密与提交
-│   ├── commands.py       #   真实指令目录
-│   ├── settings.py       #   本地 SQLite 配置存储
-│   ├── host_auth.py      #   管理鉴权
-│   └── web_api.py        #   Pages 控制台 API
-├── pages/control/        # Plugin Pages 
-├── tests/                # 测试
-├── scripts/              # 隔离测试脚本
-├── .github/workflows/    # CI 
-├── _conf_schema.json     # 配置文件
-└── metadata.yaml         # 插件元数据
+
+群聊的菜单需要真实的 @ 唤醒；帮助、Markdown 或键盘在当前场景不可用时会按实现规则回退或返回明确错误。
+
+## 能做什么
+
+| 能力 | 支持范围 |
+| --- | --- |
+| 接收 | 群 AT/普通消息、C2C、频道 AT/普通消息、频道私信；Webhook 事件会先验签并持久接收，再交给 AstrBot |
+| 回复 | 文本、Markdown、At、Reply，以及 QQ 原生 Json 卡片；消息链一次性校验，不会悄悄拆成多条 |
+| 媒体 | 群/C2C 支持图片、语音、视频、文件；频道支持图片 URL 或本地 multipart；DM 只支持图片 URL |
+| 流式 | C2C 使用 QQ 原生流；其他场景可配置为有界聚合或拒绝。群/频道/DM 没有伪造的原生流 |
+| 互动 | 群/C2C 原生 Json 卡片与键盘、模板/自定义卡片、按钮回调；频道/DM 按 QQ 官方字段限制，回调默认关闭 |
+| 管理 | 群成员、禁言、踢出、黑名单、入群申请、频道管理、撤回、菜单/面板等，权限由 QQ 当次响应决定 |
+| 资料 | 成员与陌生人资料缓存、头像 URL、当前名单状态；历史资料会标注来源，不冒充实时成员 |
+| OneBot | 可选的 OneBot v11 风格 OpenID 子集，复用同一发送账本和权限边界 |
+| SDK | `event.bot.qq` 原生具名 API、事件订阅、媒体上传、管理 API 和操作状态查询 |
+
+入站附件只在消费时按需读取，不会因为收到一条 QQ 消息就下载所有附件。图片、音频、视频和未知 MIME 会按官方类型转换为 AstrBot 组件；无法安全转换时保留为文件或 Unknown，并保留原始元数据。
+
+## 插件设置
+
+在插件设置中可以调整全局能力：
+
+| 设置 | 默认值 | 作用 |
+| --- | ---: | --- |
+| `webui_enabled` | `true` | 提供 V2 Pages 管理接口 |
+| `remote_menu_sync` | `false` | 允许托管面板同步到 QQ；默认关闭，不会发布远端菜单 |
+| `onebot_network_enabled` | `false` | 启用可选 OneBot HTTP/正向 WebSocket 入口；仍需为每个实例单独配置监听器 |
+| `profile_max_records` | `32768` | 资料库最多保留的记录数 |
+| `profile_max_bytes` | `64 MiB` | 资料库大小上限 |
+| `profile_stale_seconds` | `300` | 资料被标记为过时前的秒数 |
+| `profile_cooldown_seconds` | `600` | 资料查询失败后的冷却时间 |
+
+高级选项在 Pages 的本地设置中管理，默认值包括：本地媒体读取上限 32,000,000 字节、非 C2C 流聚合、流文本上限 4096 字符、流超时 120 秒、`typing_enabled=false`、`keyboard_enabled=false`、`keyboard_execute=false`、按钮票据 TTL 120 秒、`management_writes=false`。
+
+设置采用“草稿 → 应用到本地”的流程。应用本地设置不会自动发布 QQ 远端面板；远端托管面板还需要打开 `remote_menu_sync` 并在 Pages 中确认具体作用域。
+
+## OneBot 网络入口
+
+OneBot 网络入口默认关闭。打开全局 `onebot_network_enabled` 后，还要在对应平台实例的 `onebot` 配置中设置：
+
+```json
+{
+  "enable": true,
+  "host": "127.0.0.1",
+  "port": 5700,
+  "token": "replace-with-a-16-char-token",
+  "writes": false
+}
 ```
+
+每个实例使用独立端口和专用 token；token 必须是 16–512 个可打印 ASCII 字符，不能复用 QQ AppSecret。HTTP 使用 `/:action`，正向 WebSocket 使用 `/api`；`/event` 只用于观察事件，不执行动作。网络写 action 需要同时打开 `writes`；管理、撤回、黑名单、面板等管理写还需要 `management_writes`，所有写入都受 QQ 权限和服务端限流约束。
+
+这是 OpenID 子集，不是完整 OneBot v11：不支持反向 WebSocket、HTTP POST 事件、quick operations、跨实例路由、数字 ID 语义或历史消息重放。详细边界见 [OneBot 说明](docs/ONEBOT.md)。
+
+## 你需要知道的限制
+
+- QQ 官方权限、配额和频控以当次服务端响应为准。插件不会因为本地“看起来支持”就绕过 QQ 权限。
+- QQ 官方平台使用场景专用 OpenID 和官方 ID；不要把 QQ 号、群号或频道 ID 互相替换。
+- 群/C2C 回复来源有有效期：群通常 5 分钟，C2C 使用保守的 60 分钟窗口。来源过期时，只有白名单拒绝码才允许一次有限的主动降级。
+- 超时、断线、`unknown`、`result_unknown` 或部分成功都不会自动重放。先用原 `operation_id` 查询状态，再决定是否由业务自行处理。
+- C2C typing 需要开启 `typing_enabled`，且必须来自真实的被动消息来源；其他场景不会伪造输入状态。
+- 本地文件受 AstrBot 进程文件权限和媒体边界限制；外部 URL 交给 QQ 转存，本机不会替你下载公网媒体。
+- 管理写操作和按钮回调默认关闭。开启后仍需满足当前实例、会话、操作者和 QQ 权限条件。
+
+## 常见问题
+
+### 页面显示 `reload_required`
+
+平台配置的指纹已经变化，旧实例会主动失效。保存后重载对应平台；不要继续使用旧事件里的 `event.bot` 或旧 SDK 视图。
+
+### WebSocket 一直重连
+
+先检查 AppID/AppSecret、实例是否重复、分片模式是否冲突，以及状态页的 `failure_details`。插件尊重 QQ 的 `Retry-After`，没有该字段时使用带抖动的指数退避，最长 15 分钟。明确的鉴权或配置错误需要修正配置后重载。
+
+### Webhook 收不到消息
+
+确认统一 Webhook UUID 唯一、路由指向 AstrBot、请求能到达实例，并检查签名时间、AppID 请求头和 body 大小。Webhook 只接受 QQ 官方签名的 POST；挑战请求会被处理，普通回调先进入持久收件箱。
+
+### 主动发送被拒绝
+
+确认机器人已在线、目标已被观察、QQ 允许主动消息，并检查是否返回 `40034105` 或被动来源过期码。只有实现明确列出的拒绝场景才会进行一次模式转换；未知结果不要改用新 operation ID 重发。
+
+### 按钮没有执行
+
+确认 `keyboard_enabled=true`，按钮由本插件的 `callback_button` 生成且票据未过期；按钮回调必须绑定已加载 Star 的异步方法。QQ 管理员身份不等于 AstrBot 管理员身份。
+
+### OneBot 返回 `network_not_ready`
+
+检查全局 `onebot_network_enabled`、实例 `onebot.enable`、监听地址/端口和 token，并确认修改后已重载。写动作还需要 `onebot.writes=true`；这不会自动打开插件的 `management_writes`。
+
+## 开发者入口
+
+如果你要编写 AstrBot 插件或为本适配器贡献代码，从 [开发者文档索引](docs/README.md) 开始：
+
+- [架构与数据流](docs/development/architecture.md)
+- [连接、代次与配置](docs/development/lifecycle-and-configuration.md)
+- [SDK 与事件订阅](docs/development/sdk.md) / [事件模型](docs/development/events.md)
+- [持久化与恢复](docs/development/persistence-and-recovery.md)
+- [发送、媒体与幂等](docs/development/delivery-and-media.md)
+- [扩展、按钮与群工具](docs/development/extensions.md)
+- [OneBot 网络协议](docs/ONEBOT.md)
+- [测试与 CI](docs/development/testing.md)
 
 ## 相关链接
 
-- [AstrBot](https://docs.astrbot.app/)
-- 平台图标复用 [AstrBot 的 QQ 图标](https://github.com/AstrBotDevs/AstrBot/blob/8b5e24ba2eac3375a0e17bdf3f0ea790eb91de15/dashboard/src/assets/images/platform_logos/qq.png)，其 Dashboard MIT 许可见 [随附声明](assets/LICENSE.AstrBot-Dashboard)。
-- [Issues](https://github.com/Astrhub/astrbot_plugin_qq_official_v2adapter/issues)
-- [QQ 机器人官方文档](https://bot.q.qq.com/wiki/develop/api-v2/)
+- [AstrBot 文档](https://docs.astrbot.app/)
+- [QQ 机器人官方 API V2](https://bot.q.qq.com/wiki/develop/api-v2/)
+- [Issue 区](https://github.com/Astrhub/astrbot_plugin_qq_official_v2adapter/issues)
 
 ## 许可
 
-AGPL-3.0 License
+本项目使用 [AGPL-3.0](LICENSE)。平台图标的来源与许可见 [assets/LICENSE.AstrBot-Dashboard](assets/LICENSE.AstrBot-Dashboard)。
