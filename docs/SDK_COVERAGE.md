@@ -22,8 +22,8 @@
 
 `iter_*` 便利方法有 200 页、5000 项、4 MiB、120 秒上限；单页方法只请求一次。SDK 1.2.1 兼容的少数路径会在源码注释和方法 docstring 中标注，不能据此推断现行账号权限。
 
-## 不在覆盖范围内
+## 旧网络入口的覆盖边界
 
-OneBot 网络 action 表更小，且不会因为 SDK 新增具名方法而自动扩大。当前明确不提供完整好友列表、完整历史 `get_msg`、反向 WebSocket、HTTP POST 事件、quick operations、跨实例路由、数字 ID 语义和业务重放。
+旧 OneBot 网络 action 表保持有限范围，也不会因为 SDK 新增具名方法而自动扩大。独立网络入口处于计划废弃阶段；新功能优先加入进程内 SDK。当前明确不提供完整好友列表、完整历史 `get_msg`、反向 WebSocket、HTTP POST 事件、quick operations、跨实例路由、数字 ID 语义和业务重放。
 
 需要逐条核对路径、参数或事件形状时，直接查看 `v2/sdk/http_catalog.py`、`v2/sdk/event_types.py` 和对应测试；不要从方法名猜测 QQ API 行为。
