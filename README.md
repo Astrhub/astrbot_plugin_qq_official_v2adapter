@@ -140,6 +140,11 @@ async def on_message(event):
     )
     await event.send("你好")
 
+async def handle_native_event(native_event):
+    if native_event.typed is None:
+        return
+    print(native_event.typed["d"])
+
 subscription = event.bot.qq.events.subscribe(
     ["MESSAGE_CREATE"],
     callback=handle_native_event,
