@@ -1,0 +1,89 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1120" viewBox="0 0 1600 1120" role="img" aria-labelledby="title desc">
+  <title id="title">QQ Official V2 SDK 控制页桌面预览</title>
+  <desc id="desc">桌面宽度下的机器人设置连接与 SDK 状态页面预览，使用示例数据。</desc>
+  <style>
+    text { font-family: Arial, "Noto Sans CJK SC", "Microsoft YaHei", sans-serif; fill: #202124; }
+    .muted { fill: #667085; }
+    .small { font-size: 14px; }
+    .label { font-size: 13px; fill: #475467; }
+    .value { font-size: 16px; font-weight: 700; }
+    .mono { font-family: Consolas, "Liberation Mono", monospace; font-size: 14px; fill: #344054; }
+  </style>
+  <rect width="1600" height="1120" fill="#f8f9fa"/>
+  <rect x="32" y="28" width="1536" height="48" rx="12" fill="#eff6ff" stroke="#b9d4ff"/>
+  <circle cx="55" cy="52" r="5" fill="#1a73e8"/>
+  <text x="72" y="58" font-size="14" font-weight="700" fill="#0b3d91">交互预览 · 示例数据</text>
+  <text x="248" y="58" font-size="14" fill="#164194">当前页面运行在内存模拟桥接层，保存、发布和二维码接入不会触碰真实 QQ。</text>
+
+  <text x="40" y="116" font-size="12" font-weight="700" letter-spacing="2" fill="#667085">QQ OFFICIAL V2 · SDK CONTROL PLANE</text>
+  <text x="40" y="162" font-size="38" font-weight="700">机器人设置</text>
+  <text x="40" y="191" font-size="15" class="muted">已读取当前实例、SDK 能力和本地配置。</text>
+
+  <text x="1112" y="116" class="label">目标 ID</text>
+  <rect x="1112" y="126" width="180" height="42" rx="9" fill="#fff" stroke="#d0d5dd"/>
+  <text x="1126" y="153" font-size="15">qq_v2</text>
+  <text x="1310" y="116" class="label">场景</text>
+  <rect x="1310" y="126" width="120" height="42" rx="9" fill="#fff" stroke="#d0d5dd"/>
+  <text x="1324" y="153" font-size="15">群聊⌄</text>
+  <rect x="1442" y="126" width="126" height="42" rx="10" fill="#1a73e8"/>
+  <text x="1460" y="153" font-size="15" fill="#fff">重新读取</text>
+
+  <rect x="40" y="222" width="1528" height="48" rx="12" fill="#eff6ff" stroke="#cfe0ff"/>
+  <text x="58" y="252" font-size="14" fill="#164194">qq_v2 · AppID 未配置</text>
+  <text x="306" y="252" font-size="14" fill="#164194">状态：online</text>
+  <text x="482" y="252" font-size="14" fill="#164194">消息：可发送</text>
+  <text x="664" y="252" font-size="14" fill="#164194">网关：2/2</text>
+
+  <rect x="40" y="290" width="132" height="42" rx="10" fill="#1a73e8"/>
+  <text x="61" y="316" font-size="15" fill="#fff">连接与状态</text>
+  <rect x="182" y="290" width="112" height="42" rx="10" fill="#fff" stroke="#d0d5dd"/>
+  <text x="202" y="316" font-size="15" fill="#344054">本地菜单</text>
+  <rect x="304" y="290" width="100" height="42" rx="10" fill="#fff" stroke="#d0d5dd"/>
+  <text x="325" y="316" font-size="15" fill="#344054">QQ 面板</text>
+
+  <rect x="40" y="356" width="560" height="716" rx="16" fill="#fff" stroke="#e4e7ec"/>
+  <text x="64" y="394" font-size="20" font-weight="700">连接与 SDK 状态</text>
+  <text x="64" y="424" font-size="14" class="muted">页面只调用经过认证的 ControlAPI；QQ 消息、媒体和管理写入</text>
+  <text x="64" y="445" font-size="14" class="muted">由当前 SDK 与统一操作账本处理。</text>
+
+  <rect x="64" y="470" width="244" height="68" rx="10" fill="#f8fafc"/>
+  <text x="80" y="493" class="label">平台类型</text><text x="80" y="521" class="value">WebSocket</text>
+  <rect x="324" y="470" width="244" height="68" rx="10" fill="#f8fafc"/>
+  <text x="340" y="493" class="label">凭据</text><text x="340" y="521" class="value">已配置</text>
+  <rect x="64" y="550" width="244" height="68" rx="10" fill="#f8fafc"/>
+  <text x="80" y="573" class="label">运行状态</text><text x="80" y="601" class="value">online</text>
+  <rect x="324" y="550" width="244" height="68" rx="10" fill="#f8fafc"/>
+  <text x="340" y="573" class="label">消息路径</text><text x="340" y="601" class="value">message_ready</text>
+
+  <rect x="64" y="638" width="496" height="92" rx="10" fill="#f8fafc"/>
+  <text x="80" y="668" class="mono">QQ 建议 2 / 已计划 2 / 已连接 2 · online</text>
+  <text x="80" y="696" class="mono">[0,2] online；[1,2] online</text>
+  <text x="64" y="764" font-size="15" font-weight="700">QQ 扫码接入</text>
+  <text x="64" y="790" font-size="14" class="muted">二维码凭据保存后仍保持平台关闭，需要显式启用并重载。</text>
+  <rect x="64" y="812" width="496" height="72" rx="10" fill="#f8fafc" stroke="#eaecf0" stroke-dasharray="5 5"/>
+  <text x="195" y="855" font-size="14" class="muted">尚未生成二维码 · 示例预览</text>
+  <rect x="64" y="914" width="136" height="42" rx="10" fill="#1a73e8"/><text x="84" y="940" font-size="15" fill="#fff">生成二维码</text>
+  <rect x="212" y="914" width="108" height="42" rx="10" fill="#eef2f7"/><text x="236" y="940" font-size="15" fill="#344054">查看能力</text>
+
+  <rect x="620" y="356" width="948" height="716" rx="16" fill="#fff" stroke="#e4e7ec"/>
+  <text x="648" y="394" font-size="20" font-weight="700">连接配置</text>
+  <text x="648" y="438" class="label">AppID</text>
+  <rect x="648" y="450" width="430" height="42" rx="9" fill="#fff" stroke="#d0d5dd"/><text x="664" y="477" font-size="15">demo-appid</text>
+  <text x="1100" y="438" class="label">平台类型</text>
+  <rect x="1100" y="450" width="420" height="42" rx="9" fill="#fff" stroke="#d0d5dd"/><text x="1116" y="477" font-size="15">WebSocket⌄</text>
+  <rect x="648" y="520" width="18" height="18" rx="4" fill="#1a73e8"/><path d="M652 529l5 5 9-11" stroke="#fff" stroke-width="2" fill="none"/><text x="680" y="536" font-size="14">默认使用 Markdown（未显式指定格式的文本）</text>
+  <rect x="648" y="558" width="18" height="18" rx="4" fill="#1a73e8"/><path d="M652 567l5 5 9-11" stroke="#fff" stroke-width="2" fill="none"/><text x="680" y="574" font-size="14">保存后启用平台（重载后连接 QQ）</text>
+  <text x="648" y="622" class="label">事件意图</text>
+  <rect x="648" y="634" width="430" height="42" rx="9" fill="#fff" stroke="#d0d5dd"/><text x="664" y="661" font-size="15">1174409216</text>
+  <rect x="648" y="706" width="872" height="126" rx="12" fill="#fffdf5" stroke="#eadba8"/>
+  <text x="672" y="737" font-size="15" font-weight="700">迁移期 OneBot 网络兼容</text>
+  <text x="672" y="765" font-size="14" class="muted">新插件和新集成使用进程内 SDK；此处保留现有外部客户端的迁移配置。</text>
+  <rect x="672" y="780" width="160" height="36" rx="9" fill="#eef2f7"/><text x="696" y="803" font-size="13" fill="#344054">打开网络总闸</text>
+  <text x="648" y="874" class="label">AppSecret 操作</text>
+  <rect x="648" y="886" width="420" height="42" rx="9" fill="#fff" stroke="#d0d5dd"/><text x="664" y="913" font-size="15">保留现有凭据⌄</text>
+  <text x="1092" y="874" class="label">新的 AppSecret</text>
+  <rect x="1092" y="886" width="428" height="42" rx="9" fill="#fff" stroke="#d0d5dd"/><text x="1108" y="913" font-size="15" class="muted">未编辑时留空</text>
+  <rect x="648" y="972" width="132" height="42" rx="10" fill="#1a73e8"/><text x="674" y="998" font-size="15" fill="#fff">保存配置</text>
+  <rect x="792" y="972" width="124" height="42" rx="10" fill="#eef2f7"/><text x="818" y="998" font-size="15" fill="#344054">重载实例</text>
+  <text x="938" y="998" font-size="13" class="muted">示例数据，不会发送到 QQ</text>
+</svg>

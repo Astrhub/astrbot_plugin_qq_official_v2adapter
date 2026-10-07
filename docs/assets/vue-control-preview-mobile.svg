@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="1500" viewBox="0 0 720 1500" role="img" aria-labelledby="title desc">
+  <title id="title">QQ Official V2 SDK 控制页手机预览</title>
+  <desc id="desc">手机宽度下的机器人设置连接与 SDK 状态页面预览，卡片纵向排列，使用示例数据。</desc>
+  <style>
+    text { font-family: Arial, "Noto Sans CJK SC", "Microsoft YaHei", sans-serif; fill: #202124; }
+    .muted { fill: #667085; }
+    .small { font-size: 14px; }
+    .label { font-size: 13px; fill: #475467; }
+    .value { font-size: 16px; font-weight: 700; }
+    .mono { font-family: Consolas, "Liberation Mono", monospace; font-size: 13px; fill: #344054; }
+  </style>
+  <rect width="720" height="1500" fill="#f8f9fa"/>
+  <rect x="12" y="14" width="696" height="82" rx="12" fill="#eff6ff" stroke="#b9d4ff"/>
+  <circle cx="34" cy="38" r="5" fill="#1a73e8"/>
+  <text x="51" y="44" font-size="14" font-weight="700" fill="#0b3d91">交互预览 · 示例数据</text>
+  <text x="28" y="69" font-size="13" fill="#164194">保存、发布和二维码接入不会触碰真实 QQ。</text>
+
+  <text x="20" y="132" font-size="11" font-weight="700" letter-spacing="1.4" fill="#667085">QQ OFFICIAL V2 · SDK CONTROL PLANE</text>
+  <text x="20" y="174" font-size="32" font-weight="700">机器人设置</text>
+  <text x="20" y="202" font-size="14" class="muted">已读取当前实例、SDK 能力和本地配置。</text>
+  <text x="20" y="238" class="label">目标 ID</text>
+  <rect x="20" y="248" width="410" height="42" rx="9" fill="#fff" stroke="#d0d5dd"/><text x="34" y="275" font-size="15">qq_v2</text>
+  <text x="20" y="318" class="label">场景</text>
+  <rect x="20" y="328" width="250" height="42" rx="9" fill="#fff" stroke="#d0d5dd"/><text x="34" y="355" font-size="15">群聊⌄</text>
+  <rect x="282" y="328" width="148" height="42" rx="10" fill="#1a73e8"/><text x="306" y="355" font-size="15" fill="#fff">重新读取</text>
+
+  <rect x="20" y="394" width="680" height="72" rx="12" fill="#eff6ff" stroke="#cfe0ff"/>
+  <text x="36" y="422" font-size="13" fill="#164194">qq_v2 · AppID 未配置</text>
+  <text x="36" y="448" font-size="13" fill="#164194">状态：online · 消息：可发送 · 网关：2/2</text>
+
+  <rect x="20" y="486" width="150" height="42" rx="10" fill="#1a73e8"/><text x="42" y="512" font-size="14" fill="#fff">连接与状态</text>
+  <rect x="180" y="486" width="124" height="42" rx="10" fill="#fff" stroke="#d0d5dd"/><text x="203" y="512" font-size="14" fill="#344054">本地菜单</text>
+  <rect x="314" y="486" width="112" height="42" rx="10" fill="#fff" stroke="#d0d5dd"/><text x="338" y="512" font-size="14" fill="#344054">QQ 面板</text>
+
+  <rect x="20" y="552" width="680" height="500" rx="16" fill="#fff" stroke="#e4e7ec"/>
+  <text x="42" y="590" font-size="19" font-weight="700">连接与 SDK 状态</text>
+  <text x="42" y="618" font-size="13" class="muted">页面只调用经过认证的 ControlAPI；消息、媒体和管理写入</text>
+  <text x="42" y="639" font-size="13" class="muted">由当前 SDK 与统一操作账本处理。</text>
+  <rect x="42" y="662" width="306" height="64" rx="10" fill="#f8fafc"/><text x="56" y="686" class="label">平台类型</text><text x="56" y="712" class="value">WebSocket</text>
+  <rect x="364" y="662" width="306" height="64" rx="10" fill="#f8fafc"/><text x="378" y="686" class="label">凭据</text><text x="378" y="712" class="value">已配置</text>
+  <rect x="42" y="738" width="306" height="64" rx="10" fill="#f8fafc"/><text x="56" y="762" class="label">运行状态</text><text x="56" y="788" class="value">online</text>
+  <rect x="364" y="738" width="306" height="64" rx="10" fill="#f8fafc"/><text x="378" y="762" class="label">消息路径</text><text x="378" y="788" class="value">message_ready</text>
+  <rect x="42" y="820" width="628" height="78" rx="10" fill="#f8fafc"/><text x="56" y="850" class="mono">QQ 建议 2 / 已计划 2 / 已连接 2 · online</text><text x="56" y="876" class="mono">[0,2] online；[1,2] online</text>
+  <text x="42" y="930" font-size="15" font-weight="700">QQ 扫码接入</text>
+  <text x="42" y="955" font-size="13" class="muted">二维码凭据保存后仍保持平台关闭，需要显式启用并重载。</text>
+  <rect x="42" y="970" width="628" height="54" rx="10" fill="#f8fafc" stroke="#eaecf0" stroke-dasharray="5 5"/><text x="205" y="1003" font-size="13" class="muted">尚未生成二维码 · 示例预览</text>
+
+  <rect x="20" y="1072" width="680" height="380" rx="16" fill="#fff" stroke="#e4e7ec"/>
+  <text x="42" y="1110" font-size="19" font-weight="700">连接配置</text>
+  <text x="42" y="1142" class="label">AppID</text>
+  <rect x="42" y="1152" width="628" height="42" rx="9" fill="#fff" stroke="#d0d5dd"/><text x="56" y="1179" font-size="15">demo-appid</text>
+  <text x="42" y="1222" class="label">平台类型</text>
+  <rect x="42" y="1232" width="628" height="42" rx="9" fill="#fff" stroke="#d0d5dd"/><text x="56" y="1259" font-size="15">WebSocket⌄</text>
+  <rect x="42" y="1300" width="18" height="18" rx="4" fill="#1a73e8"/><path d="M46 1309l5 5 9-11" stroke="#fff" stroke-width="2" fill="none"/><text x="74" y="1316" font-size="13">默认使用 Markdown</text>
+  <rect x="42" y="1335" width="18" height="18" rx="4" fill="#1a73e8"/><path d="M46 1344l5 5 9-11" stroke="#fff" stroke-width="2" fill="none"/><text x="74" y="1351" font-size="13">保存后启用平台（重载后连接 QQ）</text>
+  <rect x="42" y="1380" width="128" height="42" rx="10" fill="#1a73e8"/><text x="66" y="1406" font-size="14" fill="#fff">保存配置</text>
+  <rect x="182" y="1380" width="120" height="42" rx="10" fill="#eef2f7"/><text x="207" y="1406" font-size="14" fill="#344054">重载实例</text>
+  <text x="42" y="1478" font-size="12" class="muted">响应式布局：卡片纵向排列，控件保持可触达。</text>
+</svg>
