@@ -94,7 +94,7 @@ v2menu kb
 | 能力 | 支持范围 |
 | --- | --- |
 | 接收 | 群 AT/普通消息、C2C、频道 AT/普通消息、频道私信；Webhook 事件会先验签并持久接收，再交给 AstrBot |
-| 回复 | 文本、Markdown、At、Reply，以及 QQ 原生 Json 卡片；消息链一次性校验，不会悄悄拆成多条 |
+| 回复 | 文本、Markdown、群/频道 At、Reply，以及 QQ 原生 Json 卡片；消息链一次性校验，不会悄悄拆成多条 |
 | 媒体 | 群/C2C 支持图片、语音、视频、文件；频道支持图片 URL 或本地 multipart；DM 只支持图片 URL |
 | 流式 | C2C 使用 QQ 原生流；其他场景可配置为有界聚合或拒绝。群/频道/DM 没有伪造的原生流 |
 | 互动 | 群/C2C 原生 Json 卡片与键盘、模板/自定义卡片、按钮回调；频道/DM 按 QQ 官方字段限制，回调默认关闭 |
@@ -102,6 +102,8 @@ v2menu kb
 | 资料 | 成员与陌生人资料缓存、头像 URL、当前名单状态；历史资料会标注来源，不冒充实时成员 |
 | OneBot | 可选的 OneBot v11 风格 OpenID 子集，复用同一发送账本和权限边界 |
 | SDK | `event.bot.qq` 原生具名 API、事件订阅、媒体上传、管理 API 和操作状态查询 |
+
+频道和 DM 的出站发送需要在线 WebSocket；Webhook 实例可以接收回调，但不能替这两个场景提供发送通道。
 
 入站附件只在消费时按需读取，不会因为收到一条 QQ 消息就下载所有附件。图片、音频、视频和未知 MIME 会按官方类型转换为 AstrBot 组件；无法安全转换时保留为文件或 Unknown，并保留原始元数据。
 
@@ -137,7 +139,7 @@ OneBot 网络入口默认关闭。打开全局 `onebot_network_enabled` 后，�
 }
 ```
 
-每个实例使用独立端口和专用 token；token 必须是 16–512 个可打印 ASCII 字符，不能复用 QQ AppSecret。HTTP 使用 `/:action`，正向 WebSocket 使用 `/api`；`/event` 只用于观察事件，不执行动作。网络写 action 需要同时打开 `writes`；管理、撤回、黑名单、面板等管理写还需要 `management_writes`，所有写入都受 QQ 权限和服务端限流约束。
+每个实例使用独立端口和专用 token；token 必须是 16–512 个可打印 ASCII 字符，不能复用 QQ AppSecret。HTTP 使用 `/:action`，正向 WebSocket 使用 `/api`；`/event` 只用于观察事件，不执行动作。`writes=true` 门控所有网络写 action，包括发送和撤回；具名管理、黑名单等管理写还需要 `management_writes`，托管面板同步另受 `remote_menu_sync` 控制。所有写入都受 QQ 权限和服务端限流约束。
 
 这是 OpenID 子集，不是完整 OneBot v11：不支持反向 WebSocket、HTTP POST 事件、quick operations、跨实例路由、数字 ID 语义或历史消息重放。详细边界见 [OneBot 说明](docs/ONEBOT.md)。
 
