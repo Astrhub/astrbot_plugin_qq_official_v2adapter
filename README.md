@@ -8,8 +8,7 @@
 
 | 依赖 | 版本要求 | 说明 |
 | --- | --- | --- |
-| Python | `>= 3.12` | 运行环境 |
-| AstrBot | `>= 4.28.1` | 平台注册与 Plugin Pages |
+| AstrBot | `>= 4.24.2` | 平台注册与 Plugin Pages |
 
 **平台支持**：QQ 官方 WebSocket、QQ 官方 Webhook。
 
