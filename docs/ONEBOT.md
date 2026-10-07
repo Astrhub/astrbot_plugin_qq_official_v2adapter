@@ -29,7 +29,7 @@
 
 每实例最多 16 个 WS peer、32 个活动 HTTP/WS 请求；单条 WS 同时只执行一个 action。单帧 256 KiB，JSON 深度 20、节点 4096，action 超时 120 秒；peer 队列 32 帧/1 MiB，实例总排队 4 MiB。超过边界会明确拒绝或关闭连接。
 
-网络写 action 必须满足全局 OneBot 开关、实例 `enable`、实例 `writes=true` 和 QQ 当次权限；管理、撤回、黑名单、面板等管理写另外需要插件 `management_writes=true`。不会自动开启反向 WS、HTTP POST 事件、quick operations 或跨实例路由。
+网络写 action 必须满足全局 OneBot 开关、实例 `enable`、实例 `writes=true` 和 QQ 当次权限；具名管理、撤回、黑名单写另外需要插件 `management_writes=true`；托管面板同步另受 `remote_menu_sync` 控制。不会自动开启反向 WS、HTTP POST 事件、quick operations 或跨实例路由。
 
 ## 事件与回复
 
