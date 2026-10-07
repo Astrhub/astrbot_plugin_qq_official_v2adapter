@@ -1,9 +1,7 @@
 # QQ 官方 V2 适配器 (astrbot_plugin_qq_official_v2adapter)
 
 接入 QQ 官方开放平台的 AstrBot 平台适配器，支持 WebSocket 与 Webhook 接收方式，覆盖群聊、C2C、频道文字子频道和频道私信。
-
-插件把 QQ 消息送入 AstrBot 标准消息管线，并通过进程内 SDK 提供原生 V2 能力。新插件直接使用 `event.bot.qq`、`event.send(...)` 和原生事件订阅。
-
+> [!TIP]
 > 这是 QQ 官方机器人适配器。路由、OpenID 与 OneBot ID 均按字符串处理；个别官方管理字段仍按 QQ API 类型校验。
 
 ## 环境要求
@@ -12,12 +10,8 @@
 | --- | --- | --- |
 | Python | `>= 3.12` | 运行环境 |
 | AstrBot | `>= 4.28.1` | 平台注册与 Plugin Pages |
-| QQ 机器人 | QQ 开放平台 AppID 与 AppSecret | 也支持 Pages 扫码绑定 |
-| 网络 | WebSocket 或公网 HTTPS | 取决于接收方式 |
 
-**平台支持**：QQ 官方 V2 WebSocket、QQ 官方 V2 Webhook。
-
-运行依赖会从 `requirements.txt` 安装：`aiohttp`、`cryptography` 与 `qrcode`。插件没有单独的构建步骤。
+**平台支持**：QQ 官方 WebSocket、QQ 官方 Webhook。
 
 ## 功能
 
@@ -29,26 +23,19 @@
 - 流式与输入状态：C2C 使用 QQ 原生流；其他场景可配置有界聚合或明确拒绝，C2C typing 受 `typing_enabled` 控制。
 - 管理能力：群成员、禁言、踢出、黑名单、入群申请、频道管理、撤回、菜单和面板。
 - 原生 SDK：`event.bot.qq` 提供具名 API、事件订阅、媒体上传、管理 API 和操作状态查询。
-- 旧 OneBot 网络入口：为已有外部客户端提供迁移期兼容，独立 HTTP/正向 WebSocket 入口处于计划废弃阶段。
 
 ## 安装
 
 ### 两种方式
+**插件市场**：搜索 `QQ 官方 V2 适配器` 并安装。
 
-1. 在 AstrBot 插件管理中选择“从 Git 仓库安装”，输入：
+**链接安装**： 在 AstrBot 插件管理中选择“从 Git 仓库安装”，输入：
 
    ```text
    https://github.com/Astrhub/astrbot_plugin_qq_official_v2adapter
    ```
 
-2. 手动安装到 AstrBot 插件目录：
 
-   ```bash
-   cd /path/to/AstrBot/data/plugins
-   git clone https://github.com/Astrhub/astrbot_plugin_qq_official_v2adapter.git
-   ```
-
-安装完成后，在 AstrBot WebUI 重载插件。插件会在首次初始化时创建自己的数据目录。
 
 ## 配置
 
@@ -130,43 +117,7 @@ v2menu kb
 
 ### 进程内 SDK
 
-事件处理函数从 `event.bot.qq` 获取绑定当前机器人、场景和代次的 SDK 视图：
-
-```python
-async def on_message(event):
-    member = await event.bot.qq.get_group_member_info(
-        event.route.target,
-        "成员 OpenID",
-    )
-    await event.send("你好")
-
-async def handle_native_event(native_event):
-    if native_event.typed is None:
-        return
-    print(native_event.typed["d"])
-
-subscription = event.bot.qq.events.subscribe(
-    ["MESSAGE_CREATE"],
-    callback=handle_native_event,
-    owner=self,
-)
-```
-
-需要订阅原生事件时使用 `event.bot.qq.events.subscribe(...)`。后台任务或明确指定目标时使用：
-
-```python
-result = await event.bot.qq.send(
-    "group",
-    "群 OpenID",
-    "主动消息",
-    operation_id="job-42",
-)
-state = event.bot.qq.send_status(result["operation_id"])
-```
-
-`event.send(...)` 沿用当前事件的回复来源，当前没有显式返回发送结果。需要消息 ID、`operation_id` 或状态时，使用 `event.bot.qq.send(...)`，或者读取 `event.get_extra("qq_send_result")`。
-
-事件中的 SDK 视图已经绑定当前机器人、场景和回复来源。后台任务使用显式场景和目标，平台重载后旧 client、订阅和上传句柄会失效，需要重新获取当前实例的 SDK 视图。
+具体查看[SDK 使用指南](docs/development/sdk.md)
 
 ### 发送范围
 
@@ -181,21 +132,8 @@ state = event.bot.qq.send_status(result["operation_id"])
 
 ## 旧 OneBot 网络入口（计划废弃）
 
-当前版本仍保留独立 OneBot 网络入口，用于已有外部客户端迁移。新插件和新集成直接使用进程内 SDK。迁移完成后可以关闭全局 `onebot_network_enabled`，并移除实例中的 `onebot` 监听配置。
-
-入口默认关闭。打开全局开关后，在平台实例的 `onebot` 配置中设置：
-
-```json
-{
-  "enable": true,
-  "host": "127.0.0.1",
-  "port": 5700,
-  "token": "replace-with-a-16-char-token",
-  "writes": false
-}
-```
-
-每个实例使用独立端口和专用 token。token 必须是 16–512 个可打印 ASCII 字符，不能复用 QQ AppSecret。HTTP 使用 `/:action`，正向 WebSocket 使用 `/api`，`/event` 只用于观察事件。`writes=true` 控制网络写 action；具名管理、撤回和黑名单写还需要 `management_writes=true`。
+> [!WARNING]
+>当前版本仍保留独立 OneBot 网络入口，用于已有外部客户端迁移。新插件和新集成直接使用进程内 SDK。迁移完成后可以关闭全局 `onebot_network_enabled`，并移除实例中的 `onebot` 监听配置。
 
 这是 OpenID 子集，完整边界见 [旧 OneBot 网络说明](docs/ONEBOT.md)。从网络调用迁移到 SDK 的对应关系见 [SDK 迁移指南](docs/development/sdk-migration.md)。
 
