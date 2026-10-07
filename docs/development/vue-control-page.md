@@ -61,7 +61,7 @@ appid, use_markdown, type, intents, shard_mode, shard, enable, onebot
 
 - QQ 原生读取和写入以 `V2Client`、`NativeView` 以及 `v2/sdk/api/` 中的具名 API 为基础。
 - 管理、菜单、媒体和按钮等需要确认结果的原生写操作使用 `ExtensionStore.execute` 的操作账本。账本绑定 `operation_id`、请求 binding、代次和诊断上下文，并记录 `not_sent`、`rejected`、`unknown`、`partial` 和 `succeeded` 等状态。
-- `PanelService` 负责机器人级锁、目录稳定性、托管范围、pending 状态和远端漂移核对。启用托管必须经过 `plan`，发送前再次验证 plan fingerprint；未知结果只能核对远端状态，不能换一个 ID 自动重放。托管同步的网络写入需要在这个状态机内接入原生 SDK 和操作账本，页面不能自行实现第二套重试调度。
+- `PanelService` 负责机器人级锁、目录稳定性、托管范围、pending 状态和远端漂移核对。启用托管必须经过 `plan`，发送前再次验证 plan fingerprint。托管写（POST/PUT `/v2/panels`）与手动原生写共用 `ExtensionStore.execute` 账本（kind 为 `panel_sync`）：pending 记录 `op_id` 并先落盘再发送，恢复时先查账本，`succeeded` 仍要读回远端核对，`not_sent`/`rejected` 按失败语义重试或锁定，`unknown` 保持锁定且不自动重放，账本缺行或旧格式 pending 才走远端唯一候选核对。页面不能自行实现第二套重试调度。
 - 消息发送继续由 `SendingCore`、`MessageStore` 和 `DeliverySlots` 处理，因为消息还需要回复来源、序号、媒体、主动或被动发送策略以及宿主投递状态。
 
 这些调度通道共享实例代次检查和操作结果语义，但不把消息投递、互动 ACK、管理写入和面板同步混成一条无差别队列。互动 ACK 使用独立的优先容量，普通原生写入使用操作账本，面板同步使用自己的机器人锁和恢复状态。这样可以避免普通配置或面板操作阻塞互动确认，也能保留消息回复的来源和序号约束。

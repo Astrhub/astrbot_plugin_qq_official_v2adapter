@@ -132,13 +132,13 @@ class ExtensionStore:
                                "AND binding=? AND state='succeeded' AND result=?",
                                (robot_key(robot), text_id(op_id), binding, result)).fetchone() is not None
 
-    def panel_write_result(self, robot, op_id, kind, binding, *, missing_ok=False):
+    def panel_write_result(self, robot, op_id, kind, binding, *, missing_ok=False, payload=False):
         """Inspect one exact native panel mutation without scheduling a write."""
         if self.closed or self.messages.closed:
             raise V2Error("service_stopped", "Extension operations are stopped.", status=503)
         if self.storage_failed:
             raise V2Error("extension_storage_unavailable", "Panel operation state is not reliable.", status=503)
-        row = self.db.execute("SELECT kind,binding,state,result FROM extension_ops WHERE robot=? AND op_id=?",
+        row = self.db.execute("SELECT kind,binding,state,result,error FROM extension_ops WHERE robot=? AND op_id=?",
                               (robot_key(robot), text_id(op_id))).fetchone()
         if row is None:
             if missing_ok:
@@ -146,9 +146,13 @@ class ExtensionStore:
             raise V2Error("panel_result_unknown", "The manual panel operation has no retained result.", status=409, phase="result_unknown")
         if (row["kind"], row["binding"]) != (kind, binding):
             raise V2Error("operation_conflict", "The retained operation belongs to a different panel request.", status=409)
-        if row["state"] == "succeeded" and row["result"] == json.dumps({"state": "succeeded"}, ensure_ascii=False, allow_nan=False):
-            return "succeeded"
+        result = json.loads(row["result"]) if row["result"] else None
+        if row["state"] == "succeeded" and isinstance(result, dict) and result.get("state") == "succeeded":
+            # Managed sync retains panel_id/version beside the state marker; manual writes only the marker.
+            return {"outcome": "succeeded", "result": result} if payload else "succeeded"
         if row["state"] in {"not_sent", "rejected"}:
+            if payload:
+                return {"outcome": row["state"], "error": json.loads(row["error"]) if row["error"] else None}
             return row["state"]
         raise V2Error("panel_result_unknown", "The manual panel result cannot be proven; do not recreate or replay it.",
                       status=409, phase="result_unknown")

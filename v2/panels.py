@@ -12,6 +12,7 @@ from uuid import uuid4
 
 from .commands import collect_catalog, panel_preview, validate_panel_payload
 from .errors import V2Error
+from .extensions.state import digest as ledger_digest
 from .messaging.store import robot_key
 from .models import SCENES, SessionRoute, text_id
 from .protocol import RequestSpec
@@ -383,12 +384,11 @@ class PanelService:
         self._save(robot_key(instance.identity.robot), scene, value, control=True)
         return value
 
-    async def _request(self, instance, method, path, *, params=None, body=None, check=None):
+    async def _request(self, instance, method, path, *, params=None):
+        # Reads stay direct HTTP and never enter the operation ledger; writes go through execute().
         def before_send():
-            if check:
-                check()
             self.gate(instance)
-        return await instance.http.request(RequestSpec(instance.identity.robot.environment, method, path, params=params, json_body=body), before_send=before_send)
+        return await instance.http.request(RequestSpec(instance.identity.robot.environment, method, path, params=params), before_send=before_send)
 
     async def _list(self, instance):
         all_records = {}
@@ -424,6 +424,17 @@ class PanelService:
 
     async def _reconcile(self, instance, scene, value):
         pending = value["pending"]
+        op_id = pending.get("op_id")
+        if op_id:
+            if pending["kind"] == "create":
+                binding = ledger_digest(["POST", "/v2/panels", None, pending["payload"]])
+            else:
+                binding = ledger_digest(["PUT", "/v2/panels/" + quote(value["panel_id"], safe=""), None, {"panel": pending["payload"]["panel"]}])
+            report = self.owner.extension_state.panel_write_result(instance.identity.robot, op_id, "panel_sync", binding,
+                missing_ok=True, payload=True)
+            if report != "missing":
+                return await self._reconcile_ledger(instance, scene, value, report)
+        # Ledgers predate op_id (or lost the row): only a unique remote candidate may prove the write.
         if pending["kind"] == "create":
             records = await self._list(instance)
             matches = [key for key, r in records.items() if key not in pending["baseline"] and r.get("scope") == scene
@@ -440,8 +451,46 @@ class PanelService:
         self._save(robot_key(instance.identity.robot), scene, value)
         return value
 
+    async def _reconcile_ledger(self, instance, scene, value, report):
+        pending = value["pending"]
+        if report["outcome"] in {"not_sent", "rejected"}:
+            stored = report.get("error") or {}
+            exc = V2Error(stored.get("code") or "panel_write_interrupted",
+                stored.get("message") or "The managed panel write provably did not take effect.",
+                retcode=stored.get("retcode", 1400), status=stored.get("status", 400), business_code=stored.get("business_code"),
+                trace_id=stored.get("trace_id"), retry_after=stored.get("retry_after"), http_status=stored.get("http_status"),
+                phase=report["outcome"], operation_id=pending["op_id"])
+            retry_at = retry_time(exc, self.clock()) if report["outcome"] == "not_sent" else None
+            value.update(state="failed", pending=None, error=exc.as_dict(), checked=self.clock())
+            if retry_at is not None:
+                value.pop("failed_fingerprint", None)
+                value.pop("failed_generation", None)
+                value["retry_at"] = retry_at
+            else:
+                value.pop("retry_at", None)
+                value["failed_fingerprint"] = pending.get("fingerprint")
+                value["failed_generation"] = instance.identity.generation
+            self._save(robot_key(instance.identity.robot), scene, value)
+            return value
+        result = report.get("result") or {}
+        if pending["kind"] == "create":
+            panel_id = result.get("panel_id")
+            if not isinstance(panel_id, str) or not panel_id:
+                raise V2Error("panel_result_unknown", "The retained create result has no usable panel ID.", status=409, phase="result_unknown")
+        else:
+            panel_id = value["panel_id"]
+        # A retained success still requires one remote read-back before adopting the result.
+        actual = await self._detail(instance, panel_id)
+        if actual != canonical(pending["payload"]):
+            raise V2Error("panel_result_unknown", "Remote state does not match the retained write result; automatic replay is forbidden.", status=409, phase="result_unknown")
+        value.update(panel_id=panel_id, previous=actual, pending=None, state="synced", error=None, checked=self.clock())
+        self._save(robot_key(instance.identity.robot), scene, value)
+        return value
+
     async def sync(self, instance, scene):
         self.gate(instance)
+        if self.owner.extension_state is None:
+            raise V2Error("service_stopped", "The extension operation ledger is unavailable.", status=503)
         if len(self.tasks) >= 8:
             raise V2Error("panel_capacity", "Too many panel operations are outstanding.", status=429)
         robot = robot_key(instance.identity.robot)
@@ -457,7 +506,6 @@ class PanelService:
                 value = self.state(instance, scene)
                 if not value["enabled"] or value.get("platform_id") != instance.identity.platform_id:
                     raise V2Error("panel_not_managed", "Confirm management of this instance and scope first.", status=403)
-                response_received = False
                 attempt_plan = None
                 write_attempt = False
                 try:
@@ -485,37 +533,41 @@ class PanelService:
                         pending = {"kind": "create", "payload": payload, "baseline": list(records)}
                         method, path, body = "POST", "/v2/panels", payload
                     write_attempt = True
+                    pending["op_id"] = uuid4().hex
+                    pending["fingerprint"] = plan["fingerprint"]
                     value.update(state="writing", pending=pending, error=None)
                     self._save(robot, scene, value)
                     def recheck():
+                        self.gate(instance)
                         current = self.state(instance, scene)
                         if not current["enabled"] or self._stable_plan(instance, scene, value["intent"])["fingerprint"] != plan["fingerprint"]:
                             raise V2Error("config_conflict", "The confirmed panel snapshot changed before sending.", status=409)
-                    response = await self._request(instance, method, path, body=body, check=recheck)
-                    response_received = True
-                    data = response.data
+                    def validate(data):
+                        if method == "POST":
+                            if not isinstance(data, dict) or not isinstance(data.get("panel_id"), str) or not data["panel_id"]:
+                                raise V2Error("invalid_panel_response", "Create did not return a real panel ID.", status=502, phase="result_unknown")
+                            return {"state": "succeeded", "panel_id": text_id(data["panel_id"])}
+                        if not isinstance(data, dict) or type(data.get("version")) is not int:
+                            raise V2Error("invalid_panel_response", "Update did not return a version.", status=502, phase="result_unknown")
+                        return {"state": "succeeded", "version": data["version"]}
+                    # Keep the default ambiguous_codes=(50001,): QQ system errors cannot prove the panel write
+                    # failed, so they stay result_unknown and reconcile remotely instead of replaying.
+                    result = await self.owner.extension_state.execute(instance.http,
+                        RequestSpec(instance.identity.robot.environment, method, path, json_body=body),
+                        op_id=pending["op_id"], kind="panel_sync", validate=validate, before_send=recheck,
+                        context={"scene": scene, "panel_id": value["panel_id"]})
                     if method == "POST":
-                        if not isinstance(data, dict) or not isinstance(data.get("panel_id"), str) or not data["panel_id"]:
-                            raise V2Error("invalid_panel_response", "Create did not return a real panel ID.", status=502, phase="result_unknown")
-                        value["panel_id"] = text_id(data["panel_id"])
-                    elif not isinstance(data, dict) or type(data.get("version")) is not int:
-                        raise V2Error("invalid_panel_response", "Update did not return a version.", status=502, phase="result_unknown")
+                        value["panel_id"] = result["panel_id"]
                     value.update(state="synced", previous=canonical(payload), pending=None, error=None, checked=self.clock(), fingerprint=plan["fingerprint"])
                     self._save(robot, scene, value)
                     return value
-                except asyncio.CancelledError as exc:
+                except asyncio.CancelledError:
+                    # execute already recorded unknown/not_sent by attempted; keep pending for ledger-led reconcile.
                     if value.get("pending"):
-                        unknown = getattr(exc, "phase", "result_unknown") == "result_unknown"
-                        value.update(state="unknown" if unknown else "failed", error="cancelled")
-                        if not unknown:
-                            value["pending"] = None
+                        value.update(state="unknown", error="cancelled")
                         self._save(robot, scene, value)
                     raise
                 except V2Error as exc:
-                    if response_received or value.get("pending") and exc.code != "token_refresh_failed" and exc.http_status is not None and exc.http_status >= 500:
-                        exc = V2Error(exc.code, str(exc), retcode=exc.retcode, status=exc.status,
-                            business_code=exc.business_code, trace_id=exc.trace_id, retry_after=exc.retry_after,
-                            http_status=exc.http_status, phase="result_unknown")
                     if value.get("pending") and exc.phase not in {"not_sent", "rejected"}:
                         value["state"] = "unknown"
                     elif value.get("pending") and value["state"] == "writing":

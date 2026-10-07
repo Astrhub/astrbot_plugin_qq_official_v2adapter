@@ -23,7 +23,7 @@ class MyStar(Star):
 
 ## 托管面板
 
-Pages 会从 AstrBot 当前命令注册表生成预览，检查命令绑定指纹、场景、权限和 QQ 菜单限制。设置编辑是本地 draft；远端同步需要 `remote_menu_sync=true`、管理员确认和 QQ 操作账本成功。
+Pages 会从 AstrBot 当前命令注册表生成预览，检查命令绑定指纹、场景、权限和 QQ 菜单限制。设置编辑是本地 draft；远端同步需要 `remote_menu_sync=true`、管理员确认和 QQ 操作账本成功。托管同步的创建/更新写入与手动原生写共用 `extension_ops` 账本（kind 为 `panel_sync`），pending 记录 `op_id` 并先落盘再发送；恢复时账本优先，`unknown` 保持锁定且不自动重放，只有账本缺行或旧格式 pending 才走远端唯一候选核对。
 
 手动修改/删除托管面板前应暂停同步；unknown、远端漂移或账本不匹配时不自动接管，避免下一轮同步覆盖用户手工修改。
 

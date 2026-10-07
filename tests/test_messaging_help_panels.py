@@ -10,6 +10,7 @@ from test_transport_http import MappedSession, upstream
 
 from v2.commands import collect_catalog
 from v2.errors import V2Error
+from v2.extensions.state import ExtensionStore
 from v2.help import node_token, render_help, text_link
 from v2.messaging.store import MessageStore, robot_key
 from v2.models import InstanceKey
@@ -107,8 +108,9 @@ async def panel_env(config, tmp_path):
     async with upstream(handle) as base:
         http = HTTPTransport(identity, config["secret"], session_factory=lambda: MappedSession(base))
         instance = SimpleNamespace(identity=identity, http=http, check_generation=lambda: None)
+        extension = ExtensionStore(store)
         owner = SimpleNamespace(messages=store, store=settings, stopping=False, instances={identity.platform_id: instance},
-            config={"remote_menu_sync": False}, catalog_ready=True,
+            config={"remote_menu_sync": False}, catalog_ready=True, extension_state=extension,
             context=SimpleNamespace(get_config=lambda umo=None: {"wake_prefix": ["/"]}))
         # PanelService takes actual instance objects, as the plugin does.
         owner.instances = [instance]
@@ -121,6 +123,7 @@ async def panel_env(config, tmp_path):
         finally:
             await service.close()
             await http.close()
+            await extension.close()
             settings.close()
             store.close()
 
@@ -167,14 +170,18 @@ async def test_panel_owned_diff_rename_drift_and_disabled_gate(panel_env):
     assert len(e.calls) == count
 
 
-async def test_panel_unknown_create_reconciles_not_recreated(panel_env):
+async def test_panel_unknown_create_stays_locked_and_never_replayed(panel_env):
     e = panel_env
     e.modes.append("unknown")
     with pytest.raises(V2Error) as exc:
         await enable(e)
     assert exc.value.phase == "result_unknown" and len(e.records) == 1
-    result = await e.service.sync(e.instance, "group")
-    assert result["state"] == "synced"
+    # The ledger retains the write as unknown: sync stays locked and never replays or adopts remotely.
+    with pytest.raises(V2Error) as locked:
+        await e.service.sync(e.instance, "group")
+    assert locked.value.code == "panel_result_unknown"
+    state = e.service.state(e.instance, "group")
+    assert state["state"] == "unknown" and state["pending"]["op_id"]
     assert sum(method == "POST" for method, _, _ in e.calls) == 1
 
 
