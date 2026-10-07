@@ -24,6 +24,30 @@
 - 原生 SDK：`event.bot.qq` 提供具名 API、事件订阅、媒体上传、管理 API 和操作状态查询。
 - 管理页面：Plugin Pages 的 `control` 页面提供连接、扫码、菜单草稿、预览、托管面板和保留事件管理；Vue 源码位于 `dash/`。
 
+## 页面预览
+
+Vue 控制页候选实现提供连接状态、SDK 能力、本地菜单和 QQ 面板的统一入口。下面用同一份示例数据展示桌面和手机宽度下的布局；手机端会将内容卡片按纵向排列，方便触屏操作。
+
+> [!NOTE]
+> 图片只展示页面结构和响应式排版，使用内存示例数据。保存、发布、重载和二维码接入不会触碰真实 QQ，也不包含真实凭据。
+
+<table>
+  <tr>
+    <td width="72%" align="center">
+      <img src="https://raw.githubusercontent.com/Astrhub/astrbot_plugin_qq_official_v2adapter/04af399a33dcd5c83b37fd8af55f8a7c5fddedff/docs/assets/vue-control-preview-pc.svg" alt="QQ 官方 V2 SDK 控制页桌面预览" width="100%" />
+    </td>
+    <td width="28%" align="center">
+      <img src="https://raw.githubusercontent.com/Astrhub/astrbot_plugin_qq_official_v2adapter/04af399a33dcd5c83b37fd8af55f8a7c5fddedff/docs/assets/vue-control-preview-mobile.svg" alt="QQ 官方 V2 SDK 控制页手机预览" width="100%" />
+    </td>
+  </tr>
+  <tr>
+    <td align="center"><sub>桌面宽度：双栏连接状态与配置</sub></td>
+    <td align="center"><sub>手机宽度：卡片纵向排列</sub></td>
+  </tr>
+</table>
+
+正式的 Plugin Pages 入口仍是 `pages/control`；Vue 源码和迁移阶段的构建产物分别位于 `dash/` 和 `pages/test`。
+
 ## 安装
 
 ### 两种方式
