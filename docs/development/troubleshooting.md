@@ -13,7 +13,7 @@
 | --- | --- | --- |
 | `reload_required` / `stale_generation` | 平台配置已经变更 | 停止旧对象，重载新代次 |
 | `duplicate_receiver` | 同机器人接收模式或分片冲突 | 保留一个实例，修正 shard/transport |
-| `network_not_ready` | OneBot 全局或实例监听器未启用 | 检查两个开关、token、端口并重载 |
+| `network_not_ready` | 旧 OneBot 网络监听器未启用 | 外部客户端迁移期检查两个开关、token、端口并重载；新集成直接使用进程内 SDK |
 | `reply_expired` | 被动来源已过期 | 仅按白名单规则选择一次主动发送 |
 | `result_unknown` | QQ 最终结果无法确认 | 查询原 operation ID；禁止自动重放 |
 | `subscription_gap` | SDK 订阅队列/字节预算超限，或回调任务被取消而关闭 | 重新订阅并处理背压；owner 失效另按 `stale_owner`/`stale_generation` 处理 |
