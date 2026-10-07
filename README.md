@@ -186,6 +186,9 @@ astrbot_plugin_qq_official_v2adapter/
 - [QQ 机器人官方 API V2](https://bot.q.qq.com/wiki/develop/api-v2/)
 - [Issue 区](https://github.com/Astrhub/astrbot_plugin_qq_official_v2adapter/issues)
 
+## 社区
+> [!NOTE]
+> 欢迎加入QQ群 **1073129740** 一起来讨论
 ## 许可
 
 本项目使用 [AGPL-3.0](LICENSE)。平台图标的来源与许可见 [assets/LICENSE.AstrBot-Dashboard](assets/LICENSE.AstrBot-Dashboard)。
