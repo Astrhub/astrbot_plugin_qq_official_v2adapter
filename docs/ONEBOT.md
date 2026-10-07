@@ -1,8 +1,8 @@
-# OneBot 网络入口
+# 旧 OneBot 网络入口（计划废弃）
 
-这是 **OneBot v11 风格的 OpenID 子集**，由 `v2/network.py` 提供。它复用本适配器的发送核心、资料缓存和操作账本，不是独立的 QQ 账号实现。
+这是 **OneBot v11 风格的 OpenID 子集**，由 `v2/network.py` 提供。当前版本保留它来承接已有外部客户端，计划在后续版本废弃独立网络入口。新插件和新集成直接使用 [进程内 SDK](development/sdk-migration.md)，复用当前事件的身份、权限检查和发送账本。
 
-## 启用
+## 启用旧入口
 
 全局插件设置 `onebot_network_enabled=true` 后，在对应平台实例中配置：
 
@@ -29,7 +29,7 @@
 
 每实例最多 16 个 WS peer、32 个活动 HTTP/WS 请求；单条 WS 同时只执行一个 action。单帧 256 KiB，JSON 深度 20、节点 4096，action 超时 120 秒；peer 队列 32 帧/1 MiB，实例总排队 4 MiB。超过边界会明确拒绝或关闭连接。
 
-网络写 action 必须满足全局 OneBot 开关、实例 `enable`、实例 `writes=true` 和 QQ 当次权限；具名管理、撤回、黑名单写另外需要插件 `management_writes=true`；托管面板同步另受 `remote_menu_sync` 控制。不会自动开启反向 WS、HTTP POST 事件、quick operations 或跨实例路由。
+网络写 action 必须满足全局 OneBot 开关、实例 `enable`、实例 `writes=true` 和 QQ 当次权限；具名管理、撤回、黑名单写另外需要插件 `management_writes=true`；托管面板同步另受 `remote_menu_sync` 控制。不会自动开启反向 WS、HTTP POST 事件、quick operations 或跨实例路由。新代码直接使用 SDK，网络 action 表进入维护状态。
 
 ## 事件与回复
 
@@ -39,4 +39,4 @@
 
 资料查询默认使用缓存和当前性标记；`get_group_member_list` 是一页或有限聚合，不等于永远完整的群名单。`get_stranger_info` 必须提供真实的 `id_kind` 与 `scope`，历史资料会标记为 `profile_cache`，不会伪造聊天时间和消息 ID。
 
-完整的进程内 OneBot action 仍可通过 `event.bot.api`/`client.call_action` 使用，但原生 `.qq` 的全部具名写接口不会自动暴露为网络 action。
+迁移中的旧代码可以继续通过 `event.bot.api`、`client.api` 或 `client.call_action` 使用进程内兼容 action。原生 `.qq` 的具名接口不会自动暴露为网络 action；对应关系见 [SDK 迁移指南](development/sdk-migration.md)。
