@@ -55,7 +55,7 @@ Webhook 只接受 POST。`Webhook` 在进入 `RawInbox` 前检查：
 
 ## Pages 设置
 
-插件设置由 `_conf_schema.json` 声明：`webui_enabled`、`remote_menu_sync`、`onebot_network_enabled` 和四个资料库限制。Pages 本地设置的 schema version 当前为 2，`draft` 与 `applied` 分离，支持 save/discard/defaults/restore/apply 和乐观 revision；最近保留 20 个版本。
+插件设置由 `_conf_schema.json` 声明：`webui_enabled`、`remote_menu_sync`、旧网络入口开关 `onebot_network_enabled` 和四个资料库限制。独立 OneBot 网络入口处于计划废弃阶段；新集成直接使用进程内 SDK。Pages 本地设置的 schema version 当前为 2，`draft` 与 `applied` 分离，支持 save/discard/defaults/restore/apply 和乐观 revision；最近保留 20 个版本。
 
 高级默认值：
 
