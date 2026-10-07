@@ -44,7 +44,7 @@ state = event.bot.qq.send_status(result["operation_id"])
 | `get_login_info` | `await event.bot.qq.login_info()` |
 | `get_group_info` | `await event.bot.qq.get_group_info(group_openid)` |
 | `get_group_member_info` | `await event.bot.qq.get_group_member_info(group_openid, member_openid)` |
-| `get_group_member_list` | 获取一页使用 `get_group_member_list(group_openid, cursor)`；完整遍历使用 `async for row in event.bot.qq.iter_group_members(group_openid)` |
+| `get_group_member_list` | 获取一页使用 `await event.bot.qq.get_group_member_list(group_openid, cursor)`；完整遍历使用 `async for row in event.bot.qq.iter_group_members(group_openid)` |
 | `get_stranger_info` | 群成员资料使用 `await event.bot.qq.profiles.get_member(group_openid, member_openid, mode="prefer_cache")`；需要新鲜数据时使用 `mode="refresh"` |
 | `set_group_ban` | 使用 `await event.bot.qq.group_ban(group, member, duration, operation_id=...)`；原生管理方法见 [SDK 指南](sdk.md) |
 | `set_group_kick` | 使用 `await event.bot.qq.group_kick(group, [member], blacklist=..., operation_id=...)` |
