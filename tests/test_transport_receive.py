@@ -326,7 +326,12 @@ async def test_gateway_cancel_online_cleans_children(config, inbox):
 
 
 @pytest.mark.parametrize("disconnect", [4009, {"op": 7}], ids=["close-4009", "opcode-7"])
-async def test_documented_resume_then_invalid_session_identifies(config, inbox, disconnect):
+async def test_documented_resume_then_invalid_session_identifies(config, inbox, disconnect, monkeypatch):
+    import v2.transport.websocket as ws_mod
+    debug_logs, warning_logs = [], []
+    monkeypatch.setattr(ws_mod.logger, "debug", lambda msg, *a, **k: debug_logs.append(str(msg)))
+    monkeypatch.setattr(ws_mod.logger, "warning", lambda msg, *a, **k: warning_logs.append(str(msg)))
+
     ingress = Ingress(inbox, "app")
     ingress.start()
     first = FakeWS([HELLO, READY, event(), disconnect])
@@ -343,6 +348,9 @@ async def test_documented_resume_then_invalid_session_identifies(config, inbox, 
         assert resumed.sent[0]["d"]["session_id"] == READY["d"]["session_id"]
         assert resumed.sent[0]["d"]["seq"] == event()["s"]
         assert "session_id" not in fresh.sent[0]["d"] and "seq" not in fresh.sent[0]["d"]
+        assert any("close=4009" in m and "next=resume" in m for m in debug_logs)
+        assert not any("close=4009" in m for m in warning_logs)
+        assert any("close=4006" in m and "next=identify" in m for m in warning_logs)
         assert not gateway.online and not gateway.tasks
         assert all(ws.closed for ws in (first, resumed, fresh))
     finally:

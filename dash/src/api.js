@@ -1,153 +1,164 @@
+import { t } from "./i18n.js";
+
 export function clone(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
-// The settings API uses a recursive merge patch. A null value removes a nested field.
-export function changed(oldValue = {}, nextValue = {}) {
+export function changed(base, next) {
+  if (JSON.stringify(base) === JSON.stringify(next)) return {};
+  if (!base || !next || typeof base !== "object" || typeof next !== "object" || Array.isArray(base) || Array.isArray(next)) {
+    return next;
+  }
   const patch = {};
-  const keys = new Set([...Object.keys(oldValue || {}), ...Object.keys(nextValue || {})]);
-  for (const key of keys) {
-    if (!(key in nextValue)) {
-      patch[key] = null;
-      continue;
-    }
-    const oldItem = oldValue?.[key];
-    const nextItem = nextValue[key];
-    if (oldItem && nextItem && typeof oldItem === "object" && typeof nextItem === "object"
-        && !Array.isArray(oldItem) && !Array.isArray(nextItem)) {
-      const nested = changed(oldItem, nextItem);
-      if (Object.keys(nested).length) patch[key] = nested;
-    } else if (JSON.stringify(oldItem) !== JSON.stringify(nextItem)) {
-      patch[key] = clone(nextItem);
-    }
+  for (const key of new Set([...Object.keys(base), ...Object.keys(next)])) {
+    if (!(key in next)) patch[key] = null;
+    else if (JSON.stringify(base[key]) !== JSON.stringify(next[key])) patch[key] = changed(base[key], next[key]);
   }
   return patch;
 }
 
 export function connectionFields(form) {
-  if (!form) throw new Error("请先读取连接配置。");
-  const shard = [Number(form.shardIndex), Number(form.shardCount)];
+  const mode = form.type === "qq_official_v2_webhook" ? "manual" : form.shard_mode;
+  const shard = mode === "auto" || form.type === "qq_official_v2_webhook" ? [0, 1] : [Number(form.shardIndex), Number(form.shardCount)];
   if (!Number.isInteger(shard[0]) || !Number.isInteger(shard[1]) || shard[0] < 0 || shard[1] < 1 || shard[0] >= shard[1]) {
-    throw new Error("分片必须是有效的 [片号, 总片数]。");
-  }
-  if (form.type === "qq_official_v2_webhook" && (shard[0] !== 0 || shard[1] !== 1)) {
-    throw new Error("Webhook 只能使用 [0, 1] 分片。");
+    throw new Error(t("msg.invalidShard"));
   }
   return {
-    appid: String(form.appid || "").trim(),
+    appid: (form.appid || "").trim(),
     use_markdown: Boolean(form.use_markdown),
     type: form.type,
     intents: Number(form.intents),
-    shard_mode: form.type === "qq_official_v2_webhook" ? "manual" : form.shard_mode,
-    shard: form.type === "qq_official_v2_webhook" || form.shard_mode === "auto" ? [0, 1] : shard,
+    shard_mode: mode,
+    shard,
     enable: Boolean(form.enable),
-    onebot: {
-      enable: Boolean(form.onebot?.enable),
-      host: String(form.onebot?.host || "127.0.0.1").trim(),
-      port: Number(form.onebot?.port || 5700),
-      writes: Boolean(form.onebot?.writes),
-    },
   };
 }
 
 export function createApi(state) {
-  const bridge = () => state.bridge;
-  const configPayload = (extra = {}) => {
-    if (!state.current) throw new Error("当前目标还没有已加载的本地配置。");
-    return {
-      platform_id: state.current.platform_id,
-      scene: state.scene,
-      revision: state.current.revision,
-      fingerprint: state.current.fingerprint,
-      csrf: state.boot.csrf,
-      ...extra,
-    };
+  const post = (endpoint, body = {}) => state.bridge.apiPost(endpoint, { csrf: state.boot.csrf, ...body });
+  const get = (endpoint, params = {}) => state.bridge.apiGet(endpoint, params);
+  const needView = () => {
+    if (!state.view) throw new Error(t("msg.readConnectionFirst"));
   };
-  const connectionPayload = (extra = {}) => {
-    if (!state.view || state.platformId.trim() !== state.view.platform_id) throw new Error("请先读取当前连接目标。");
-    return { platform_id: state.view.platform_id, fingerprint: state.view.fingerprint, csrf: state.boot.csrf, ...extra };
+  const needCurrent = () => {
+    if (!state.current) throw new Error(t("msg.noLoadedConfig"));
   };
+
   return {
-    configPayload,
-    connectionPayload,
-    async loadCatalog() {
-      state.catalog = await bridge().apiGet("commands", { platform_id: state.current.platform_id, scene: state.scene });
-      state.loadedScene = state.scene;
-      return state.catalog;
+    get,
+    post,
+    async setFlag(name, value) {
+      const response = await post("flags", {
+        revision: state.boot.flags_revision,
+        patch: { [name]: value },
+        confirm: true,
+      });
+      state.boot.flags = response.flags;
+      state.boot.flags_revision = response.revision;
+      return response;
     },
-    async saveConnection(body) {
-      return bridge().apiPost("connection/save", connectionPayload(body));
+    async saveConnection(payload) {
+      needView();
+      return post("connection/save", {
+        platform_id: state.view.platform_id,
+        fingerprint: state.view.fingerprint,
+        ...payload,
+      });
     },
     async reloadConnection() {
-      return bridge().apiPost("connection/reload", connectionPayload({ confirm: true }));
+      needView();
+      return post("connection/reload", {
+        platform_id: state.view.platform_id,
+        fingerprint: state.view.fingerprint,
+        confirm: true,
+      });
     },
     async startScan() {
-      if (["creating", "pending", "ready_to_commit"].includes(state.scan?.state)
-          && state.scan.platform_id === state.view?.platform_id) {
-        await bridge().apiPost("onboarding/cancel", connectionPayload({ ticket: state.scan.ticket }));
+      needView();
+      if (["creating", "pending", "ready_to_commit"].includes(state.scan?.state) && state.scan?.ticket) {
+        await post("onboarding/cancel", { platform_id: state.scan.platform_id, ticket: state.scan.ticket }).catch(() => {});
       }
-      state.scan = await bridge().apiPost("onboarding/start", connectionPayload({ confirm: true }));
+      state.scan = await post("onboarding/start", {
+        platform_id: state.view.platform_id,
+        fingerprint: state.view.fingerprint,
+        confirm: true,
+      });
       return state.scan;
     },
     async refreshScan() {
-      state.scan = await bridge().apiPost("onboarding/status", connectionPayload({ ticket: state.scan.ticket, renew: true }));
+      if (!state.scan?.ticket) return null;
+      state.scan = await post("onboarding/status", {
+        platform_id: state.scan.platform_id,
+        ticket: state.scan.ticket,
+        renew: true,
+      });
       return state.scan;
     },
     async cancelScan() {
-      if (state.scan) state.scan = await bridge().apiPost("onboarding/cancel", connectionPayload({ ticket: state.scan.ticket }));
+      if (!state.scan?.ticket) return null;
+      state.scan = await post("onboarding/cancel", {
+        platform_id: state.scan.platform_id,
+        ticket: state.scan.ticket,
+      });
       return state.scan;
     },
     async commitScan() {
-      const saved = await bridge().apiPost("onboarding/commit", connectionPayload({
+      needView();
+      return post("onboarding/commit", {
+        platform_id: state.view.platform_id,
         ticket: state.scan.ticket,
         commit_handle: state.scan.commit_handle,
+        fingerprint: state.view.fingerprint,
         confirm: true,
         confirm_secret: true,
         confirm_identity: true,
-      }));
-      state.scan = saved;
-      return saved;
+      });
     },
     async mutate(operation, patch, restoreRevision) {
-      return bridge().apiPost("config/mutate", configPayload({
+      needCurrent();
+      return post("config/mutate", {
+        platform_id: state.current.platform_id,
+        revision: state.current.revision,
+        fingerprint: state.current.fingerprint,
         operation,
-        patch,
-        confirm: operation === "apply",
-        confirm_bindings: state.confirmBindings,
-        restore_revision: restoreRevision,
-      }));
+        ...(operation === "save" ? { patch } : {}),
+        ...(operation === "restore" ? { restore_revision: restoreRevision } : {}),
+        ...(operation !== "save" ? { confirm: true } : {}),
+        ...(operation === "apply" ? { confirm_bindings: Boolean(state.confirmBindings) } : {}),
+      });
     },
-    async preview(body) {
-      return bridge().apiPost("preview", configPayload(body));
+    async preview(payload) {
+      needCurrent();
+      return post("preview", {
+        platform_id: state.current.platform_id,
+        fingerprint: state.current.fingerprint,
+        scene: state.scene,
+        revision: state.current.revision,
+        ...payload,
+      });
     },
     async planPanels(options) {
-      return bridge().apiPost("panels/plan", configPayload(options));
+      needCurrent();
+      return post("panels/plan", { platform_id: state.platformId, fingerprint: state.current.fingerprint, scene: state.scene, ...options });
     },
     async enablePanels(options) {
-      return bridge().apiPost("panels/enable", configPayload({ ...options, confirm: true }));
+      needCurrent();
+      return post("panels/enable", { platform_id: state.platformId, fingerprint: state.current.fingerprint, scene: state.scene, confirm: true, ...options });
     },
     async syncPanels() {
-      return bridge().apiPost("panels/sync", configPayload({ confirm: true }));
+      needCurrent();
+      return post("panels/sync", { platform_id: state.platformId, fingerprint: state.current.fingerprint, scene: state.scene, confirm: true });
     },
     async disablePanels() {
-      return bridge().apiPost("panels/disable", configPayload({ confirm: true }));
-    },
-    async setFlag(name, enabled) {
-      const value = await bridge().apiPost("flags", {
-        csrf: state.boot.csrf,
-        revision: state.boot.flags_revision,
-        patch: { [name]: enabled },
-        confirm: true,
-      });
-      state.boot.flags = value.flags;
-      state.boot.flags_revision = value.revision;
-      return value;
+      needCurrent();
+      return post("panels/disable", { platform_id: state.platformId, fingerprint: state.current.fingerprint, scene: state.scene, confirm: true });
     },
     async retained() {
-      return bridge().apiGet("inbox/retained", { platform_id: state.current.platform_id });
+      if (!state.view) throw new Error(t("msg.readCurrentTargetFirst"));
+      return get("inbox/retained", { platform_id: state.platformId });
     },
-    async discardRetained(body) {
-      return bridge().apiPost("inbox/discard", body);
+    async discardRetained(payload) {
+      return post("inbox/discard", payload);
     },
   };
 }

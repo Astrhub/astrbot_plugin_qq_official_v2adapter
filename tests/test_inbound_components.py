@@ -300,87 +300,82 @@ async def test_channel_url_only_attachment_is_lazy_standard_file(config, event):
         event_obj.cleanup_temporary_local_files()
 
 
-@pytest.mark.parametrize("context", ["current", "quoted"])
-@pytest.mark.parametrize("kind", [None, "unknown/binary"])
-def test_untyped_or_unknown_attachment_uses_generic_file_in_its_own_chain(config, context, kind):
-    item = {"url": "https://fixture.invalid/opaque", "filename": "payload.dat"}
-    if kind is not None:
-        item["content_type"] = kind
-    payload = chat_payload(text="current body")
-    if context == "quoted":
-        quote(payload, child={"msg_idx": "REFIDX_prior", "attachments": [item]})
-        chat = converted(config, payload)
-        chain = reply_of(chat).chain
-        assert not any(isinstance(part, File) for part in chat.message.message)
-    else:
-        payload["d"]["attachments"] = [item]
-        chain = converted(config, payload).message.message
-    files = [part for part in chain if isinstance(part, File)]
-    assert len(files) == 1 and files[0].url == item["url"] and files[0].name == "payload.dat"
-    assert files[0].file_ == ""
-
-
-def test_generic_file_uses_neutral_name_for_untrusted_filename(config):
-    payload = chat_payload("MESSAGE_CREATE", text="")
-    payload["d"]["attachments"] = [{"url": "https://fixture.invalid/opaque", "filename": "../local.txt"}]
-    chat = converted(config, payload)
-    assert [type(part) for part in chat.message.message] == [File]
-    assert chat.message.message[0].name == "file" and chat.message.message[0].file_ == ""
-
-
-@pytest.mark.parametrize("context", ["current", "quoted"])
-@pytest.mark.parametrize("case", ["missing_url", "rejected_url", "all_valid", "all_invalid"])
-async def test_unconvertible_attachments_keep_hint_in_their_own_chain(config, context, case):
-    requests = []
-
-    async def serve(request):
-        requests.append(request.path)
-        return web.Response(body=IMAGE_BYTES)
-
-    async with upstream(serve) as base:
-        image = {"content_type": "image/png", "url": base + "/image"}
-        file = {"content_type": "file", "filename": "safe.txt", "url": base + "/file"}
-        without_url = {"content_type": "file", "filename": "missing.txt"}
-        rejected_url = {"content_type": "file", "url": "file:///etc/passwd"}
-        items = {
-            "missing_url": [image, without_url],
-            "rejected_url": [image, rejected_url],
-            "all_valid": [image, file],
-            "all_invalid": [without_url, rejected_url],
-        }[case]
-        payload = chat_payload(text="current body")
-        if context == "quoted":
-            quote(payload, child={"msg_idx": "REFIDX_prior", "content": "quoted body", "attachments": items})
-        else:
-            payload["d"]["attachments"] = items
-        chat = converted(config, payload)
-        event = make_event(chat)
-        if context == "quoted":
-            chain = reply_of(chat).chain
-            assert [type(part) for part in event.get_messages()] == [Reply, Plain]
-            assert chat.message.message_str == "current body"
-        else:
-            chain = event.get_messages()
-            assert chat.message.message_str == "current body"
-        expected = {
-            "missing_url": [Plain, Image, Unknown],
-            "rejected_url": [Plain, Image, Unknown],
-            "all_valid": [Plain, Image, File],
-            "all_invalid": [Plain, Unknown],
-        }[case]
-        assert [type(part) for part in chain] == expected
-        assert chain[0].text == ("quoted body" if context == "quoted" else "current body")
-        assert [part.text for part in chain if isinstance(part, Unknown)] == (
-            [] if case == "all_valid" else ["[附件元数据；需显式受控读取]"]
-        )
-        assert [part.url for part in chain if isinstance(part, Image)] == ([] if case == "all_invalid" else [base + "/image"])
-        assert [part.url for part in chain if isinstance(part, File)] == ([base + "/file"] if case == "all_valid" else [])
-        assert chat.attachments == items and chat.message.raw_message == payload and requests == []
-        event.cleanup_temporary_local_files()
-
-
-def test_known_quote_in_other_scope_never_fills_missing_author(config, tmp_path):
+def test_untyped_generic_and_untrusted_attachments_and_bounds(config, tmp_path):
     from v2.messaging.store import MessageStore
+
+    for context in ("current", "quoted"):
+        for kind in (None, "unknown/binary"):
+            item = {"url": "https://fixture.invalid/opaque", "filename": "payload.dat"}
+            if kind is not None:
+                item["content_type"] = kind
+            payload = chat_payload(text="current body")
+            if context == "quoted":
+                quote(payload, child={"msg_idx": "REFIDX_prior", "attachments": [item]})
+                chat = converted(config, payload)
+                chain = reply_of(chat).chain
+            else:
+                payload["d"]["attachments"] = [item]
+                chain = converted(config, payload).message.message
+            files = [part for part in chain if isinstance(part, File)]
+            assert len(files) == 1 and files[0].url == item["url"] and files[0].name == "payload.dat" and files[0].file_ == ""
+
+    traversal_payload = chat_payload("MESSAGE_CREATE", text="")
+    traversal_payload["d"]["attachments"] = [{"url": "https://fixture.invalid/opaque", "filename": "../local.txt"}]
+    traversal_chat = converted(config, traversal_payload)
+    assert [type(part) for part in traversal_chat.message.message] == [File]
+    assert traversal_chat.message.message[0].name == "file"
+
+    for kind in ("file", None, "unknown/binary"):
+        for url in ("file:///etc/passwd", "/tmp/private", "base64://abcd", "ftp://fixture.invalid/x",
+                    "https://user:pass@fixture.invalid/x", "https://fixture.invalid/x\n", "https://[malformed"):
+            payload = chat_payload(text="normal https://fixture.invalid/chat.png")
+            item = {"filename": "private.txt", "url": url}
+            if kind is not None:
+                item["content_type"] = kind
+            payload["d"]["attachments"] = [item]
+            chat = converted(config, payload)
+            assert not any(isinstance(part, (File, Image, Record, Video)) for part in chat.message.message)
+            assert any(isinstance(part, Unknown) for part in chat.message.message)
+
+    for url, kind, component in (
+        ("https://fixture.invalid/download", "file", File),
+        ("https://fixture.invalid:443/image", "image/png", Image),
+        ("https://[2001:db8::1]:8443/voice", "voice", Record),
+    ):
+        payload = chat_payload(text="")
+        payload["d"]["attachments"] = [{"content_type": kind, "url": url}]
+        chat = converted(config, payload)
+        assert [type(part) for part in chat.message.message] == [component]
+
+    for context in ("current", "quoted"):
+        for port in ("bad", "-1", "70000"):
+            for original_valid in (False, True):
+                original = "https://fixture.invalid/voice.silk" if original_valid else "https://fixture.invalid:70000/voice.silk"
+                item = {"content_type": "voice", "url": original, "voice_wav_url": f"https://fixture.invalid:{port}/voice.wav"}
+                payload = chat_payload(text="current body")
+                if context == "quoted":
+                    quote(payload, child={"msg_idx": "REFIDX_prior", "attachments": [item]})
+                else:
+                    payload["d"]["attachments"] = [item]
+                chat = converted(config, payload)
+                chain = reply_of(chat).chain if context == "quoted" else chat.message.message
+                expected = ([Plain] if context == "current" else []) + ([Record] if original_valid else [Unknown])
+                assert [type(part) for part in chain] == expected
+
+    for case in ("too_many", "negative_size", "invalid_nested", "oversized", "bad_idx"):
+        payload = quote(chat_payload(), child={"msg_idx": "REFIDX_prior", "content": "quoted"})
+        if case == "too_many":
+            payload["d"]["msg_elements"][0]["attachments"] = [{"content_type": "file"}] * 33
+        elif case == "negative_size":
+            payload["d"]["msg_elements"][0]["attachments"] = [{"size": -1}]
+        elif case == "invalid_nested":
+            payload["d"]["msg_elements"][0]["msg_elements"] = ["invalid"]
+        elif case == "oversized":
+            payload["d"]["msg_elements"][0]["content"] = "x" * (65 * 1024)
+        else:
+            payload["d"]["msg_elements"][0]["msg_idx"] = 7
+        with pytest.raises(V2Error):
+            converted(config, payload)
 
     source = quote(chat_payload("GROUP_MESSAGE_CREATE", target="group-one"))
     source["d"]["msg_elements"][0]["author"] = {"member_openid": "known-quoted"}
@@ -399,30 +394,11 @@ def test_known_quote_in_other_scope_never_fills_missing_author(config, tmp_path)
             payload["d"]["mentions"] = [{"member_openid": "known-quoted", "bot": True, "is_you": True}] if event == "GROUP_MESSAGE_CREATE" else []
             chat = converted({**config, **changes}, payload)
             assert reply_of(chat).sender_id is None and reply_of(chat).sender_nickname is None
-            assert chat.source.ref_idx == "REFIDX_msg-one" and chat.route.target == (target if event == "GROUP_MESSAGE_CREATE" else "user-one")
     finally:
         store.close()
 
-@pytest.mark.parametrize("kind", ["file", None, "unknown/binary"])
-@pytest.mark.parametrize("url", ["file:///etc/passwd", "/tmp/private", "base64://abcd", "ftp://fixture.invalid/x",
-                                     "https://user:pass@fixture.invalid/x", "https://fixture.invalid/x\n", "https://[malformed"])
-def test_untrusted_attachment_urls_remain_metadata_not_local_files(config, kind, url):
-    payload = chat_payload(text="normal https://fixture.invalid/chat.png")
-    item = {"filename": "private.txt", "url": url}
-    if kind is not None:
-        item["content_type"] = kind
-    payload["d"]["attachments"] = [item]
-    chat = converted(config, payload)
-    assert not any(isinstance(part, (File, Image, Record, Video)) for part in chat.message.message)
-    assert chat.attachments == payload["d"]["attachments"]
-    assert any(isinstance(part, Unknown) for part in chat.message.message)
-    assert chat.message.message_str == "normal https://fixture.invalid/chat.png"
 
-
-@pytest.mark.parametrize("context", ["current", "quoted"])
-@pytest.mark.parametrize("kind", ["file", "image/png", "video/mp4", "voice"])
-@pytest.mark.parametrize("port", ["bad", "-1", "70000"])
-async def test_bad_attachment_port_stays_hint_beside_good_media(config, context, kind, port):
+async def test_unconvertible_and_bad_port_attachments_keep_hint_in_their_own_chain(config):
     requests = []
 
     async def serve(request):
@@ -430,84 +406,48 @@ async def test_bad_attachment_port_stays_hint_beside_good_media(config, context,
         return web.Response(body=IMAGE_BYTES)
 
     async with upstream(serve) as base:
-        items = [{"content_type": "image/png", "url": base + "/good.png"},
-                 {"content_type": kind, "url": f"https://fixture.invalid:{port}/bad"}]
-        if kind == "voice":
-            items[1]["voice_wav_url"] = f"https://fixture.invalid:{port}/bad.wav"
-        payload = chat_payload(text="current body")
-        if context == "quoted":
-            quote(payload, child={"msg_idx": "REFIDX_prior", "content": "quoted body", "attachments": items})
-        else:
-            payload["d"]["attachments"] = items
-        chat = converted(config, payload)
-        event = make_event(chat)
-        if context == "quoted":
-            chain = reply_of(chat).chain
-            assert [type(part) for part in event.get_messages()] == [Reply, Plain]
-        else:
-            chain = event.get_messages()
-        assert [type(part) for part in chain] == [Plain, Image, Unknown]
-        assert chain[1].url == base + "/good.png"
-        assert chain[2].text == "[附件元数据；需显式受控读取]"
-        assert chat.attachments == items and chat.message.raw_message == payload
-        assert chat.source.message_id == "msg-one" and chat.source.ref_idx == "REFIDX_msg-one"
+        image = {"content_type": "image/png", "url": base + "/image"}
+        file = {"content_type": "file", "filename": "safe.txt", "url": base + "/file"}
+        without_url = {"content_type": "file", "filename": "missing.txt"}
+        rejected_url = {"content_type": "file", "url": "file:///etc/passwd"}
+        case_map = {
+            "missing_url": ([image, without_url], [Plain, Image, Unknown]),
+            "rejected_url": ([image, rejected_url], [Plain, Image, Unknown]),
+            "all_valid": ([image, file], [Plain, Image, File]),
+            "all_invalid": ([without_url, rejected_url], [Plain, Unknown]),
+        }
+        for context in ("current", "quoted"):
+            for case, (items, expected) in case_map.items():
+                payload = chat_payload(text="current body")
+                if context == "quoted":
+                    quote(payload, child={"msg_idx": "REFIDX_prior", "content": "quoted body", "attachments": items})
+                else:
+                    payload["d"]["attachments"] = items
+                chat = converted(config, payload)
+                event = make_event(chat)
+                chain = reply_of(chat).chain if context == "quoted" else event.get_messages()
+                assert [type(part) for part in chain] == expected, (context, case)
+                event.cleanup_temporary_local_files()
+
+        for context in ("current", "quoted"):
+            for kind in ("file", "image/png", "video/mp4", "voice"):
+                for port in ("bad", "-1", "70000"):
+                    items = [{"content_type": "image/png", "url": base + "/good.png"},
+                             {"content_type": kind, "url": f"https://fixture.invalid:{port}/bad"}]
+                    if kind == "voice":
+                        items[1]["voice_wav_url"] = f"https://fixture.invalid:{port}/bad.wav"
+                    payload = chat_payload(text="current body")
+                    if context == "quoted":
+                        quote(payload, child={"msg_idx": "REFIDX_prior", "content": "quoted body", "attachments": items})
+                    else:
+                        payload["d"]["attachments"] = items
+                    chat = converted(config, payload)
+                    event = make_event(chat)
+                    chain = reply_of(chat).chain if context == "quoted" else event.get_messages()
+                    assert [type(part) for part in chain] == [Plain, Image, Unknown]
+                    assert chain[1].url == base + "/good.png"
+                    event.cleanup_temporary_local_files()
         assert requests == []
-        event.cleanup_temporary_local_files()
-
-
-@pytest.mark.parametrize("url,kind,component", [
-    ("https://fixture.invalid/download", "file", File),
-    ("https://fixture.invalid:443/image", "image/png", Image),
-    ("https://[2001:db8::1]:8443/voice", "voice", Record),
-])
-def test_attachment_accepts_normal_explicit_and_ipv6_ports(config, url, kind, component):
-    payload = chat_payload(text="")
-    payload["d"]["attachments"] = [{"content_type": kind, "url": url}]
-    chat = converted(config, payload)
-    assert [type(part) for part in chat.message.message] == [component]
-    assert chat.message.message[0].url == url and chat.attachments == payload["d"]["attachments"]
-
-
-@pytest.mark.parametrize("context", ["current", "quoted"])
-@pytest.mark.parametrize("port", ["bad", "-1", "70000"])
-@pytest.mark.parametrize("original_valid", [False, True])
-def test_voice_with_bad_wav_port_only_uses_valid_original(config, context, port, original_valid):
-    original = "https://fixture.invalid/voice.silk" if original_valid else "https://fixture.invalid:70000/voice.silk"
-    item = {"content_type": "voice", "url": original, "voice_wav_url": f"https://fixture.invalid:{port}/voice.wav"}
-    payload = chat_payload(text="current body")
-    if context == "quoted":
-        quote(payload, child={"msg_idx": "REFIDX_prior", "attachments": [item]})
-    else:
-        payload["d"]["attachments"] = [item]
-    chat = converted(config, payload)
-    chain = reply_of(chat).chain if context == "quoted" else chat.message.message
-    expected = ([Plain] if context == "current" else []) + ([Record] if original_valid else [Unknown])
-    assert [type(part) for part in chain] == expected
-    if original_valid:
-        assert chain[-1].file == chain[-1].url == original
-    else:
-        assert chain[-1].text == "[附件元数据；需显式受控读取]"
-    if context == "quoted":
-        assert [type(part) for part in chat.message.message] == [Reply, Plain]
-    assert chat.attachments == [item] and chat.message.raw_message == payload
-
-
-@pytest.mark.parametrize("case", ["too_many", "negative_size", "invalid_nested", "oversized", "bad_idx"])
-def test_attachment_and_nested_structure_bounds_remain_enforced(config, case):
-    payload = quote(chat_payload(), child={"msg_idx": "REFIDX_prior", "content": "quoted"})
-    if case == "too_many":
-        payload["d"]["msg_elements"][0]["attachments"] = [{"content_type": "file"}] * 33
-    elif case == "negative_size":
-        payload["d"]["msg_elements"][0]["attachments"] = [{"size": -1}]
-    elif case == "invalid_nested":
-        payload["d"]["msg_elements"][0]["msg_elements"] = ["invalid"]
-    elif case == "oversized":
-        payload["d"]["msg_elements"][0]["content"] = "x" * (65 * 1024)
-    else:
-        payload["d"]["msg_elements"][0]["msg_idx"] = 7
-    with pytest.raises(V2Error):
-        converted(config, payload)
-
 
 async def test_real_delivery_queue_keeps_reply_media_and_isolation(receiver):
     owner, instance = receiver

@@ -13,7 +13,7 @@ export default defineConfig({
     cors: true,
   },
   build: {
-    outDir: "../pages/test",
+    outDir: "../pages/control",
     emptyOutDir: false,
     assetsInlineLimit: 100000000,
     cssCodeSplit: false,

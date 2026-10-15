@@ -94,7 +94,7 @@ class Gateway:
                     self.last_failure = {**exc.as_dict(), "stage": self.state, "login": self.last_login}
                     retry_after = exc.retry_after
                     code = exc.business_code
-                    if (code in FATAL_CLOSES | {100007, 100016, 10004}
+                    if (code in FATAL_CLOSES | {10001, 10004, 100007, 100016, 11251, 11254, 11261, 11265, 11275}
                             or (exc.http_status is not None and 400 <= exc.http_status < 500
                                 and exc.http_status not in {408, 409, 429})
                             or exc.code in {"invalid_gateway", "stale_generation", "unsupported_environment"}):
@@ -132,13 +132,16 @@ class Gateway:
                 if self.last_failure and self.last_failure.get("business_code") == 4008:
                     delay = max(delay, 5)
                 self.next_retry_at = time.time() + delay
-                if self.consecutive_failures in {1, 3, 6} or self.consecutive_failures % 10 == 0:
-                    reason = self.last_failure or {}
-                    logger.warning(
+                reason = self.last_failure or {}
+                resumable = self.session_id is not None and self.ingress.last_sequence is not None
+                if resumable or reason.get("business_code") in FRESH_CLOSES or self.consecutive_failures in {1, 2, 3, 6} or self.consecutive_failures % 10 == 0:
+                    log = logger.debug if resumable else logger.warning
+                    log(
                         f"QQ V2 shard {self.shard[0]}/{self.shard[1]} reconnecting: "
                         f"code={self.last_error}, close={reason.get('business_code')}, "
                         f"http={reason.get('http_status')}, stage={reason.get('stage')}, "
-                        f"login={reason.get('login')}, failures={self.consecutive_failures}, delay={delay:.1f}s")
+                        f"login={reason.get('login')}, next={'resume' if resumable else 'identify'}, "
+                        f"failures={self.consecutive_failures}, delay={delay:.1f}s")
                 await self.sleep(delay)
         except asyncio.CancelledError:
             failed = True
@@ -215,7 +218,8 @@ class Gateway:
                 self.ack_pending = False
                 self.last_ack = self.clock()
                 if self.consecutive_failures:
-                    logger.info(f"QQ V2 shard {self.shard[0]}/{self.shard[1]} recovered after {self.consecutive_failures} failures")
+                    log = logger.debug if self.last_login == "resume" else logger.info
+                    log(f"QQ V2 shard {self.shard[0]}/{self.shard[1]} recovered after {self.consecutive_failures} failures")
                 self.consecutive_failures = 0
                 self.cleanup_failure = None
             elif op == 1:

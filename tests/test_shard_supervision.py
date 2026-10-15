@@ -222,3 +222,29 @@ async def test_non_exhaustion_failure_still_terminates_healthy_group(group_env, 
         release.set()
         task.cancel()
         await asyncio.gather(task, return_exceptions=True)
+
+
+
+async def test_slow_shard_close_forces_socket_and_recovers_without_leaks(group_env, monkeypatch):
+    e = group_env
+    e.suggestion[0] = 2
+    e.slow_close.update({0, 1})
+    task = asyncio.create_task(e.group.run())
+    try:
+        for _ in range(2):
+            await asyncio.wait_for(e.handshakes.get(), 2)
+            await asyncio.wait_for(e.beats.get(), 2)
+        sockets = [g.ws for g in e.group.gateways]
+        for socket in list(e.sockets.values()):
+            await socket.send_json({"op": 7})
+        logins = [await asyncio.wait_for(e.handshakes.get(), 5) for _ in range(2)]
+        for _ in range(2):
+            await asyncio.wait_for(e.beats.get(), 2)
+        assert [login["op"] for login in logins] == [6, 6]
+        assert all(s.closed and s._response.closed for s in sockets)
+        assert e.group.online and not task.done() and len(e.group.tasks) == 2
+    finally:
+        e.close_release.set()
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+    assert e.group.session.closed and not e.group.tasks

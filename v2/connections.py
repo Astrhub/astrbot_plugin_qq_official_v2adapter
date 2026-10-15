@@ -15,7 +15,7 @@ from .connection_config import (
     saved_connection,
 )
 from .errors import V2Error
-from .models import InstanceKey, text_id
+from .models import InstanceKey, RobotKey, text_id
 from .network_config import DEFAULT_NETWORK, NETWORK_FIELDS, network_config
 
 EDITABLE = {"appid", "use_markdown", "type", "intents", "shard_mode", "shard", "enable"}
@@ -71,7 +71,7 @@ class Connections:
                            "onebot": {k: network[k] for k in NETWORK_FIELDS}},
                 "network_token_configured": bool(network["token"]),
                 "network_global_enabled": self.owner.config.get("onebot_network_enabled") is True,
-                "capabilities": instance.client.capabilities() if instance else {"network_api": {"state": "not_loaded"}},
+                "capabilities": instance.client.capabilities() if instance else {**__import__(__package__ + ".client", fromlist=["V2Client"]).V2Client(InstanceKey(platform_id, RobotKey(value.get("appid") or "unconfigured"))).capabilities(), "network_api": {"state": "not_loaded"}},
                 "credentials_configured": bool(value.get("secret")),
                 "webhook_path": f"/api/platform/webhook/{value['webhook_uuid']}" if value["transport"] == "webhook" and value.get("webhook_uuid") else None,
                 "runtime": runtime, "reload": reload_state,

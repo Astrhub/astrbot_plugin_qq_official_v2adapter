@@ -8,12 +8,19 @@ from dataclasses import dataclass
 from email.utils import parsedate_to_datetime
 
 import aiohttp
+from astrbot.api import logger
 from astrbot.core.utils.http_ssl import build_ssl_context_with_certifi
 
 from ..errors import V2Error
 from ..media.types import FilePart
-from ..protocol import RequestSpec, decode_response, openapi_base, validate_openapi_url
-
+from ..protocol import (
+    ONCE_RETRY_CODES,
+    RequestSpec,
+    decode_response,
+    extract_trace_id,
+    openapi_base,
+    validate_openapi_url,
+)
 TOKEN_URL = "https://api.bot.qq.com/app/getAppAccessToken"
 READ_METHODS = {"GET", "HEAD"}
 
@@ -246,18 +253,30 @@ class HTTPTransport:
                                     retry_after=exc.retry_after, phase="rejected", http_status=exc.http_status) from None
                             continue
                         phase = "result_unknown" if status >= 500 or status == 408 or 200 <= status < 300 else "rejected"
-                        data = decode_response(status, body, safe, phase=phase, path=spec.path)
+                        forbidden = (self._secret, self._token)
+                        data = decode_response(status, body, safe, phase=phase, path=spec.path, forbidden=forbidden)
                         self.last_outcome = "response_received"
-                        return HTTPResult(data, status, safe.get("x-tps-trace-id"))
+                        return HTTPResult(data, status, extract_trace_id(safe, data, forbidden=forbidden))
                     except V2Error as exc:
                         self.last_outcome = exc.phase
                         request_phase = exc.phase
-                        retryable = exc.business_code is None and (exc.code in {"network_failure", "connect_failed"} or exc.status in {429, 500, 502, 503, 504})
+                        once_retry = exc.business_code in ONCE_RETRY_CODES and attempts == 0
+                        retryable = once_retry or (exc.business_code is None and (exc.code in {"network_failure", "connect_failed"} or exc.status in {429, 500, 502, 503, 504}))
                         attempts += 1
                         if spec.method not in READ_METHODS or not retryable or attempts >= self.max_attempts:
+                            if exc.http_status is not None or exc.business_code is not None or exc.trace_id is not None:
+                                logger.warning(
+                                    f"QQ V2 OpenAPI failed: method={spec.method} path={spec.path} code={exc.code} "
+                                    f"http={exc.http_status} business_code={exc.business_code} phase={exc.phase} trace_id={exc.trace_id}"
+                                )
                             raise
                         delay = retry_delay(exc.retry_after, attempts - 1)
                         if delay is None:
+                            if exc.http_status is not None or exc.business_code is not None or exc.trace_id is not None:
+                                logger.warning(
+                                    f"QQ V2 OpenAPI failed: method={spec.method} path={spec.path} code={exc.code} "
+                                    f"http={exc.http_status} business_code={exc.business_code} phase={exc.phase} trace_id={exc.trace_id}"
+                                )
                             raise
                         await self.sleep(delay)
         except asyncio.CancelledError as exc:

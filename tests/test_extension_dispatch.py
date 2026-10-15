@@ -316,3 +316,49 @@ async def test_dispatch_close_cancels_business_without_replaying_acked_interacti
     with pytest.raises(Exception) as error:
         s.service.accept(frame, NOW)
     assert error.value.code == "service_stopped"
+
+
+
+def test_extension_recovery_fences_robot_isolation_and_compaction(tmp_path):
+    from v2.errors import V2Error
+    from v2.extensions.state import ExtensionStore, digest
+    from v2.messaging.store import MessageStore
+    from v2.models import RobotKey
+
+    path = tmp_path / "state"
+    robot = RobotKey("a", "production")
+    store = MessageStore(path, clock=lambda: 100)
+    ext = ExtensionStore(store, capacity=2)
+    assert ext.begin(robot, "one", "upload", digest([1])) == (True, None)
+    ext.attempt(robot, "one")
+    assert ext.begin(robot, "two", "delete", digest([2])) == (True, None)
+    store.close()
+    store = MessageStore(path, clock=lambda: 50)
+    try:
+        ext = ExtensionStore(store, capacity=2)
+        assert ext.operation(robot, "one")["state"] == "unknown"
+        assert ext.operation(robot, "two")["state"] == "not_sent"
+        with pytest.raises(V2Error):
+            ext.begin(robot, "one", "upload", digest([1]))
+        with pytest.raises(V2Error) as error:
+            ext.begin(robot, "one", "upload", digest([2]))
+        assert error.value.code == "operation_conflict"
+        assert ext.begin(RobotKey("b", "production"), "one", "upload", digest([1]))[0]
+        assert ext.operation(robot, "one")["updated"] == 100
+    finally:
+        store.close()
+
+    store2 = MessageStore(tmp_path / "state2", clock=lambda: 100)
+    try:
+        ext2 = ExtensionStore(store2, capacity=1)
+        for op in ("a", "b"):
+            ext2.begin(robot, op, "delete", digest([op]))
+            ext2.attempt(robot, op)
+            ext2.finish(robot, op, "succeeded", result={"ok": True})
+        assert ext2.operation(robot, "a")["state"] == "history_evicted"
+        with pytest.raises(V2Error):
+            ext2.begin(robot, "a", "delete", digest(["a"]))
+        assert not ext2.begin(robot, "b", "delete", digest(["b"]))[0]
+        assert store2.db.execute("PRAGMA user_version").fetchone()[0] == 4
+    finally:
+        store2.close()

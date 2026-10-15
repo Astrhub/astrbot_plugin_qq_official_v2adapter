@@ -43,61 +43,58 @@ def event_from(config, payload, *, bot_id=READY_ID):
     return chat, event
 
 
-@pytest.mark.parametrize("mention,expected_id", [
-    ({"id": GROUP_BOT, "member_openid": GROUP_BOT, "is_you": True}, GROUP_BOT),
-    ({"id": GROUP_BOT, "is_you": True}, GROUP_BOT),
-    ({"member_openid": GROUP_MEMBER, "is_you": True}, GROUP_MEMBER),
-    ({"id": GROUP_BOT, "member_openid": GROUP_MEMBER, "is_you": True}, GROUP_BOT),
-    ({"id": "01234567890123456789012345678901", "is_you": True}, "01234567890123456789012345678901"),
-])
-@pytest.mark.parametrize("bot_id", [READY_ID, ""])
-@pytest.mark.parametrize("marker", ["<@{}>", "<@!{}>"])
-async def test_structured_group_self_mention_wakes_host_and_matches_command(config, host_waking, mention, expected_id, bot_id, marker):
-    payload = chat_payload("GROUP_MESSAGE_CREATE", text=marker.format(expected_id) + " help")
-    payload["d"]["mentions"] = [mention]
-    chat, event = event_from(config, payload, bot_id=bot_id)
-    assert not event.is_at_or_wake_command  # Constructor's explicit AT-event path cannot rescue this test.
-    await host_waking.process(event)
-    assert event.is_wake and not event.is_stopped()
-    assert PLUGIN_NAME not in event.plugins_name and not event.get_extra("activated_handlers")
-    assert event.is_at_or_wake_command and event.get_message_str() == "help"
-    command = CommandFilter("help")
-    command.handler_params = {}
-    assert command.filter(event, host_waking.ctx.astrbot_config)
-    assert chat.message.self_id == expected_id != READY_ID
-    assert [part.qq for part in chat.message.message if isinstance(part, At)] == [expected_id]
-    assert chat.message.message_str == " help" and event.raw_data == payload
+async def test_structured_group_self_mention_wakes_host_and_matches_command(config, host_waking):
+    mentions = [
+        ({"id": GROUP_BOT, "member_openid": GROUP_BOT, "is_you": True}, GROUP_BOT),
+        ({"id": GROUP_BOT, "is_you": True}, GROUP_BOT),
+        ({"member_openid": GROUP_MEMBER, "is_you": True}, GROUP_MEMBER),
+        ({"id": GROUP_BOT, "member_openid": GROUP_MEMBER, "is_you": True}, GROUP_BOT),
+        ({"id": "01234567890123456789012345678901", "is_you": True}, "01234567890123456789012345678901"),
+    ]
+    for mention, expected_id in mentions:
+        for bot_id in (READY_ID, ""):
+            for marker in ("<@{}>", "<@!{}>"):
+                payload = chat_payload("GROUP_MESSAGE_CREATE", text=marker.format(expected_id) + " help")
+                payload["d"]["mentions"] = [mention]
+                chat, event = event_from(config, payload, bot_id=bot_id)
+                assert not event.is_at_or_wake_command
+                await host_waking.process(event)
+                assert event.is_wake and not event.is_stopped()
+                assert PLUGIN_NAME not in event.plugins_name and not event.get_extra("activated_handlers")
+                assert event.is_at_or_wake_command and event.get_message_str() == "help"
+                command = CommandFilter("help")
+                command.handler_params = {}
+                assert command.filter(event, host_waking.ctx.astrbot_config)
+                assert chat.message.self_id == expected_id != READY_ID
+                assert [part.qq for part in chat.message.message if isinstance(part, At)] == [expected_id]
+                assert chat.message.message_str == " help" and event.raw_data == payload
 
 
-@pytest.mark.parametrize("mentions,text", [
-    ([], "你好"),
-    ([], f"<@{GROUP_BOT}> 你好"),
-    ([], f"<@!{READY_ID}> 你好"),
-    ([{"id": GROUP_BOT, "member_openid": GROUP_BOT}], f"<@{GROUP_BOT}> 你好"),
-    ([{"id": GROUP_BOT, "member_openid": GROUP_BOT, "bot": True, "username": "same-name"}], f"<@{GROUP_BOT}> 你好"),
-    ([{"id": "another-user", "member_openid": "another-user", "is_you": False}], "<@another-user> 你好"),
-    ([{"is_you": True, "username": "same-name", "bot": True}], f"<@{GROUP_BOT}> 你好"),
-    ([{"user_openid": GROUP_BOT, "is_you": True}], f"<@{GROUP_BOT}> 你好"),
-])
-async def test_unconfirmed_group_mentions_do_not_wake_host(config, host_waking, mentions, text):
-    payload = chat_payload("GROUP_MESSAGE_CREATE", text=text)
-    payload["d"]["mentions"] = mentions
-    chat, event = event_from(config, payload)
-    await host_waking.process(event)
-    assert event.is_stopped() and not event.is_wake and not event.is_at_or_wake_command
-    assert chat.message.self_id == READY_ID and chat.message.message_str == text
-    assert event.raw_data == payload
+async def test_unconfirmed_group_mentions_and_nonliteral_is_you_do_not_wake_host(config, host_waking):
+    for mentions, text in (
+        ([], "你好"),
+        ([], f"<@{GROUP_BOT}> 你好"),
+        ([], f"<@!{READY_ID}> 你好"),
+        ([{"id": GROUP_BOT, "member_openid": GROUP_BOT}], f"<@{GROUP_BOT}> 你好"),
+        ([{"id": GROUP_BOT, "member_openid": GROUP_BOT, "bot": True, "username": "same-name"}], f"<@{GROUP_BOT}> 你好"),
+        ([{"id": "another-user", "member_openid": "another-user", "is_you": False}], "<@another-user> 你好"),
+        ([{"is_you": True, "username": "same-name", "bot": True}], f"<@{GROUP_BOT}> 你好"),
+        ([{"user_openid": GROUP_BOT, "is_you": True}], f"<@{GROUP_BOT}> 你好"),
+    ):
+        payload = chat_payload("GROUP_MESSAGE_CREATE", text=text)
+        payload["d"]["mentions"] = mentions
+        chat, event = event_from(config, payload)
+        await host_waking.process(event)
+        assert event.is_stopped() and not event.is_wake and not event.is_at_or_wake_command
+        assert chat.message.self_id == READY_ID and chat.message.message_str == text
 
-
-@pytest.mark.parametrize("flag", [False, None, 0, 1, "true", "false", [], {}])
-async def test_is_you_requires_literal_true(config, host_waking, flag):
-    payload = chat_payload("GROUP_MESSAGE_CREATE", text=f"<@{GROUP_BOT}> help")
-    payload["d"]["mentions"] = [{"id": GROUP_BOT, "member_openid": GROUP_BOT, "bot": True, "is_you": flag}]
-    chat, event = event_from(config, payload)
-    await host_waking.process(event)
-    assert event.is_stopped() and not event.is_wake
-    assert chat.message.self_id == READY_ID and chat.message.message_str == payload["d"]["content"]
-
+    for flag in (False, None, 0, 1, "true", "false", [], {}):
+        payload = chat_payload("GROUP_MESSAGE_CREATE", text=f"<@{GROUP_BOT}> help")
+        payload["d"]["mentions"] = [{"id": GROUP_BOT, "member_openid": GROUP_BOT, "bot": True, "is_you": flag}]
+        chat, event = event_from(config, payload)
+        await host_waking.process(event)
+        assert event.is_stopped() and not event.is_wake
+        assert chat.message.self_id == READY_ID and chat.message.message_str == payload["d"]["content"]
 
 def test_group_self_cleanup_preserves_other_content_source_and_typed_identity(config, tmp_path):
     payload = chat_payload("GROUP_MESSAGE_CREATE", text=f"前文  <@{GROUP_BOT}> help\n<@!{GROUP_MEMBER}> <@other> &amp; <@fake>  后文")

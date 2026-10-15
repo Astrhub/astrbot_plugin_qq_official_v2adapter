@@ -1,0 +1,45 @@
+{
+  "metadata": {
+    "display_name": "QQ 官方 V2 适配器",
+    "short_desc": "基于 QQ 官方 V2 API 实现的消息平台适配器。",
+    "desc": "基于 QQ 官方 V2 API 实现的独立消息平台适配器，提供原生 SDK、操作账本、指令菜单预览与 QQ 面板托管。"
+  },
+  "config": {
+    "webui_enabled": {
+      "description": "启用 V2 管理页面 API",
+      "hint": "控制是否允许通过 AstrBot WebUI 插件视图调用本地管理接口。"
+    },
+    "remote_menu_sync": {
+      "description": "托管面板总闸",
+      "hint": "开启后允许已确认托管范围的 QQ 指令面板与本地稳定目录同步。"
+    },
+    "profile_max_records": {
+      "description": "资料库记录上限",
+      "hint": "本地群与成员资料缓存的最大记录数。"
+    },
+    "profile_max_bytes": {
+      "description": "资料库字节上限",
+      "hint": "本地群与成员资料缓存的最大存储字节数。"
+    },
+    "profile_stale_seconds": {
+      "description": "资料过时标记秒数",
+      "hint": "资料超过该秒数后标记为可后台刷新。"
+    },
+    "profile_cooldown_seconds": {
+      "description": "资料查询失败冷却秒数",
+      "hint": "官方接口拒绝或失败后的最小重试冷却秒数。"
+    }
+  },
+  "views": {
+    "control": {
+      "title": "QQ 官方 V2 控制台",
+      "description": "通过认证的 ControlAPI 管理 QQ V2 实例连接、四层本地菜单草稿与 QQ 面板托管。"
+    }
+  },
+  "pages": {
+    "control": {
+      "title": "QQ 官方 V2 控制台",
+      "description": "通过认证的 ControlAPI 管理 QQ V2 实例连接、四层本地菜单草稿与 QQ 面板托管。"
+    }
+  }
+}

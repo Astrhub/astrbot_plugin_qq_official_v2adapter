@@ -375,3 +375,86 @@ async def test_ws_close_frame_cancels_active_action_without_waiting_for_action_d
         finally:
             sending.release.set()
             await ws.close()
+
+
+
+async def test_ws_rejected_malformed_echo_heartbeat_and_prepare_overflow_boundaries(sending, monkeypatch):
+    from aiohttp import web
+
+    from v2.network_events import Peer
+
+    async with listener(sending) as n:
+        async with n.http.ws_connect(n.base + "/api", headers=n.headers) as ws:
+            for echo in (None, False, 0, "correlation", [1, None], {"key": "value"}):
+                await ws.send_json({"action": "get_status", "echo": echo, "unexpected": True})
+                result = await ws.receive_json(timeout=2)
+                assert result["code"] == "invalid_request"
+                assert "echo" in result and result["echo"] == echo and type(result["echo"]) is type(echo)
+                assert not sending.calls
+
+            await ws.send_json({"action": "get_status", "echo": "previous"})
+            assert (await ws.receive_json(timeout=2))["echo"] == "previous"
+            for raw in ("{", json.dumps({"action": "get_status", "echo": n.server.config["token"], "unexpected": True}),
+                        json.dumps({"action": "get_status", "unexpected": True})):
+                await ws.send_str(raw)
+                result = await ws.receive_json(timeout=2)
+                assert result["code"] == "invalid_request" and "echo" not in result
+                assert n.server.config["token"] not in json.dumps(result)
+
+        n.server.heartbeat = 0.01
+        n.adapter.bot_id = "observed-bot-id"
+        heartbeat = asyncio.Event()
+        messages = []
+
+        async def transmit(frame):
+            value = json.loads(frame)
+            messages.append(value)
+            if value.get("meta_event_type") == "heartbeat":
+                heartbeat.set()
+            else:
+                peer.put('{"post_type":"qq_event","qq_type":"continuous"}')
+            await asyncio.sleep(0.003)
+
+        peer = Peer(n.server, SimpleNamespace(send_str=transmit), True)
+        peer.put('{"post_type":"qq_event","qq_type":"continuous"}')
+        peer.writer = asyncio.create_task(n.server.write_peer(peer))
+        try:
+            await asyncio.wait_for(heartbeat.wait(), 0.3)
+            assert any(value.get("qq_type") == "continuous" for value in messages)
+            assert next(value for value in messages if value.get("meta_event_type") == "heartbeat")["self_id"] == "observed-bot-id"
+        finally:
+            peer.writer.cancel()
+            await asyncio.gather(peer.writer, return_exceptions=True)
+            peer.clear()
+            assert n.server.queued_bytes == 0
+
+        n.server.queue_frames = 1
+        entered, release = asyncio.Event(), asyncio.Event()
+        original = web.WebSocketResponse.prepare
+
+        async def delayed_prepare(ws_resp, request):
+            entered.set()
+            await release.wait()
+            return await original(ws_resp, request)
+
+        monkeypatch.setattr(web.WebSocketResponse, "prepare", delayed_prepare)
+        connecting = asyncio.ensure_future(n.http.ws_connect(n.base + "/event", headers=n.headers))
+        ws2 = None
+        try:
+            await asyncio.wait_for(entered.wait(), 2)
+            p2 = next(iter(n.server.peers))
+            assert p2.writer is None
+            for index in range(2):
+                n.server.publish({"post_type": "qq_event", "qq_type": "during_handshake", "index": index})
+            assert p2.failure == "subscriber_overflow"
+            release.set()
+            ws2 = await asyncio.wait_for(connecting, 2)
+            received = await ws2.receive(timeout=2)
+            assert received.type == aiohttp.WSMsgType.CLOSE and received.data == 1013
+        finally:
+            release.set()
+            if ws2 is not None:
+                await ws2.close()
+            if not connecting.done():
+                connecting.cancel()
+            await asyncio.gather(connecting, return_exceptions=True)

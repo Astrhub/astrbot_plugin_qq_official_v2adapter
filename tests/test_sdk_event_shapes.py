@@ -1,6 +1,5 @@
 """Documented QQ dispatch samples remain typed without losing wire extras."""
 
-import pytest
 
 from v2.sdk.event_types import SHAPES
 from v2.sdk.events import EventContext, NativeEvent
@@ -82,33 +81,29 @@ def make_event(name, body, *, platform_id="platform", appid="app", generation="g
     return NativeEvent({"op": 0, "id": "event-id", "t": name, "s": 11, "d": body}, context)
 
 
-@pytest.mark.parametrize("name,body,source", DOCUMENTED, ids=[entry[0] for entry in DOCUMENTED])
-def test_documented_event_shapes_keep_extra_fields_and_validate_types(name, body, source):
-    if isinstance(body, dict):
-        body = {**body, "future_field": {"nested": [0, False, None]}}
-    notice = make_event(name, body)
-    assert notice.known and notice.schema_valid, (name, notice.schema_missing, notice.schema_invalid)
-    assert notice.shape.source == source and notice.shape.documented_body
-    assert notice.typed == {"t": name, "d": body}
-    assert notice.raw()["d"] == body and notice.payload["d"] == notice.d
-    if isinstance(body, dict):
-        notice.typed["d"]["future_field"]["nested"].append("detached")
-        assert notice.d["future_field"]["nested"] == (0, False, None)
-        first = notice.shape.required[0] if notice.shape.required else None
-        if first:
-            missing = make_event(name, {key: value for key, value in body.items() if key != first})
-            assert not missing.schema_valid and first in missing.schema_missing and missing.typed is None
-            invalid = make_event(name, {**body, first: None})
-            assert not invalid.schema_valid and first in invalid.schema_missing
+def test_documented_and_sdk_compatible_event_shapes_keep_extra_fields_and_validate_types():
+    for name, body, source in DOCUMENTED:
+        sample = {**body, "future_field": {"nested": [0, False, None]}} if isinstance(body, dict) else body
+        notice = make_event(name, sample)
+        assert notice.known and notice.schema_valid, (name, notice.schema_missing, notice.schema_invalid)
+        assert notice.shape.source == source and notice.shape.documented_body
+        assert notice.typed == {"t": name, "d": sample}
+        assert notice.raw()["d"] == sample and notice.payload["d"] == notice.d
+        if isinstance(sample, dict):
+            notice.typed["d"]["future_field"]["nested"].append("detached")
+            assert notice.d["future_field"]["nested"] == (0, False, None)
+            first = notice.shape.required[0] if notice.shape.required else None
+            if first:
+                missing = make_event(name, {key: value for key, value in sample.items() if key != first})
+                assert not missing.schema_valid and first in missing.schema_missing and missing.typed is None
+                invalid = make_event(name, {**sample, first: None})
+                assert not invalid.schema_valid and first in invalid.schema_missing
 
-
-@pytest.mark.parametrize("name,body", SDK_COMPATIBILITY)
-def test_sdk_compatible_name_only_delete_does_not_invent_mandatory_body(name, body):
-    notice = make_event(name, body)
-    assert notice.known and notice.schema_valid and not notice.shape.documented_body
-    assert "botpy 1.2.1" in notice.shape.source and notice.shape.required == ()
-    assert notice.typed == {"t": name, "d": body}
-
+    for name, body in SDK_COMPATIBILITY:
+        notice = make_event(name, body)
+        assert notice.known and notice.schema_valid and not notice.shape.documented_body
+        assert "botpy 1.2.1" in notice.shape.source and notice.shape.required == ()
+        assert notice.typed == {"t": name, "d": body}
 
 def test_all_fifty_six_business_events_and_connection_notices_have_an_independent_fixture():
     actual = {name for name, *_ in DOCUMENTED} | {name for name, *_ in SDK_COMPATIBILITY}

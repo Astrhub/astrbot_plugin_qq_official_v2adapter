@@ -4,9 +4,9 @@ QQ V2 的控制页面是 AstrBot Plugin Page。页面负责展示状态、编辑
 
 ## 页面入口
 
-正式入口是 `pages/control/index.html`。用户应从 AstrBot 的插件 Pages 打开它，页面通过 `window.AstrBotPluginPage` 获取宿主提供的 `ready()`、`apiGet()` 和 `apiPost()` 桥接方法。
+正式入口是 `pages/control/index.html`。用户应从 AstrBot 的插件视图（Plugin Views / Pages）打开它，页面通过 `window.AstrBotPluginView`（兼容 `window.AstrBotPluginPage`）获取宿主提供的 `ready()`、`getContext()`、`onContext()`、`t()`、`apiGet()` 和 `apiPost()` 桥接方法，自动同步宿主的亮暗主题（`data-theme="light|dark"`）与当前语言（`.astrbot-plugin/i18n/<locale>.json`）。
 
-`dash/` 保存 Vue 源码、Vite 配置和单文件构建入口。迁移期间可以把构建产物写入 `pages/test`，用于验证组件和接口；这不是正式页面入口。Vue 页面准备替换稳定控制台时，应把构建输出和页面元数据切换到 `pages/control`，删除旧入口中不再使用的脚本和样式，并同步更新 README、页面测试和 CI。如果迁移分支保留 `pages/debug`，它只适合本地调试，不应作为用户配置入口。
+`dash/` 保存 Vue 源码、Vite 配置和单文件构建入口，构建产物直接输出到 `pages/control/index.html`（内联全部 JS 与 CSS，无需外部静态资源请求）。
 
 ## 请求链路
 
@@ -61,7 +61,7 @@ appid, use_markdown, type, intents, shard_mode, shard, enable, onebot
 
 - QQ 原生读取和写入以 `V2Client`、`NativeView` 以及 `v2/sdk/api/` 中的具名 API 为基础。
 - 管理、菜单、媒体和按钮等需要确认结果的原生写操作使用 `ExtensionStore.execute` 的操作账本。账本绑定 `operation_id`、请求 binding、代次和诊断上下文，并记录 `not_sent`、`rejected`、`unknown`、`partial` 和 `succeeded` 等状态。
-- `PanelService` 负责机器人级锁、目录稳定性、托管范围、pending 状态和远端漂移核对。启用托管必须经过 `plan`，发送前再次验证 plan fingerprint；未知结果只能核对远端状态，不能换一个 ID 自动重放。托管同步的网络写入需要在这个状态机内接入原生 SDK 和操作账本，页面不能自行实现第二套重试调度。
+- `PanelService` 负责机器人级锁、目录稳定性、托管范围、pending 状态和远端漂移核对。启用托管必须经过 `plan`，发送前再次验证 plan fingerprint。托管写（POST/PUT `/v2/panels`）与手动原生写共用 `ExtensionStore.execute` 账本（kind 为 `panel_sync`）：pending 记录 `op_id` 并先落盘再发送，恢复时先查账本，`succeeded` 仍要读回远端核对，`not_sent`/`rejected` 按失败语义重试或锁定，`unknown` 保持锁定且不自动重放，账本缺行或旧格式 pending 才走远端唯一候选核对。页面不能自行实现第二套重试调度。
 - 消息发送继续由 `SendingCore`、`MessageStore` 和 `DeliverySlots` 处理，因为消息还需要回复来源、序号、媒体、主动或被动发送策略以及宿主投递状态。
 
 这些调度通道共享实例代次检查和操作结果语义，但不把消息投递、互动 ACK、管理写入和面板同步混成一条无差别队列。互动 ACK 使用独立的优先容量，普通原生写入使用操作账本，面板同步使用自己的机器人锁和恢复状态。这样可以避免普通配置或面板操作阻塞互动确认，也能保留消息回复的来源和序号约束。
@@ -110,30 +110,29 @@ Vite 7 要求 Node `^20.19.0` 或 `>=22.12.0`；仓库 CI 使用 Node 24。`npm 
 npm run build
 ```
 
-构建前确认 `dash/vite.config.js` 的 `build.outDir` 指向当前验证入口。迁移阶段通常输出到 `../pages/test`；准备替换正式控制台时应改为 `../pages/control`，并检查生成的 `index.html` 是否覆盖正确入口。构建完成后检查：
+`dash/vite.config.js` 的 `build.outDir` 指向 `../pages/control`，构建完成后检查：
 
 ```bash
-git diff -- pages/control pages/test
+git diff -- pages/control/index.html
 git status --short
 ```
 
-发布构建必须提交与源码匹配的单文件产物，CI 应执行 `npm ci`、`npm run build`，并在无预期变更时用 `git diff --exit-code` 检查构建产物漂移。构建产物中不能出现 AppSecret、网络 token 或调试假数据。
+发布构建必须提交与源码匹配的单文件产物，CI 执行 `npm ci`、`npm run build`，并用 `git diff --exit-code -- pages/control/index.html` 检查构建产物漂移。构建产物中不能出现 AppSecret、网络 token 或调试假数据。
 
 页面行为验收至少覆盖：
 
 - 首次打开、已有实例、新建目标和不存在目标的错误状态；
+- 宿主亮暗主题（`data-theme`）与中英文（`zh-CN` / `en-US`）实时切换；
 - 连接字段 patch、AppID 改绑确认、扫码租约取消和重载分离；
 - 实例或场景切换时的 dirty guard、revision 冲突和旧状态清理；
 - 菜单递归 patch、四层布局预览、保存与本地应用的分离；
 - 远端面板 plan fingerprint、全局开关确认、pending/unknown/reconcile；
 - 重复 operation ID、代次失效、服务端超时和进程重启后的状态查询。
 
-Python 回归测试仍按仓库的隔离运行器执行：
+Python 回归测试按仓库的隔离运行器执行：
 
 ```bash
 ASTRBOT_SOURCE="$PWD/.host-source" \
 PYTHON_ENV="$PWD/.host-source/.venv" \
 bash scripts/test-isolated.sh -q
 ```
-
-前端构建和页面测试都通过后，才可以把 Vue 页面从 `pages/test` 迁移为 `pages/control` 的稳定入口。

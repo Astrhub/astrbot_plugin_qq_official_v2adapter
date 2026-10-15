@@ -10,6 +10,7 @@ from test_transport_http import MappedSession, upstream
 
 from v2.commands import collect_catalog
 from v2.errors import V2Error
+from v2.extensions.state import ExtensionStore
 from v2.help import node_token, render_help, text_link
 from v2.messaging.store import MessageStore, robot_key
 from v2.models import InstanceKey
@@ -107,8 +108,9 @@ async def panel_env(config, tmp_path):
     async with upstream(handle) as base:
         http = HTTPTransport(identity, config["secret"], session_factory=lambda: MappedSession(base))
         instance = SimpleNamespace(identity=identity, http=http, check_generation=lambda: None)
+        extension = ExtensionStore(store)
         owner = SimpleNamespace(messages=store, store=settings, stopping=False, instances={identity.platform_id: instance},
-            config={"remote_menu_sync": False}, catalog_ready=True,
+            config={"remote_menu_sync": False}, catalog_ready=True, extension_state=extension,
             context=SimpleNamespace(get_config=lambda umo=None: {"wake_prefix": ["/"]}))
         # PanelService takes actual instance objects, as the plugin does.
         owner.instances = [instance]
@@ -121,6 +123,7 @@ async def panel_env(config, tmp_path):
         finally:
             await service.close()
             await http.close()
+            await extension.close()
             settings.close()
             store.close()
 
@@ -167,14 +170,18 @@ async def test_panel_owned_diff_rename_drift_and_disabled_gate(panel_env):
     assert len(e.calls) == count
 
 
-async def test_panel_unknown_create_reconciles_not_recreated(panel_env):
+async def test_panel_unknown_create_stays_locked_and_never_replayed(panel_env):
     e = panel_env
     e.modes.append("unknown")
     with pytest.raises(V2Error) as exc:
         await enable(e)
     assert exc.value.phase == "result_unknown" and len(e.records) == 1
-    result = await e.service.sync(e.instance, "group")
-    assert result["state"] == "synced"
+    # The ledger retains the write as unknown: sync stays locked and never replays or adopts remotely.
+    with pytest.raises(V2Error) as locked:
+        await e.service.sync(e.instance, "group")
+    assert locked.value.code == "panel_result_unknown"
+    state = e.service.state(e.instance, "group")
+    assert state["state"] == "unknown" and state["pending"]["op_id"]
     assert sum(method == "POST" for method, _, _ in e.calls) == 1
 
 
@@ -238,3 +245,134 @@ async def test_manual_panel_write_refuses_unresolved_managed_result(panel_env):
         await e.service.manual_write(client, value["panel_id"], lambda: asyncio.sleep(0))
     assert pending.value.code == "panel_result_unknown"
     assert e.service.state(e.instance, "group")["enabled"] is True
+
+
+
+async def test_c2c_all_panel_is_distinct_from_global_custom_menu(panel_env):
+    e = panel_env
+    plan = e.service.plan(e.instance, "c2c")
+    assert not e.calls and not plan["issues"]
+    assert plan["payload"]["scope"] == "c2c" and plan["payload"]["target_type"] == "all"
+    assert "user_openids" not in plan["payload"]
+    with pytest.raises(V2Error) as exc:
+        await e.service.enable(e.instance, "c2c", plan["fingerprint"], confirm=True)
+    assert exc.value.code == "remote_sync_disabled" and not e.calls
+    e.owner.config["remote_menu_sync"] = True
+    with pytest.raises(V2Error) as exc:
+        await e.service.enable(e.instance, "c2c", plan["fingerprint"], confirm=False)
+    assert exc.value.code == "confirmation_required" and not e.calls
+    result = await e.service.enable(e.instance, "c2c", plan["fingerprint"], confirm=True)
+    assert result["state"] == "synced"
+    writes = [(method, path, body) for method, path, body in e.calls if method != "GET"]
+    assert len(writes) == 1 and writes[0][:2] == ("POST", "/v2/panels")
+    assert writes[0][2]["scope"] == "c2c" and writes[0][2]["target_type"] == "all"
+    e.handlers[0].desc = "updated"
+    await e.service.sync(e.instance, "c2c")
+    assert e.calls[-1][0:2] == ("PUT", "/v2/panels/" + result["panel_id"])
+    assert all(path != "/v2/menu" for _, path, _ in e.calls)
+
+
+@pytest.fixture
+def routed_panels(panel_env, monkeypatch):
+    from astrbot.core.astrbot_config_mgr import AstrBotConfigManager
+    from astrbot.core.platform.message_type import MessageType
+    from astrbot.core.star.context import Context
+    from astrbot.core.umop_config_router import UmopConfigRouter
+    from test_messaging_state import NOW, chat_payload
+
+    from v2.messaging.convert import convert_chat
+    from v2.protocol import RawEnvelope
+
+    e = panel_env
+    default = {"wake_prefix": ["/"], "plugin_set": ["*"]}
+    router = UmopConfigRouter(None)
+    manager = AstrBotConfigManager(default, router, None)
+    manager.abconf_data = {}
+    manager.confs["unrelated"] = {"wake_prefix": ["?"], "plugin_set": []}
+    context = SimpleNamespace(_config=default, astrbot_config_mgr=manager)
+    lookups = []
+
+    def get_config(umo=None):
+        if umo is not None:
+            lookups.append(umo)
+        return Context.get_config(context, umo)
+
+    context.get_config = get_config
+    e.owner.context = context
+    e.service.catalog_provider = e.service._catalog
+    monkeypatch.setattr("v2.panels.collect_catalog", lambda config, scene, **kwargs: collect_catalog(
+        config, scene, handlers=e.handlers, plugins=e.plugins,
+    ))
+
+    def bind(scene, target, profile):
+        event = "GROUP_AT_MESSAGE_CREATE" if scene == "group" else "C2C_MESSAGE_CREATE"
+        profile_id = "profile-" + str(len(manager.confs))
+        payload = chat_payload(event, message_id=profile_id, target=target,
+                               sender=target if scene == "c2c" else "member-one")
+        e.owner.messages.observe(convert_chat(e.instance.identity, RawEnvelope(payload, NOW)))
+        message_type = MessageType.GROUP_MESSAGE if scene == "group" else MessageType.FRIEND_MESSAGE
+        umo = f"{e.instance.identity.platform_id}:{message_type.value}:{target}"
+        manager.confs[profile_id] = copy.deepcopy(profile)
+        manager.abconf_data[profile_id] = {"name": profile_id, "path": profile_id + ".json"}
+        router.umop_to_conf_id[umo] = profile_id
+        return umo
+
+    e.bind = bind
+    e.lookups = lookups
+    return e
+
+
+@pytest.mark.parametrize("scene", ["group", "c2c"])
+async def test_routed_panel_target_prefix_plugin_set_and_conflict_checks(routed_panels, scene):
+    from v2 import PLUGIN_NAME
+    e = routed_panels
+    target = "target/one:openid"
+    umo = e.bind(scene, target, {"wake_prefix": ["!"], "plugin_set": [PLUGIN_NAME], "disable_builtin_commands": True})
+    plan = e.service.plan(e.instance, scene, target_type="specific", targets=[target])
+    assert plan["issues"] == []
+    assert [item["name"] for item in plan["payload"]["panel"]["items"]] == ["!v2menu"]
+    assert e.lookups == [umo] and not e.calls
+
+    all_plan = e.service.plan(e.instance, scene)
+    assert "scope_config_conflict" in all_plan["issues"]
+
+    e.lookups.clear()
+    targets = ["target-a", "target-b"]
+    profile = {"wake_prefix": ["!"], "plugin_set": [PLUGIN_NAME]}
+    umos = [e.bind(scene, t_id, profile) for t_id in targets]
+    shared_plan = e.service.plan(e.instance, scene, target_type="specific", targets=targets)
+    assert shared_plan["issues"] == [] and e.lookups == umos
+    e.owner.config["remote_menu_sync"] = True
+    result = await e.service.enable(e.instance, scene, shared_plan["fingerprint"], confirm=True,
+                                    target_type="specific", targets=targets)
+    record = e.records[result["panel_id"]]
+    assert record["scope"] == scene and record["target_type"] == "specific"
+    assert record["group_openids" if scene == "group" else "user_openids"] == targets
+
+    for difference in ("prefix", "plugin_set"):
+        base_prof = {"wake_prefix": ["!"], "plugin_set": [PLUGIN_NAME, "data.plugins.sample.main"]}
+        other = copy.deepcopy(base_prof)
+        other["wake_prefix" if difference == "prefix" else "plugin_set"] = ["#"] if difference == "prefix" else [PLUGIN_NAME]
+        e.bind(scene, f"conf-a-{difference}", base_prof)
+        e.bind(scene, f"conf-b-{difference}", other)
+        cat = collect_catalog(base_prof, scene, handlers=e.handlers, plugins=e.plugins)
+        shortcut = next(node for node in cat["nodes"] if node["name"] == "plugin")
+        key = e.instance.identity.settings_key
+        cur_rev = e.settings.get(key)["revision"]
+        draft = e.settings.mutate(key, cur_rev, "fixture", operation="save",
+                                  patch={"panels": {scene: {"mode": "custom", "selected": [shortcut["id"]]}}})
+        bindings = e.service.capture_bindings(e.instance, draft["draft"], confirm=True)
+        e.settings.mutate(key, draft["revision"], "fixture", operation="apply", bindings=bindings)
+        c_plan = e.service.plan(e.instance, scene, target_type="specific", targets=[f"conf-a-{difference}", f"conf-b-{difference}"])
+        assert "scope_config_conflict" in c_plan["issues"]
+
+
+    from v2.panels import routed_configs
+    mgr = e.owner.context.astrbot_config_mgr
+    mgr.confs["default"]["plugin_set"] = []
+    mgr.confs["default"]["disable_builtin_commands"] = True
+    mgr.confs["routed-plat"] = {"wake_prefix": ["#"], "plugin_set": ["*"], "disable_builtin_commands": False}
+    mgr.abconf_data["routed-plat"] = {"name": "routed-plat", "path": "routed-plat.json"}
+    mgr.ucr.umop_to_conf_id = {f"{e.instance.identity.platform_id}:*:*": "routed-plat", "other-plat:*:*": "unrelated"}
+    resolved = routed_configs(e.owner.context, e.instance.identity, scene)
+    assert resolved == [mgr.confs["routed-plat"]]

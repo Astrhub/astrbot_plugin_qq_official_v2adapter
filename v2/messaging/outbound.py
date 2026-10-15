@@ -35,7 +35,7 @@ from .reply import (
 from .session_sources import ACTIVE_DENIED_CODE, SessionSendPolicy
 
 AMBIGUOUS_CODES = {304023, 304024, 40054005, 50055001, 50055002, 50055006}
-EXPIRED_CODES = {304103, 40034005, 40034024, 40034025, 40034026, 40034027, 40034128}
+EXPIRED_CODES = {304026, 304027, 304028, 304103, 50045, 50046, 50047, 40034005, 40034024, 40034025, 40034026, 40034027, 40034128}
 MARKDOWN_DENIED = {304036, 40034127}
 
 
@@ -420,7 +420,9 @@ class SendingCore:
                         else:
                             raise
                 result = {"message_id": data["id"], "operation_id": op_id, "msg_seq": delivery.seq, "state": "sent",
-                          "delivery": delivery.finish_attempt("sent")}
+                          "delivery": delivery.finish_attempt("sent", trace_id=response.trace_id)}
+                if response.trace_id:
+                    result["trace_id"] = response.trace_id
                 result["wire_started"] = wire_started
                 if prepared:
                     result["media"] = {"kind": prepared.kind, "requested_kind": prepared.input.kind,
@@ -543,6 +545,8 @@ class SendingCore:
                 if response_check is not None:
                     response_check(data)
                 summary = {"message_id": data["id"], "operation_id": op_id, "msg_seq": seq, "state": "sent"}
+                if response.trace_id:
+                    summary["trace_id"] = response.trace_id
                 if stream is not None:
                     summary["native_stream"] = {"index": stream["index"], "id": data["id"],
                                                 "finished": wire["input_state"] == 10}

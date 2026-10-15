@@ -17,6 +17,7 @@ from .connection_config import normalize_connection
 from .errors import V2Error, unsupported
 from .host_auth import require_admin
 from .models import SCENES, InstanceKey
+from .panels import routed_configs
 from .settings import DEFAULTS, merge_patch, validate_settings
 from .transport.webhook import bounded_body
 
@@ -256,7 +257,9 @@ class ControlAPI:
         scene = body.get("scene", "group") if request.method == "POST" else request.query.get("scene", "group")
         if scene not in SCENES:
             raise V2Error("invalid_scene", "Unknown scene.")
-        catalog = collect_catalog(self.owner.context.get_config(), scene, context=self.owner.context)
+        cfgs = routed_configs(self.owner.context, identity, scene)
+        scene_cfg = next((c for c in cfgs if isinstance(c, dict) and c.get("plugin_set") != []), cfgs[0])
+        catalog = collect_catalog(scene_cfg, scene, context=self.owner.context)
         if operation == "commands":
             return catalog
         if body.get("fingerprint") != fingerprint:
