@@ -30,7 +30,7 @@ jobs:
         run: |
           npm ci --prefix dash --ignore-scripts
           npm run build --prefix dash
-          git diff --exit-code -- pages/control/index.html
+          git diff --exit-code -- pages/control/index.html docs/assets/vue-control-preview-pc.svg docs/assets/vue-control-preview-mobile.svg
       - name: Prepare sandbox runner
         run: |
           sudo apt-get update && sudo apt-get install -y bubblewrap
