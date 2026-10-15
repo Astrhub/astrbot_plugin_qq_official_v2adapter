@@ -19,12 +19,9 @@ export function changed(base, next) {
 
 export function connectionFields(form) {
   const mode = form.type === "qq_official_v2_webhook" ? "manual" : form.shard_mode;
-  const shard = mode === "auto" ? [0, 1] : [Number(form.shardIndex), Number(form.shardCount)];
+  const shard = mode === "auto" || form.type === "qq_official_v2_webhook" ? [0, 1] : [Number(form.shardIndex), Number(form.shardCount)];
   if (!Number.isInteger(shard[0]) || !Number.isInteger(shard[1]) || shard[0] < 0 || shard[1] < 1 || shard[0] >= shard[1]) {
     throw new Error(t("msg.invalidShard"));
-  }
-  if (form.type === "qq_official_v2_webhook" && (shard[0] !== 0 || shard[1] !== 1)) {
-    throw new Error(t("msg.webhookShardOnly"));
   }
   return {
     appid: (form.appid || "").trim(),

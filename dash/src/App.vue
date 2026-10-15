@@ -39,7 +39,7 @@ function scheduleRuntimePoll(attempts = 15) {
       }
       scheduleRuntimePoll(attempts - 1);
     } catch {
-      /* ignore transient poll error */
+      scheduleRuntimePoll(attempts - 1);
     }
   }, 1000);
 }

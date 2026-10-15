@@ -146,6 +146,21 @@ onBeforeUnmount(() => { window.removeEventListener("pagehide", leave); leave(); 
           </dd>
         </div>
       </dl>
+      <div v-if="state.form.type === 'qq_official_v2_webhook' || state.view?.webhook_path" class="subcard">
+        <div class="subcard-head">
+          <h3>{{ t("conn.webhookPath") }}</h3>
+          <button
+            v-if="state.view?.webhook_path"
+            type="button"
+            class="small-button"
+            @click="navigator.clipboard?.writeText?.(state.view.webhook_path)?.catch?.(() => {}); emit('status', t('conn.copiedPath', { path: state.view.webhook_path }))"
+          >
+            {{ t("conn.copyPath") }}
+          </button>
+        </div>
+        <code v-if="state.view?.webhook_path" class="code-tag">{{ state.view.webhook_path }}</code>
+        <p v-else class="muted">{{ t("conn.webhookPending") }}</p>
+      </div>
 
       <div class="subcard">
         <div class="subcard-head">

@@ -187,6 +187,21 @@ async function discard() {
       </div>
       <p v-else class="muted" style="margin: 14px 0;">{{ t("remote.noRetained") }}</p>
       <button type="button" class="danger" :disabled="busy || !retained?.entries?.length" @click="emit('run', discard)">{{ t("remote.discardBtn") }}</button>
+
+      <div class="subcard">
+        <h3>{{ t("remote.extOpsTitle") }}</h3>
+        <div v-if="state.current?.extension_state?.operations?.length" class="retained-list">
+          <div v-for="op in state.current.extension_state.operations" :key="op.op_id" class="retained-row">
+            <code>{{ op.op_id.slice(0, 12) }}</code>
+            <span class="badge badge-primary">{{ op.kind }}</span>
+            <span class="badge" :class="op.state === 'succeeded' ? 'badge-ok' : op.state === 'unknown' || op.state === 'partial' ? 'badge-warn' : 'badge-muted'">
+              {{ tState(op.state) }}
+            </span>
+            <code v-if="op.context?.path" class="code-tag">{{ op.context.method }} {{ op.context.path }}</code>
+          </div>
+        </div>
+        <p v-else class="muted">{{ t("remote.noExtOps") }}</p>
+      </div>
     </article>
   </section>
 </template>

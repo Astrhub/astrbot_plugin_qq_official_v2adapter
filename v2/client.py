@@ -67,7 +67,7 @@ ACTION_PARAMS = {
     "_qq_get_send_status": {"operation_id": "id"}, "_qq_get_extension_status": {"operation_id": "id"},
 }
 ACTION_RETURNS = {
-    **{name: ["message_id", "operation_id", "msg_seq", "state", "wire_started", "delivery?", "timestamp?", "ref_idx?", "media?"] for name in SEND_ACTIONS},
+    **{name: ["message_id", "operation_id", "msg_seq", "state", "wire_started", "delivery?", "timestamp?", "ref_idx?", "media?", "trace_id?"] for name in SEND_ACTIONS},
     "get_status": ["online", "good", "state", "platform_id", "generation", "network"],
     "get_version_info": ["app_name", "app_version", "protocol_version"],
     "get_login_info": ["user_id", "nickname", "id_kind", "source"],

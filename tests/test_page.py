@@ -104,7 +104,7 @@ assert.deepEqual(
 );
 
 assert.throws(() => connectionFields({ type: "qq_official_v2", shard_mode: "manual", shardIndex: 2, shardCount: 2 }), /分片/);
-assert.throws(() => connectionFields({ type: "qq_official_v2_webhook", shard_mode: "manual", shardIndex: 1, shardCount: 2 }), /Webhook/);
+assert.deepEqual(connectionFields({ type: "qq_official_v2_webhook", shard_mode: "manual", shardIndex: 1, shardCount: 2 }).shard, [0, 1]);
 
 const normalized = connectionFields({
   appid: " 102030 ",

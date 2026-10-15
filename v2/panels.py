@@ -47,7 +47,7 @@ def digest(value):
 
 def retry_time(error, now):
     transient = (error.business_code is None or error.code == "qq_rate_limited" or error.business_code in ONCE_RETRY_CODES) and (
-        error.code in {"connect_failed", "network_failure", "request_deadline", "request_capacity", "qq_rate_limited"}
+        error.code in {"connect_failed", "network_failure", "request_deadline", "request_capacity", "extension_capacity", "qq_rate_limited"}
         or error.business_code in ONCE_RETRY_CODES
         or error.code == "qq_api_error" and error.http_status in {408, 429, 500, 502, 503, 504}
         or error.code == "token_refresh_failed" and (error.http_status or error.status) in {408, 429, 500, 502, 503, 504})
