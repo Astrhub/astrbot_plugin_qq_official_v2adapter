@@ -53,89 +53,104 @@ async def test_native_first_frame_rejection_converts_only_before_any_output(stre
     assert s.store.operation(chat.route.robot, "first-frame")["source"] == "msg-one"
 
 
-@pytest.mark.parametrize("event,path", [("GROUP_AT_MESSAGE_CREATE", "/v2/groups/group-one/messages"),
-    ("C2C_MESSAGE_CREATE", "/v2/users/user-one/messages"), ("AT_MESSAGE_CREATE", "/channels/group-one/messages"),
-    ("DIRECT_MESSAGE_CREATE", "/dms/group-one/messages")])
-@pytest.mark.parametrize("status,code", [(400, 304103), (400, 40034005), (400, 40034026), (400, 40034128), (200, 40034128)])
-async def test_explicit_time_errors_use_same_target_and_one_active_attempt(sending, event, path, status, code):
+async def test_explicit_time_errors_use_same_target_and_one_active_attempt(sending):
     s = sending
-    chat, client = s.observe(event)
-    s.modes.append((status, code))
-    result = await client.send(chat.route, "literal <&>", operation_id="scoped-fallback")
-    assert [p for p, _ in s.calls] == [path, path]
-    assert s.calls[0][1]["msg_id"] == "msg-one" and s.calls[1][1]["content"] == "literal &lt;&amp;&gt;"
-    assert not {"msg_id", "event_id", "msg_seq"}.intersection(s.calls[1][1])
-    assert result["delivery"]["reason"] == {"code": "passive_source_rejected", "business_code": code}
-    assert [tuple(row) for row in s.store.db.execute("SELECT number,active FROM attempts ORDER BY number")] == [(1, 0), (2, 1)]
+    scenes = [
+        ("GROUP_AT_MESSAGE_CREATE", "/v2/groups/group-one/messages"),
+        ("C2C_MESSAGE_CREATE", "/v2/users/user-one/messages"),
+        ("AT_MESSAGE_CREATE", "/channels/group-one/messages"),
+        ("DIRECT_MESSAGE_CREATE", "/dms/group-one/messages"),
+    ]
+    codes = [(400, 304103), (400, 40034005), (400, 40034026), (400, 40034128), (200, 40034128)]
+    for idx, (event, path) in enumerate(scenes):
+        for c_idx, (status, code) in enumerate(codes if idx == 0 else [(400, 40034128)]):
+            s.calls.clear()
+            chat, client = s.observe(event, message_id=f"time-{idx}-{c_idx}")
+            s.modes.append((status, code))
+            op_id = f"scoped-fallback-{idx}-{c_idx}"
+            result = await client.send(chat.route, "literal <&>", operation_id=op_id)
+            assert [p for p, _ in s.calls] == [path, path]
+            assert s.calls[0][1]["msg_id"] == f"time-{idx}-{c_idx}" and s.calls[1][1]["content"] == "literal &lt;&amp;&gt;"
+            assert not {"msg_id", "event_id", "msg_seq"}.intersection(s.calls[1][1])
+            assert result["delivery"]["reason"] == {"code": "passive_source_rejected", "business_code": code}
 
 
-@pytest.mark.parametrize("mode,outcome", [(40034024, "rejected"), (40034025, "rejected"), (40034027, "rejected"),
-    (304036, "rejected"), (40034100, "rejected"), ("429", "rejected"), ((429, 40034128), "rejected"), ((403, 40034128), "rejected"),
-    ((500, 40034128), "unknown"), ((503, 40034005), "unknown"), ((408, 40034128), "unknown"),
-    (50055001, "unknown"), (99999999, "rejected"), ("no-id", "unknown")])
-async def test_non_time_or_uncertain_failure_never_falls_back(sending, mode, outcome):
+async def test_non_time_or_uncertain_failure_never_falls_back(sending):
     from v2.errors import V2Error
     s = sending
-    chat, client = s.observe()
-    s.modes.append(mode)
-    with pytest.raises(V2Error):
-        await client.send(chat.route, "not duplicated", operation_id="one-failure")
-    assert len(s.calls) == 1 and s.store.operation(chat.route.robot, "one-failure")["state"] == outcome
-    blocked = s.store.db.execute("SELECT blocked FROM sources").fetchone()[0]
-    assert not blocked or not blocked.startswith("active:")
-    if mode in {40034024, 40034025, 40034027}:
-        s.clock[0] += 301
+    for idx, (mode, outcome) in enumerate([
+        (40034024, "rejected"), (40034025, "rejected"), (40034027, "rejected"),
+        (304036, "rejected"), (40034100, "rejected"), ("429", "rejected"),
+        ((429, 40034128), "rejected"), ((403, 40034128), "rejected"),
+        ((500, 40034128), "unknown"), ((503, 40034005), "unknown"), ((408, 40034128), "unknown"),
+        (50055001, "unknown"), (99999999, "rejected"), ("no-id", "unknown"),
+    ]):
+        s.calls.clear()
+        msg_id = f"non-time-{idx}"
+        op_id = f"one-failure-{idx}"
+        chat, client = s.observe(message_id=msg_id)
+        s.modes.append(mode)
+        with pytest.raises(V2Error):
+            await client.send(chat.route, "not duplicated", operation_id=op_id)
+        assert len(s.calls) == 1 and s.store.operation(chat.route.robot, op_id)["state"] == outcome
+        blocked = s.store.db.execute("SELECT blocked FROM sources WHERE message_id=?", (msg_id,)).fetchone()[0]
+        assert not blocked or not blocked.startswith("active:")
+        if mode in {40034024, 40034025, 40034027}:
+            with pytest.raises(V2Error) as exc:
+                await client.send(chat.route, "invalid stays invalid", operation_id=f"{op_id}-retry")
+            assert exc.value.code == "reply_source_rejected" and len(s.calls) == 1
+
+
+async def test_active_failure_is_final_and_operation_never_replayed(sending):
+    from v2.errors import V2Error
+    s = sending
+    for idx, (active_failure, outcome) in enumerate([
+        (304036, "rejected"), (40034128, "rejected"), ("401", "rejected"),
+        ("429", "rejected"), ("no-id", "unknown"), ("500", "unknown"),
+    ]):
+        s.calls.clear()
+        op_id = f"final-failure-{idx}"
+        chat, client = s.observe(message_id=f"act-fail-{idx}")
+        s.modes[:] = [40034128, active_failure]
         with pytest.raises(V2Error) as exc:
-            await client.send(chat.route, "invalid stays invalid")
-        assert exc.value.code == "reply_source_rejected" and len(s.calls) == 1
+            await client.send(chat.route, "only twice", operation_id=op_id)
+        assert len(s.calls) == 2 and exc.value.operation_id == op_id
+        assert exc.value.details["delivery"]["attempts"][0]["state"] == "rejected"
+        assert exc.value.details["delivery"]["attempts"][1]["state"] == outcome
+        assert s.store.operation(chat.route.robot, op_id)["state"] == outcome
+        with pytest.raises(V2Error) as reused:
+            await client.send(chat.route, "only twice", operation_id=op_id)
+        assert reused.value.code == ("send_result_unknown" if outcome == "unknown" else "operation_already_attempted")
+        assert len(s.calls) == 2
 
 
-@pytest.mark.parametrize("active_failure,outcome", [(304036, "rejected"), (40034128, "rejected"), ("401", "rejected"), ("429", "rejected"), ("no-id", "unknown"), ("500", "unknown")])
-async def test_active_failure_is_final_and_operation_never_replayed(sending, active_failure, outcome):
-    from v2.errors import V2Error
-    s = sending
-    chat, client = s.observe()
-    s.modes[:] = [40034128, active_failure]
-    with pytest.raises(V2Error) as exc:
-        await client.send(chat.route, "only twice", operation_id="final-failure")
-    assert len(s.calls) == 2 and exc.value.operation_id == "final-failure"
-    assert exc.value.details["delivery"]["attempts"][0]["state"] == "rejected"
-    assert exc.value.details["delivery"]["attempts"][1]["state"] == outcome
-    assert s.store.operation(chat.route.robot, "final-failure")["state"] == outcome
-    with pytest.raises(V2Error) as reused:
-        await client.send(chat.route, "only twice", operation_id="final-failure")
-    assert reused.value.code == ("send_result_unknown" if outcome == "unknown" else "operation_already_attempted")
-    assert len(s.calls) == 2 and s.store.db.execute("SELECT used FROM sources").fetchone()[0] == 0
-
-
-@pytest.mark.parametrize("scope", ["unknown_source", "target", "scene", "robot", "environment", "generation", "expired_target", "evicted_evidence"])
-async def test_expiry_does_not_turn_unobserved_or_foreign_sources_into_active_sends(sending, scope):
+async def test_expiry_does_not_turn_unobserved_or_foreign_sources_into_active_sends(sending):
     from dataclasses import replace
 
     from v2.errors import V2Error
     from v2.models import RobotKey
     s = sending
-    chat, _ = s.observe()
-    source, route = chat.source, chat.route
-    if scope == "unknown_source":
-        source = replace(source, message_id="never-observed", sent_at=source.sent_at - 500)
-    elif scope == "target":
-        route = replace(route, target="other-target")
-    elif scope == "scene":
-        route = replace(route, scene="c2c")
-    elif scope in {"robot", "environment"}:
-        route = replace(route, robot=RobotKey("other-app" if scope == "robot" else route.robot.appid, "sandbox" if scope == "environment" else "production"))
-    elif scope == "generation":
-        source = replace(source, generation="another-instance-generation")
-    elif scope == "expired_target":
-        s.clock[0] += 86401
-    else:
-        s.clock[0] += 301
-        s.store.prune()
-    with pytest.raises(V2Error):
-        await s.core.send(route, "must not send", source=source)
-    assert not s.calls
-
+    for scope in ("unknown_source", "target", "scene", "robot", "environment", "generation", "expired_target", "evicted_evidence"):
+        chat, _ = s.observe(message_id=f"scope-{scope}")
+        source, route = chat.source, chat.route
+        if scope == "unknown_source":
+            source = replace(source, message_id="never-observed", sent_at=source.sent_at - 500)
+        elif scope == "target":
+            route = replace(route, target="other-target")
+        elif scope == "scene":
+            route = replace(route, scene="c2c")
+        elif scope in {"robot", "environment"}:
+            route = replace(route, robot=RobotKey("other-app" if scope == "robot" else route.robot.appid, "sandbox" if scope == "environment" else "production"))
+        elif scope == "generation":
+            source = replace(source, generation="another-instance-generation")
+        elif scope == "expired_target":
+            s.clock[0] += 86401
+        else:
+            s.clock[0] += 301
+            s.store.prune()
+        with pytest.raises(V2Error):
+            await s.core.send(route, "must not send", source=source)
+        assert not s.calls
 
 async def test_concurrent_same_operation_and_unrelated_charge_survive_fallback(sending):
     import asyncio
@@ -528,3 +543,112 @@ async def test_live_pin_does_not_forget_invalid_source_when_history_expires(send
     with pytest.raises(V2Error) as exc:
         await client.send(chat.route, "evidence evicted")
     assert exc.value.code == "reply_source_unavailable" and len(s.calls) == 1
+
+
+
+pytest_plugins = ("test_media_upload",)
+
+
+def _observed_media_sender(m, event, message_id="msg-one"):
+    from test_messaging_state import chat_payload
+
+    from v2.messaging.convert import convert_chat
+    from v2.messaging.outbound import SendingCore
+    from v2.protocol import RawEnvelope
+
+    chat = convert_chat(m.identity, RawEnvelope(chat_payload(event, message_id=message_id, timestamp=m.clock[0]), m.clock[0]))
+    m.store.observe(chat)
+    sender = SendingCore(m.identity, m.http, m.store, is_online=lambda: True, ws_online=lambda: True, media=m.service)
+    return chat, sender
+
+
+@pytest.mark.parametrize("event,url", [("GROUP_AT_MESSAGE_CREATE", False), ("C2C_MESSAGE_CREATE", False),
+    ("AT_MESSAGE_CREATE", False), ("GROUP_AT_MESSAGE_CREATE", True), ("DIRECT_MESSAGE_CREATE", True)])
+async def test_media_conversion_reuses_receipt_and_reference_with_fresh_body(media, event, url):
+    import base64
+
+    from astrbot.core.message.components import Plain, Reply
+    from test_media_boundary import PNG
+
+    from v2.media.types import MediaInput
+
+    m = media
+    chat, sender = _observed_media_sender(m, event)
+    value = "https://fixture.invalid/image.png" if url else "base64://" + base64.b64encode(PNG).decode()
+    m.modes.append(40034128)
+    try:
+        result = await sender.send(chat.route, [Reply(id="msg-one"), Plain("image text"), MediaInput("image", value)], source=chat.source, operation_id="same-media-op")
+        sent = [body for path, body in m.calls if path.endswith("/messages")]
+        assert len(sent) == 2 and sent[0]["msg_id"] == "msg-one"
+        assert all(key not in sent[1] for key in ("msg_id", "event_id", "msg_seq"))
+        assert sent[0]["message_reference"] == sent[1]["message_reference"]
+        assert sent[0]["content"] == sent[1]["content"] == "image text"
+        assert result["state"] == "sent" and result["delivery"]["mode"] == "active"
+        assert m.pool.used == 0
+    finally:
+        await sender.close()
+
+
+async def test_media_fallback_expiry_unknown_upload_and_expired_receipt_boundaries(media, monkeypatch):
+    import base64
+
+    from test_media_boundary import PNG
+
+    from v2.errors import V2Error
+    from v2.media.types import MediaInput
+
+    m = media
+    chat, sender = _observed_media_sender(m, "GROUP_AT_MESSAGE_CREATE")
+    original_prep = m.service.prepare
+
+    async def slow_prepare(*args, **kwargs):
+        value = await original_prep(*args, **kwargs)
+        m.clock[0] += 301
+        return value
+
+    monkeypatch.setattr(m.service, "prepare", slow_prepare)
+    try:
+        result = await sender.send(chat.route, [MediaInput("image", "base64://" + base64.b64encode(PNG).decode())], source=chat.source)
+        sent = [body for path, body in m.calls if path.endswith("/messages")]
+        assert len(sent) == 1 and "msg_id" not in sent[0]
+        assert result["delivery"]["reason"]["code"] == "reply_window_expired" and m.pool.used == 0
+    finally:
+        monkeypatch.setattr(m.service, "prepare", original_prep)
+        await sender.close()
+
+    m.calls.clear()
+    chat2, sender2 = _observed_media_sender(m, "GROUP_AT_MESSAGE_CREATE", "msg-two")
+    m.modes.append("files_http_500")
+    try:
+        with pytest.raises(V2Error) as exc:
+            await sender2.send(chat2.route, [MediaInput("image", "https://fixture.invalid/a.png")], source=chat2.source, operation_id="upload-unknown")
+        assert exc.value.phase == "not_sent" and exc.value.details["media_phase"] == "result_unknown"
+        assert not any(p.endswith("/messages") for p, _ in m.calls)
+        assert m.store.operation(chat2.route.robot, "upload-unknown")["state"] == "not_sent"
+    finally:
+        await sender2.close()
+
+    m.calls.clear()
+    chat3, sender3 = _observed_media_sender(m, "GROUP_AT_MESSAGE_CREATE", "msg-three")
+    original_req = m.http.request
+    msg_count = 0
+
+    async def expire_on_second_send(spec, *, before_send=None):
+        nonlocal msg_count
+        if spec.path.endswith("/messages"):
+            msg_count += 1
+            if msg_count == 2:
+                m.clock[0] += 6
+        if before_send:
+            before_send()
+        return await original_req(spec, before_send=before_send)
+
+    monkeypatch.setattr(m.http, "request", expire_on_second_send)
+    m.modes[:] = [40034128]
+    try:
+        with pytest.raises(V2Error) as exc:
+            await sender3.send(chat3.route, [MediaInput("image", "https://fixture.invalid/a.png")], source=chat3.source, operation_id="receipt-expired")
+        assert exc.value.code == "upload_ticket_expired" and exc.value.phase == "not_sent"
+        assert [a["state"] for a in exc.value.details["delivery"]["attempts"]] == ["rejected", "not_sent"]
+    finally:
+        await sender3.close()

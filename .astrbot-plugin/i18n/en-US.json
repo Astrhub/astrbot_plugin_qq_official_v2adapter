@@ -1,0 +1,45 @@
+{
+  "metadata": {
+    "display_name": "QQ Official V2 Adapter",
+    "short_desc": "Message platform adapter built on the official QQ V2 API.",
+    "desc": "Independent message platform adapter built on the official QQ V2 API with native SDK, operation ledger, command menu preview, and QQ panel management."
+  },
+  "config": {
+    "webui_enabled": {
+      "description": "Enable V2 Control API",
+      "hint": "Allow AstrBot WebUI plugin views to access authenticated local management endpoints."
+    },
+    "remote_menu_sync": {
+      "description": "Remote Panel Sync Gate",
+      "hint": "Allow confirmed managed QQ command panels to synchronize with stable local command catalogs."
+    },
+    "profile_max_records": {
+      "description": "Profile Cache Max Records",
+      "hint": "Maximum number of cached group and member profile records."
+    },
+    "profile_max_bytes": {
+      "description": "Profile Cache Max Bytes",
+      "hint": "Maximum byte budget for cached group and member profile records."
+    },
+    "profile_stale_seconds": {
+      "description": "Profile Stale Seconds",
+      "hint": "Seconds before a cached profile is marked stale for refresh."
+    },
+    "profile_cooldown_seconds": {
+      "description": "Profile Failure Cooldown Seconds",
+      "hint": "Cooldown seconds after an upstream profile query failure or denial."
+    }
+  },
+  "views": {
+    "control": {
+      "title": "QQ Official V2 Console",
+      "description": "Manage QQ V2 instance connections, 4-layer local menu drafts, and QQ panel synchronization via ControlAPI."
+    }
+  },
+  "pages": {
+    "control": {
+      "title": "QQ Official V2 Console",
+      "description": "Manage QQ V2 instance connections, 4-layer local menu drafts, and QQ panel synchronization via ControlAPI."
+    }
+  }
+}

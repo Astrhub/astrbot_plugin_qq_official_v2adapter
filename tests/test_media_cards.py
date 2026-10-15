@@ -141,3 +141,19 @@ async def test_aggregate_does_not_convert_trailing_card_into_text_or_replay_full
     with pytest.raises(V2Error):
         await stream.send(chat.route, fragments(), source=chat.source, use_fallback=True)
     assert media.calls == []
+
+
+
+async def test_media_card_accepts_native_astrbot_image_component(media):
+    from astrbot.core.message.components import Image
+
+    from v2.messaging.cards import media_card
+    core, chat = sending_core(media)
+    component = media_card(Image.fromURL("https://assets.test/native-card.png"), KEYBOARD)
+    assert type(component) is Json
+    result = await core.send(chat.route, MessageChain([component]), source=chat.source)
+    assert result["message_id"] == "actual-media-message"
+    assert media.calls[-1] == ("/v2/groups/group-one/messages", {
+        "msg_type": 7, "keyboard": KEYBOARD, "media": {"file_info": "actual-file-receipt"},
+        "msg_id": "msg-one", "msg_seq": 1,
+    })

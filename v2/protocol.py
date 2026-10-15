@@ -133,7 +133,24 @@ class RequestSpec:
         return url
 
 
-def decode_response(status: int, body: bytes, headers: dict, *, phase="response_received", path=None):
+RATE_LIMIT_CODES = {
+    20028, 304045, 304049, 304050, 304052, 503004,
+    610012, 610013, 620006, 1100100, 1100308, 40034100,
+}
+ONCE_RETRY_CODES = {11242, 11252, 11263, 11281}
+
+
+def extract_trace_id(headers: dict, data=None, *, forbidden=()):
+    candidate = headers.get("x-tps-trace-id")
+    if not candidate and isinstance(data, dict):
+        raw = data.get("trace_id")
+        if isinstance(raw, str) and 1 <= len(raw) <= 128 and all(32 <= ord(c) < 127 for c in raw):
+            if not any(s and s in raw for s in forbidden):
+                candidate = raw
+    return candidate
+
+
+def decode_response(status: int, body: bytes, headers: dict, *, phase="response_received", path=None, forbidden=()):
     headers = {k.lower(): v for k, v in headers.items()}
     try:
         data = json.loads(body) if body else None
@@ -142,16 +159,17 @@ def decode_response(status: int, body: bytes, headers: dict, *, phase="response_
         if 200 <= status < 300:
             raise V2Error("invalid_response", "QQ returned non-JSON content.", status=502, phase=phase,
                           http_status=status, trace_id=headers.get("x-tps-trace-id"), retry_after=headers.get("retry-after"))
-    code = data.get("code") if isinstance(data, dict) else None
+    trace_id = extract_trace_id(headers, data, forbidden=forbidden)
+    code = (data.get("code") if "code" in data else data.get("err_code")) if isinstance(data, dict) else None
     if code is not None and type(code) is not int:
         raise V2Error("invalid_response", "QQ business code is not an integer.", status=502, phase=phase,
-                      http_status=status, trace_id=headers.get("x-tps-trace-id"), retry_after=headers.get("retry-after"))
+                      http_status=status, trace_id=trace_id, retry_after=headers.get("retry-after"))
     if not 200 <= status < 300 or code not in (None, 0):
         if code not in (None, 0):
             phase = "rejected"
         if code == 40034128:
             error_code, message = "passive_quota_exhausted", "QQ rejected the passive reply time or count."
-        elif (status == 429 or code == 40034100 or
+        elif (status == 429 or code in RATE_LIMIT_CODES or
               (code == 50002 and isinstance(path, str) and path.startswith("/v2/users/") and path.endswith("/stream_messages"))):
             error_code, message = "qq_rate_limited", "QQ rate limited the request."
         else:
@@ -161,6 +179,6 @@ def decode_response(status: int, body: bytes, headers: dict, *, phase="response_
         if error_code != "qq_api_error":
             error_status = 429
         raise V2Error(error_code, message, status=error_status,
-                      business_code=code, trace_id=headers.get("x-tps-trace-id"),
+                      business_code=code, trace_id=trace_id,
                       retry_after=headers.get("retry-after"), phase=phase, http_status=status)
     return data

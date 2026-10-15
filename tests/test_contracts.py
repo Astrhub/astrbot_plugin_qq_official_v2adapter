@@ -250,3 +250,39 @@ def test_invalid_platform_config(config, field, value):
     config[field] = value
     with pytest.raises(V2Error):
         InstanceKey.from_config(config)
+
+
+
+def test_incomplete_chat_invalid_preview_and_settings_capacity(config, tmp_path, store):
+    from v2.commands import layout_preview
+    from v2.settings import DEFAULTS
+
+    for idx, data in enumerate(({"id": "m", "author": {"member_openid": "u"}},
+                                {"id": "m", "group_openid": "g", "author": "u"},
+                                {"group_openid": "g", "author": {"member_openid": "u"}})):
+        st = MessageStore(tmp_path / f"identities-{idx}", clock=lambda: NOW)
+        payload = chat_payload()
+        payload["d"] = {"timestamp": payload["d"]["timestamp"], **data}
+        envelope = RawEnvelope.parse(json.dumps(payload).encode(), now=NOW)
+        try:
+            with pytest.raises(V2Error):
+                st.observe(convert_chat(InstanceKey.from_config(config), envelope))
+            for table in ("identities", "targets", "sources"):
+                assert st.db.execute(f"SELECT count(*) FROM {table}").fetchone()[0] == 0
+        finally:
+            st.close()
+
+    for node in ({}, [], 1):
+        with pytest.raises(V2Error) as exc:
+            layout_preview({"scene": "group", "nodes": []}, DEFAULTS, node=node)
+        assert exc.value.code == "invalid_preview"
+
+    encoded = json.dumps(DEFAULTS)
+    store.db.executemany("INSERT INTO settings VALUES (?, 0, ?, 0, ?, '')", ((str(n), encoded, encoded) for n in range(256)))
+    store.db.commit()
+    with pytest.raises(V2Error) as exc:
+        store.mutate("over-limit", 0, "fixture", operation="save", patch={"title": "x"})
+    assert exc.value.code == "settings_capacity"
+    with pytest.raises(V2Error) as exc:
+        store.mutate("0", 0, "fixture", operation="restore", restore_revision=[])
+    assert exc.value.code == "invalid_settings"

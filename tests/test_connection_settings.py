@@ -193,3 +193,163 @@ async def test_new_webhook_first_load_persists_uuid_without_legacy_switch(plugin
         assert service.find_platform_by_uuid(candidate["webhook_uuid"]) is instance
     finally:
         await owner.terminate()
+
+
+
+async def test_legacy_host_form_merge_and_initialization_batch_atomicity(plugin_module, config, tmp_path):
+    import importlib
+    for environment, transport, shard in (
+        ("production", "websocket", [0, 1]),
+        ("production", "websocket", [1, 3]),
+        ("sandbox", "webhook", [0, 1]),
+    ):
+        legacy = {**config, "environment": environment, "is_sandbox": True, "transport": transport, "shard": shard}
+        legacy.pop("shard_mode", None)
+        host = HostConfig(tmp_path / f"merge-{transport}-{shard[0]}.json", legacy)
+        ctx = context()
+        ctx.get_config = lambda *args, _h=host: _h
+        owner_inst = plugin_module.QQOfficialV2(ctx, {})
+        await owner_inst.initialize()
+        try:
+            saved = host["platform"][0]
+            metadata = next(item for item in platform_registry if item.name == saved["type"])
+            merged = {**copy.deepcopy(metadata.default_config_tmpl), **copy.deepcopy(saved)}
+            models = importlib.import_module(plugin_module.__package__ + ".v2.models")
+            identity = models.InstanceKey.from_config(merged)
+            assert identity.shard_mode == "manual" and identity.shard == tuple(shard)
+            assert identity.robot.environment == "production" and identity.transport == transport
+        finally:
+            await owner_inst.terminate()
+
+    foreign = {**config, "type": "qq_official", "id": "native", "environment": "untouched", "logo_token": "native-logo", "secret": "native-fixture"}
+    legacy_ws = {**config, "id": "legacy-manual", "environment": "production", "transport": "websocket",
+                 "shard": [1, 3], "logo_token": "old-display-token"}
+    hook = {**config, "type": "qq_official_v2", "id": "legacy-hook", "appid": "hook-app", "environment": "sandbox",
+            "transport": "webhook", "unified_webhook_mode": True, "webhook_uuid": "4c4eb5e4c98340118deec38fed41bd75"}
+    host = HostConfig(tmp_path / "batch.json", legacy_ws)
+    host["platform"].extend([hook, foreign])
+    host.save_config()
+    saves = host.saves
+    ctx = context()
+    ctx.get_config = lambda *args: host
+    first = plugin_module.QQOfficialV2(ctx, {})
+    await first.initialize()
+    try:
+        assert host.saves == saves + 1 and not first.instances
+        ws, wh, other = host["platform"]
+        assert other is foreign
+        assert ws["type"] == "qq_official_v2" and ws["use_markdown"] is True and ws["shard_mode"] == "manual"
+        assert wh["type"] == "qq_official_v2_webhook" and wh["webhook_uuid"] == hook["webhook_uuid"]
+        frozen = Path(host.config_path).read_bytes()
+    finally:
+        await first.terminate()
+
+    for failure, expected_code in (
+        ("save", "config_save_failed"),
+        ("markdown", "invalid_config"),
+        ("transport", "config_conflict"),
+        ("shard", "invalid_shard"),
+        ("uuid", "invalid_webhook_uuid"),
+    ):
+        f_host = HostConfig(tmp_path / f"fail-{failure}.json", config)
+        bad = {**config, "id": "second", "transport": "webhook"}
+        if failure == "markdown":
+            bad.update(use_markdown="yes")
+        elif failure == "transport":
+            bad.update(type="qq_official_v2_webhook", transport="websocket")
+        elif failure == "shard":
+            bad.update(shard_mode="auto", shard=[1, 3])
+        elif failure == "uuid":
+            bad["webhook_uuid"] = "invalid-existing-uuid"
+        f_host["platform"].append(bad)
+        f_host.save_config()
+        f_host.fail = failure == "save"
+        before, disk, f_saves = copy.deepcopy(dict(f_host)), Path(f_host.config_path).read_bytes(), f_host.saves
+        f_ctx = context()
+        f_ctx.get_config = lambda *args, _fh=f_host: _fh
+        f_owner = plugin_module.QQOfficialV2(f_ctx, {})
+        with pytest.raises(RuntimeError) as exc:
+            await f_owner.initialize()
+        assert exc.value.code == expected_code
+        assert dict(f_host) == before and Path(f_host.config_path).read_bytes() == disk and f_host.saves == f_saves
+        assert not f_owner.instances and f_owner.messages.closed and f_owner.inbox.closed
+
+
+from test_gateway_shards import group_env as group_env  # noqa: E402
+
+
+async def test_healthy_shard_keeps_delivering_and_replying_during_peer_recovery(
+    group_env, plugin_module, tmp_path, monkeypatch
+):
+    import importlib
+    import time
+
+    from astrbot.core.message.components import Plain
+    from astrbot.core.message.message_event_result import MessageChain
+    from astrbot.core.platform.manager import PlatformManager
+    from test_messaging_state import chat_payload
+
+    e = group_env
+    e.suggestion[0] = 2
+    cfg = {**e.config, "shard_mode": "auto"}
+    host = HostConfig(tmp_path / "host.json", cfg)
+    host["platform_settings"] = {}
+    host.save_config()
+    from astrbot.core.utils.metrics import Metric
+
+    async def no_metrics(**kwargs):
+        pass
+
+    monkeypatch.setattr(Metric, "upload", no_metrics)
+    ctx, queue = context(), asyncio.Queue()
+    ctx.get_config = lambda *args: host
+    ctx.platform_manager = PlatformManager(host, queue)
+    http_module = importlib.import_module(plugin_module.__package__ + ".v2.transport.http")
+    ws_module = importlib.import_module(plugin_module.__package__ + ".v2.transport.websocket")
+    monkeypatch.setattr(http_module.HTTPTransport, "_make_session", lambda self: e.http._factory())
+    original = ws_module.Gateway.__init__
+    recovering, release = asyncio.Event(), asyncio.Event()
+
+    async def blocked_backoff(delay):
+        if delay < 15:
+            recovering.set()
+            await release.wait()
+        else:
+            await asyncio.Event().wait()
+
+    def gateway_init(self, *args, **kwargs):
+        original(self, *args, **kwargs, sleep=blocked_backoff, jitter=lambda: 0)
+
+    monkeypatch.setattr(ws_module.Gateway, "__init__", gateway_init)
+    owner_inst = plugin_module.QQOfficialV2(ctx, {})
+    await owner_inst.initialize()
+    try:
+        await ctx.platform_manager.reload(host["platform"][0])
+        instance = next(iter(owner_inst.instances))
+        for _ in range(2):
+            await asyncio.wait_for(e.handshakes.get(), 2)
+            await asyncio.wait_for(e.beats.get(), 2)
+        await e.sockets[1].close(code=4009)
+        await asyncio.wait_for(recovering.wait(), 2)
+        assert not instance.runtime_status()["online"] and instance.runtime_status()["state"] == "degraded"
+        await e.sockets[0].send_json(chat_payload(
+            message_id="healthy-peer-during-recovery", timestamp=time.time(), text="hello"
+        ))
+        event = await asyncio.wait_for(queue.get(), 1)
+        instance.sender.connected(SimpleNamespace(scene="group"))
+        instance.sender.connected(SimpleNamespace(scene="channel"))
+        event.delivery_finished()
+        assert instance.runtime_status()["message_ready"] and instance.runtime_status()["ws_available"]
+        await event.send(MessageChain([Plain("healthy group reply")]))
+        recovering.clear()
+        await e.sockets[0].close(code=4009)
+        await asyncio.wait_for(recovering.wait(), 2)
+        assert not instance.runtime_status()["ws_available"] and not instance.runtime_status()["message_ready"]
+        release.set()
+        for _ in range(2):
+            assert (await asyncio.wait_for(e.handshakes.get(), 2))["op"] == 6
+            await asyncio.wait_for(e.beats.get(), 2)
+        assert instance.runtime_status()["online"] and instance.runtime_status()["state"] == "online"
+    finally:
+        release.set()
+        await owner_inst.terminate()

@@ -65,41 +65,41 @@ async def test_legacy_panel_rate_rows_do_not_block_server_requests(panel_env):
 
 
 @pytest.mark.parametrize("stage", ["list", "detail"])
-@pytest.mark.parametrize("code,status,http_status,phase", [
-    ("network_failure", 503, None, "result_unknown"),
-    ("connect_failed", 503, None, "not_sent"),
-    ("request_deadline", 504, None, "result_unknown"),
-    ("request_capacity", 429, None, "not_sent"),
-    ("qq_rate_limited", 429, 429, "rejected"),
-    ("qq_api_error", 503, 503, "result_unknown"),
-    ("qq_api_error", 429, 429, "rejected"),
-    ("token_refresh_failed", 503, 503, "rejected"),
-    ("token_refresh_failed", 503, None, "rejected"),
-])
-async def test_panel_read_outage_recovers_automatically(panel_env, monkeypatch, stage, code, status, http_status, phase):
+async def test_panel_read_outage_recovers_automatically(panel_env, monkeypatch, stage):
     e = panel_env
     if stage == "detail":
         await enable(e)
         e.handlers[0].desc = "updated while offline"
     original = e.instance.http.request
+    for code, status, http_status, phase in (
+        ("network_failure", 503, None, "result_unknown"),
+        ("connect_failed", 503, None, "not_sent"),
+        ("request_deadline", 504, None, "result_unknown"),
+        ("request_capacity", 429, None, "not_sent"),
+        ("qq_rate_limited", 429, 429, "rejected"),
+        ("qq_api_error", 503, 503, "result_unknown"),
+        ("qq_api_error", 429, 429, "rejected"),
+        ("token_refresh_failed", 503, 503, "rejected"),
+        ("token_refresh_failed", 503, None, "rejected"),
+    ):
+        async def failed(spec, _c=code, _s=status, _hs=http_status, _p=phase, **kwargs):
+            assert spec.method == "GET"
+            raise V2Error(_c, "fixture exhausted read retries", status=_s, http_status=_hs, phase=_p)
 
-    async def failed(spec, **kwargs):
-        assert spec.method == "GET"
-        raise V2Error(code, "fixture exhausted read retries", status=status, http_status=http_status, phase=phase)
+        monkeypatch.setattr(e.instance.http, "request", failed)
+        with pytest.raises(V2Error):
+            if stage == "list":
+                await enable(e)
+            else:
+                await e.service.sync(e.instance, "group")
+        assert e.service.state(e.instance, "group").get("retry_at")
 
-    monkeypatch.setattr(e.instance.http, "request", failed)
-    with pytest.raises(V2Error):
-        if stage == "list":
-            await enable(e)
-        else:
-            await e.service.sync(e.instance, "group")
     monkeypatch.setattr(e.instance.http, "request", original)
     tick = await worker_ticks(e)
     await tick()
     assert e.service.state(e.instance, "group")["state"] == "synced"
     assert sum(c[0] == "POST" for c in e.calls) == 1
     assert sum(c[0] == "PUT" for c in e.calls) == (stage == "detail")
-
 
 async def test_panel_retry_after_does_not_hot_loop(panel_env, monkeypatch):
     e = panel_env

@@ -155,3 +155,99 @@ async def test_onebot_new_actions_are_scoped_and_writes_classified(history):
     assert ACTION_PARAMS["get_group_member_list"]["no_cache"] == "bool"
     with pytest.raises(V2Error):
         await h.client.call_action("set_group_kick_members", group_id="g", user_ids=["001"])
+
+
+
+pytest_plugins = ("test_management", "test_sdk_native_writes")
+
+
+def test_scoped_sender_at_and_known_reply_names_do_not_change_original_payload(tmp_path):
+    import copy
+
+    from astrbot.core.message.components import At, Reply
+    from test_messaging_state import NOW, chat_payload
+
+    from v2.messaging.convert import convert_chat
+    from v2.models import InstanceKey, RobotKey
+    from v2.profiles.display import enrich_chat
+    from v2.profiles.store import ProfileStore
+    from v2.protocol import RawEnvelope
+
+    for idx, (sender, quoted) in enumerate((("user-one", "quote-one"), ("000123", "000456"))):
+        identity = InstanceKey("p", RobotKey("appid"))
+        payload = chat_payload("GROUP_MESSAGE_CREATE", sender=sender, target="g", timestamp=NOW)
+        payload["d"]["author"].pop("username", None)
+        chat = convert_chat(identity, RawEnvelope(payload, NOW))
+        at = At(qq=quoted)
+        at.qq = quoted
+        reply = Reply(id="real-ref", sender_id=quoted, sender_nickname="")
+        reply.sender_id = quoted
+        unknown = Reply(id="unknown-ref", sender_id=None, sender_nickname="")
+        chat.message.message.extend([at, reply, unknown])
+        raw = copy.deepcopy(chat.message.raw_message)
+        store = ProfileStore(tmp_path / f"profiles-{idx}.sqlite3", clock=lambda: NOW)
+        try:
+            store.merge(identity.robot, "group", "other", sender, {"nickname": "Wrong group"}, source="current_chat", as_of=NOW)
+            store.merge(RobotKey("other-app"), "group", "g", quoted, {"nickname": "Wrong robot"}, source="current_chat", as_of=NOW)
+            enrich_chat(chat, store)
+            assert not chat.message.sender.nickname and not at.name and not reply.sender_nickname and not unknown.sender_nickname
+            store.merge(identity.robot, "group", "g", sender, {"nickname": "Correct sender"}, source="current_chat", as_of=NOW)
+            store.merge(identity.robot, "group", "g", quoted, {"nickname": "Historical author"}, source="chat_history", as_of=NOW - 60)
+            enrich_chat(chat, store)
+            assert chat.message.sender.nickname == "Correct sender"
+            assert at.name == reply.sender_nickname == "Historical author"
+            assert unknown.sender_id is None and not unknown.sender_nickname
+            assert chat.message.raw_message == raw
+        finally:
+            store.close()
+
+
+async def test_onebot_mutes_bulk_kick_and_blacklist_page_strategy(management, native):
+    from types import SimpleNamespace
+    from urllib.parse import urlsplit
+
+    from v2.client import ACTION_RETURNS, ClientState, V2Client
+
+    m = management
+    state = ClientState(m.http.identity)
+    state.management, state.http, state.extension_state = m.service, m.http, m.state
+    client = V2Client(m.http.identity, state=state)
+    mutes = await client.call_action("get_group_shut_list", group_id="g")
+    assert mutes[0]["user_id"] == "u"
+    result = await client.call_action("set_group_kick_members", group_id="g", user_ids=["u"],
+                                      reject_add_request=False, _qq_operation_id="ob-bulk")
+    assert result["state"] == "succeeded" and result["removed"] == ["u"]
+    repeated = await client.call_action("set_group_kick_members", group_id="g", user_ids=["u"],
+                                        reject_add_request=False, _qq_operation_id="ob-bulk")
+    assert repeated == result
+    m.policy["management_writes"] = False
+    with pytest.raises(V2Error) as disabled:
+        await client.call_action("set_group_kick_members", group_id="g", user_ids=["u"], _qq_operation_id="ob-disabled")
+    assert disabled.value.code == "management_disabled"
+
+    n = native
+    calls = []
+
+    async def request(spec, *, before_send=None):
+        if before_send:
+            before_send()
+        calls.append((spec.method, spec.url, spec.params, spec.json_body))
+        if spec.method == "GET" and urlsplit(spec.url).path.endswith("/member_blacklist"):
+            data = {"users": [{"member_openid": "001", "username": "Nick"}], "next_cursor": "next"}
+        elif spec.method == "GET":
+            data = {"strategies": [{"strategy_id": "strategy-1", "remark": "mine", "group_openids": ["another-group"], "unknown": 0}],
+                    "next_cursor": "follow-up", "official_extra": {"marker": False}}
+        else:
+            data = {"fail_openids": []}
+        return SimpleNamespace(data=data, status=200, trace_id="fixture")
+
+    n.http.request = request
+    n.client._state.management.check(write=True)
+    page = await n.client.call_action("_qq_get_group_blacklist", group_id="g", cursor="0", limit=20)
+    assert page["users"][0]["member_openid"] == "001"
+    strategies = await n.client.call_action("_qq_get_join_approval_strategies", limit=10)
+    assert ACTION_RETURNS["_qq_get_join_approval_strategies"] == ["strategies", "next_cursor"]
+    assert strategies["next_cursor"] == "follow-up"
+    res2 = await n.client.call_action("_qq_set_group_blacklist", group_id="g", op="add", user_ids=["001"],
+                                      _qq_operation_id="ob-blacklist")
+    assert res2 == {"fail_openids": []}

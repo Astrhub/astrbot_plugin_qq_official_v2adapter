@@ -26,7 +26,7 @@
 
 ## 页面预览
 
-Vue 控制页候选实现提供连接状态、SDK 能力、本地菜单和 QQ 面板的统一入口。下面用同一份示例数据展示桌面和手机宽度下的布局；手机端会将内容卡片按纵向排列，方便触屏操作。
+Vue 控制页提供连接状态、SDK 能力、四层本地菜单和 QQ 面板的统一入口，界面配色、亮暗主题与中英文语言实时跟随 AstrBot 本体 WebUI。下面用同一份示例数据展示桌面和手机宽度下的布局；手机端会将内容卡片按纵向排列，方便触屏操作。
 
 > [!NOTE]
 > 图片只展示页面结构和响应式排版，使用内存示例数据。
@@ -46,7 +46,7 @@ Vue 控制页候选实现提供连接状态、SDK 能力、本地菜单和 QQ �
   </tr>
 </table>
 
-正式的 Plugin Pages 入口仍是 `pages/control`；Vue 源码和迁移阶段的构建产物分别位于 `dash/` 和 `pages/test`。
+正式的插件视图入口是 `pages/control/index.html`（单文件内联构建产物），Vue 源码位于 `dash/`，多语言与视图元数据位于 `.astrbot-plugin/i18n/`。
 
 ## 安装
 
@@ -165,7 +165,7 @@ v2menu kb
 
 ## Vue 控制页面开发
 
-稳定的 Plugin Pages 入口是 `pages/control/index.html`。`dash/` 是 Vue 源码，迁移阶段的实验构建产物可以输出到 `pages/test`；实验页面不会替代 `control`，也不应当被文档当作正式入口。前端开发、ControlAPI 接口和统一操作调度见[Vue 控制页面与 SDK 集成](docs/development/vue-control-page.md)。
+稳定的插件视图入口是 `pages/control/index.html`，由 `dash/` 下的 Vue 源码单文件构建生成，亮暗主题与中英文界面自动跟随 AstrBot 本体 WebUI。前端开发、ControlAPI 接口和统一操作调度见[Vue 控制页面与 SDK 集成](docs/development/vue-control-page.md)。
 
 ## 限制与排障
 

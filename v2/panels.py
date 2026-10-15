@@ -1,6 +1,7 @@
 """Opt-in robot-wide panel ownership; unknown writes reconcile without recreation."""
 import asyncio
 import copy
+import fnmatch
 import hashlib
 import json
 import math
@@ -15,7 +16,29 @@ from .errors import V2Error
 from .extensions.state import digest as ledger_digest
 from .messaging.store import robot_key
 from .models import SCENES, SessionRoute, text_id
-from .protocol import RequestSpec
+from .protocol import ONCE_RETRY_CODES, RequestSpec
+
+
+def routed_configs(context, identity, scene):
+    base_umo = str(SessionRoute(identity.robot, scene, "*").public_session(identity.platform_id, sender="*"))
+    plat, msg_type, _ = base_umo.split(":", 2)
+    try:
+        primary = context.get_config(base_umo)
+    except TypeError:
+        primary = context.get_config()
+    configs = [primary]
+    manager = getattr(context, "astrbot_config_mgr", None)
+    confs = getattr(manager, "confs", {}) or {}
+    router = getattr(manager, "ucr", None)
+    routing = getattr(router, "umop_to_conf_id", None)
+    if isinstance(routing, dict):
+        for pattern, conf_id in routing.items():
+            parts = pattern.split(":", 2) if isinstance(pattern, str) else []
+            if len(parts) == 3 and (parts[0] in ("", "*") or fnmatch.fnmatchcase(plat, parts[0])) and (parts[1] in ("", "*") or fnmatch.fnmatchcase(msg_type, parts[1])):
+                cfg = confs.get(conf_id)
+                if cfg is not None and all(cfg is not item for item in configs):
+                    configs.append(cfg)
+    return configs
 
 
 def digest(value):
@@ -23,8 +46,9 @@ def digest(value):
 
 
 def retry_time(error, now):
-    transient = (error.business_code is None or error.code == "qq_rate_limited") and (
+    transient = (error.business_code is None or error.code == "qq_rate_limited" or error.business_code in ONCE_RETRY_CODES) and (
         error.code in {"connect_failed", "network_failure", "request_deadline", "request_capacity", "qq_rate_limited"}
+        or error.business_code in ONCE_RETRY_CODES
         or error.code == "qq_api_error" and error.http_status in {408, 429, 500, 502, 503, 504}
         or error.code == "token_refresh_failed" and (error.http_status or error.status) in {408, 429, 500, 502, 503, 504})
     if not transient:
@@ -138,8 +162,7 @@ class PanelService:
                 umo = str(route.public_session(instance.identity.platform_id))
                 configs.append(context.get_config(umo))
         else:
-            manager = getattr(context, "astrbot_config_mgr", None)
-            configs = list(getattr(manager, "confs", {}).values()) or [context.get_config()]
+            configs = routed_configs(context, instance.identity, scene)
         catalogs = [collect_catalog(config, scene, context=context) for config in configs]
         first = copy.deepcopy(catalogs[0])
         first["scope_variants"] = catalogs
@@ -149,7 +172,9 @@ class PanelService:
         selected = {n for p in settings["panels"].values() if p["mode"] == "custom" for n in p["selected"]}
         nodes = {}
         for scene in SCENES:
-            nodes.update({n["id"]: n for n in collect_catalog(self.owner.context.get_config(), scene, context=self.owner.context)["nodes"]})
+            cfgs = routed_configs(self.owner.context, instance.identity, scene)
+            cfg = next((c for c in cfgs if isinstance(c, dict) and c.get("plugin_set") != []), cfgs[0])
+            nodes.update({n["id"]: n for n in collect_catalog(cfg, scene, context=self.owner.context)["nodes"]})
         key = instance.identity.settings_key
         current = dict(self.owner.store.db.execute("SELECT handler,binding FROM command_bindings WHERE settings_key=?", (key,)))
         changes = [identity for identity in selected if identity not in nodes or current.get(identity) != nodes[identity]["binding"]]

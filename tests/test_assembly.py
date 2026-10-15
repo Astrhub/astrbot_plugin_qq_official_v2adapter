@@ -21,7 +21,7 @@ async def test_real_astrbot_assembly(config, monkeypatch, qq_reject_server, qq_p
     plugin_dir = Path("/work/data/plugins") / PLUGIN_NAME
     plugin_dir.parent.mkdir(parents=True, exist_ok=True)
     plugin_dir.mkdir()
-    for entry in ("main.py", "api.py", "metadata.yaml", "_conf_schema.json", "requirements.txt", "assets", "v2", "pages"):
+    for entry in ("main.py", "api.py", "metadata.yaml", "_conf_schema.json", "requirements.txt", ".astrbot-plugin", "assets", "v2", "pages"):
         source = Path("/plugin") / entry
         if source.is_dir():
             shutil.copytree(source, plugin_dir / entry)
@@ -216,10 +216,8 @@ async def test_real_astrbot_assembly(config, monkeypatch, qq_reject_server, qq_p
             assert page.status_code == 200 and page.json()["status"] == "ok", page.text
             asset_params = {"plugin_id": PLUGIN_NAME, "page_name": "control", "asset_path": "index.html"}
             content = await client.get("/api/v1/plugins/page/assets", params=asset_params, headers=headers)
-            assert content.status_code == 200 and "bridge-sdk.js" in content.text and "app.js" in content.text
-            asset_params["asset_path"] = "app.js"
-            js = await client.get("/api/v1/plugins/page/assets", params=asset_params, headers=headers)
-            assert js.status_code == 200 and "window.AstrBotPluginPage" in js.text
+            assert content.status_code == 200 and "bridge-sdk.js" in content.text
+            assert "window.AstrBotPluginView" in content.text and "window.AstrBotPluginPage" in content.text
             asset_params["asset_path"] = "../../main.py"
             response = await client.get("/api/v1/plugins/page/assets", params=asset_params, headers=headers)
             assert response.status_code != 200 or "QQOfficialV2" not in response.text
@@ -328,6 +326,7 @@ async def test_real_astrbot_assembly(config, monkeypatch, qq_reject_server, qq_p
             response = await client.post(prefix + "/connection/save", json={**network_save, "confirm_network_writes": True}, headers=headers)
             assert response.status_code == 200, response.text
             connection = response.json()
+            new_owner.config["onebot_network_enabled"] = True
             response = await client.post(prefix + "/connection/reload", json={"csrf": boot2["csrf"], "platform_id": target, "fingerprint": connection["fingerprint"], "confirm": True}, headers=headers)
             assert response.status_code == 200, response.text
             hook_instance = next(i for i in new_owner.instances if i.identity.platform_id == target)

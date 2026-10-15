@@ -141,3 +141,59 @@ def test_per_owner_limit_still_counts_all_unprocessed_dispositions(tmp_path):
 def test_tombstone_capacity_must_be_a_positive_integer(tmp_path, limit):
     with pytest.raises(ValueError):
         RawInbox(tmp_path / "raw.sqlite3", max_tombstones=limit)
+
+
+
+pytest_plugins = ("test_lifecycle", "test_messaging_delivery")
+
+
+def _retain_item(inbox, owner, number, invalid=False):
+    payload = {"op": 0, "t": "CUSTOM_EVENT", "id": f"event-{number}", "d": {"secret": "private-body-marker"}}
+    assert inbox.accept(owner, RawEnvelope(payload, NOW))
+    rec = next(row["receipt"] for row in inbox.pending(owner) if row["payload"] == payload)
+    inbox.retain(owner, rec, "fixture_reason", invalid=invalid)
+    return rec
+
+
+async def test_connection_notices_bad_ready_and_retained_discard_recovery(receiver, tmp_path):
+    owner, instance = receiver
+    key = instance.identity.settings_key
+    for n in range(100):
+        ev = "READY" if n % 2 == 0 else "RESUMED"
+        data = {"session_id": "fixture-session", "user": {"id": "real-bot"}} if ev == "READY" else {}
+        assert owner.inbox.accept(key, RawEnvelope({"op": 0, "t": ev, "d": data, "id": f"connection-{n}"}, NOW))
+        assert instance.consumer.step()
+    assert owner.inbox.count(key) == 0 and instance.bot_id == "real-bot"
+
+    for number, ev_obj in enumerate([{"op": 0, "t": "READY", "d": {}}, {"op": 7, "t": "READY", "d": {}}, {"op": 0, "t": "INTERACTION_CREATE", "d": {}}]):
+        owner.inbox.accept(key, RawEnvelope({**ev_obj, "id": f"bad-{number}"}, NOW))
+        assert instance.consumer.step()
+    assert len(owner.inbox.retained_summary(key)) == 3
+
+    import json
+    inbox = RawInbox(tmp_path / "recovery.db", clock=lambda: NOW)
+    try:
+        for n in range(255):
+            _retain_item(inbox, "owner", n, invalid=n % 2 == 0)
+        assert inbox.accept("owner", RawEnvelope(chat_payload(), NOW))
+        with pytest.raises(V2Error) as exc:
+            inbox.accept("owner", RawEnvelope(chat_payload(message_id="later"), NOW))
+        assert exc.value.code == "inbox_full"
+        rows = inbox.retained_summary("owner")
+        assert len(rows) == 255 and "private-body-marker" not in json.dumps(rows)
+        selected = [{k: row[k] for k in ("receipt", "version")} for row in rows]
+        assert inbox.discard_retained("owner", selected) == 255
+        assert inbox.count("owner") == 1
+
+        rec1 = _retain_item(inbox, "one", 1)
+        row1 = inbox.retained_summary("one")[0]
+        chosen = [{"receipt": rec1, "version": row1["version"]}]
+        for bad_owner, sel in [("two", chosen), ("one", chosen * 2), ("one", [{"receipt": True, "version": row1["version"]}])]:
+            with pytest.raises(V2Error):
+                inbox.discard_retained(bad_owner, sel)
+        inbox.retain("one", rec1, "changed_reason")
+        with pytest.raises(V2Error) as exc:
+            inbox.discard_retained("one", chosen)
+        assert exc.value.code == "inbox_snapshot_changed"
+    finally:
+        inbox.close()

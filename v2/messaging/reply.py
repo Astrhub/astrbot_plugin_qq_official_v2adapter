@@ -31,9 +31,11 @@ class ReplyDelivery:
             return None
         return self.source if self.source is not None else self.fallback
 
-    def finish_attempt(self, outcome, error=None):
+    def finish_attempt(self, outcome, error=None, *, trace_id=None):
         attempt = self.data["attempts"][-1]
         attempt["state"] = outcome
+        if trace_id is not None:
+            attempt["trace_id"] = trace_id
         if error is not None:
             attempt.update(code=error.code, business_code=error.business_code, http_status=error.http_status, trace_id=error.trace_id)
         return copy.deepcopy(self.data)

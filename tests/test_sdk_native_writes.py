@@ -250,59 +250,57 @@ async def test_c2c_input_notify_and_channel_dm_fields_preserved(native):
     assert invalid.value.code == "invalid_source"
 
 
-@pytest.mark.parametrize("name,args,url,method,body", [
-    ("recall_group_message", ("g", "m"), "https://api.bot.qq.com/v2/groups/g/messages/m", "DELETE", None),
-    ("recall_c2c_message", ("u", "m"), "https://api.bot.qq.com/v2/users/u/messages/m", "DELETE", None),
-    ("recall_message", ("c", "m"), "https://api.bot.qq.com/channels/c/messages/m?hidetip=false", "DELETE", None),
-    ("recall_dms", ("dm", "m"), "https://api.bot.qq.com/dms/dm/messages/m?hidetip=false", "DELETE", None),
-    ("patch_guild_message", ("c", "m"), "https://api.bot.qq.com/channels/c/messages/m", "PATCH", {}),
-    ("create_dms", ("guild", "user"), "https://api.bot.qq.com/users/@me/dms", "POST",
-     {"recipient_id": "user", "source_guild_id": "guild"}),
-])
-async def test_native_mutations_are_scoped_and_reuse_extension_ledger(native, name, args, url, method, body):
-    m = native
-    result = await getattr(m.client.api, name)(*args, operation_id="action")
-    assert m.calls[-1][:3] == (method, url, body)
-    if name == "create_dms":
-        assert result["extra"] is True
-        assert m.extension.operation(m.client.identity.robot, "action")["result"] == {"guild_id": "DM-1"}
-    else:
-        assert result == {}
-    m.policy["management_writes"] = False
-    with pytest.raises(V2Error) as disabled:
-        await getattr(m.client.qq, name)(*args, operation_id="action")
-    assert disabled.value.code == "management_disabled" and len(m.calls) == 1
+async def test_native_mutations_are_scoped_reuse_ledger_and_allow_offline_rest(native):
+    for name, args, url, method, body in (
+        ("recall_group_message", ("g", "m"), "https://api.bot.qq.com/v2/groups/g/messages/m", "DELETE", None),
+        ("recall_c2c_message", ("u", "m"), "https://api.bot.qq.com/v2/users/u/messages/m", "DELETE", None),
+        ("recall_message", ("c", "m"), "https://api.bot.qq.com/channels/c/messages/m?hidetip=false", "DELETE", None),
+        ("recall_dms", ("dm", "m"), "https://api.bot.qq.com/dms/dm/messages/m?hidetip=false", "DELETE", None),
+        ("patch_guild_message", ("c", "m"), "https://api.bot.qq.com/channels/c/messages/m", "PATCH", {}),
+        ("create_dms", ("guild", "user"), "https://api.bot.qq.com/users/@me/dms", "POST",
+         {"recipient_id": "user", "source_guild_id": "guild"}),
+    ):
+        m = native
+        m.calls.clear()
+        m.policy["management_writes"] = True
+        op_id = f"action-{name}"
+        result = await getattr(m.client.api, name)(*args, operation_id=op_id)
+        assert m.calls[-1][:3] == (method, url, body)
+        if name == "create_dms":
+            assert result["extra"] is True
+            assert m.extension.operation(m.client.identity.robot, op_id)["result"] == {"guild_id": "DM-1"}
+        else:
+            assert result == {}
+        m.policy["management_writes"] = False
+        with pytest.raises(V2Error) as disabled:
+            await getattr(m.client.qq, name)(*args, operation_id=op_id)
+        assert disabled.value.code == "management_disabled" and len(m.calls) == 1
 
-@pytest.mark.parametrize("name,args,url,body", [
-    ("recall_group_message", ("g", "m"), "https://api.bot.qq.com/v2/groups/g/messages/m", None),
-    ("recall_c2c_message", ("u", "m"), "https://api.bot.qq.com/v2/users/u/messages/m", None),
-    ("recall_message", ("c", "m"), "https://api.bot.qq.com/channels/c/messages/m?hidetip=false", None),
-    ("recall_dms", ("dm", "m"), "https://api.bot.qq.com/dms/dm/messages/m?hidetip=false", None),
-    ("patch_guild_message", ("c", "m"), "https://api.bot.qq.com/channels/c/messages/m", {}),
-])
-async def test_offline_receiver_does_not_block_rest_recall_or_patch(native, name, args, url, body):
     m = native
+    m.policy["management_writes"] = True
     m.client._state.sender.is_online = lambda: False
     m.client._state.sender.ws_online = lambda: False
-    result = await getattr(m.client.qq, name)(*args, operation_id="offline-rest")
-    assert result == {}
-    assert m.calls == [("PATCH" if name == "patch_guild_message" else "DELETE", url, body, None)]
+    for name, args, url, body in (
+        ("recall_group_message", ("g", "m"), "https://api.bot.qq.com/v2/groups/g/messages/m", None),
+        ("recall_c2c_message", ("u", "m"), "https://api.bot.qq.com/v2/users/u/messages/m", None),
+        ("recall_message", ("c", "m"), "https://api.bot.qq.com/channels/c/messages/m?hidetip=false", None),
+        ("recall_dms", ("dm", "m"), "https://api.bot.qq.com/dms/dm/messages/m?hidetip=false", None),
+        ("patch_guild_message", ("c", "m"), "https://api.bot.qq.com/channels/c/messages/m", {}),
+    ):
+        m.calls.clear()
+        result = await getattr(m.client.qq, name)(*args, operation_id=f"offline-{name}")
+        assert result == {}
+        assert m.calls == [("PATCH" if name == "patch_guild_message" else "DELETE", url, body, None)]
     with pytest.raises(V2Error) as sending:
         await m.client.qq.post_group_message("g", content="offline", operation_id="offline-send")
-    assert sending.value.code == "transport_not_ready" and len(m.calls) == 1
+    assert sending.value.code == "transport_not_ready"
     with pytest.raises(V2Error) as channel_send:
         await m.client.qq.post_message("c", content="offline", operation_id="offline-channel")
-    assert channel_send.value.code == "channel_ws_required" and len(m.calls) == 1
-    m.policy["management_writes"] = False
-    with pytest.raises(V2Error) as disabled:
-        await getattr(m.client.qq, name)(*args, operation_id="disabled")
-    assert disabled.value.code == "management_disabled" and len(m.calls) == 1
-    m.policy["management_writes"] = True
+    assert channel_send.value.code == "channel_ws_required"
     m.http.check = lambda: (_ for _ in ()).throw(V2Error("service_stopped", "fixture", status=503))
     with pytest.raises(V2Error) as stopped:
-        await getattr(m.client.qq, name)(*args, operation_id="http-closed")
-    assert stopped.value.code == "service_stopped" and len(m.calls) == 1
-
+        await m.client.qq.recall_group_message("g", "m", operation_id="http-closed")
+    assert stopped.value.code == "service_stopped"
 
 
 async def test_native_write_alias_conflict_and_unknown_result_never_replayed(native):
@@ -494,3 +492,88 @@ async def test_caller_stream_ownership_and_multipart_body(native, tmp_path):
         caller.close()
         await media.close()
         pool.close()
+
+
+async def test_native_write_real_transport_keeps_literal_origin(native):
+    from v2.transport.http import HTTPTransport
+
+    cases = [
+        ("post_group_message", ("g/1",), {"content": "hi"}, "POST", "https://api.bot.qq.com/v2/groups/g%2F1/messages", {"msg_type": 0, "content": "hi"}),
+        ("post_c2c_message", ("u/1",), {"content": "hi"}, "POST", "https://api.bot.qq.com/v2/users/u%2F1/messages", {"msg_type": 0, "content": "hi"}),
+        ("post_c2c_stream_message", ("u/1", "hello", 0), {"msg_id": "old"}, "POST", "https://api.bot.qq.com/v2/users/u%2F1/stream_messages", {"input_mode": "append", "input_state": 1, "index": 0, "content_type": "text", "content_raw": "hello", "msg_id": "old", "msg_seq": 1}),
+        ("post_message", ("c/1",), {"content": "hi"}, "POST", "https://api.bot.qq.com/channels/c%2F1/messages", {"content": "hi"}),
+        ("post_keyboard_message", ("c/1",), {"keyboard": {"id": "template"}}, "POST", "https://api.bot.qq.com/channels/c%2F1/messages", {"keyboard": {"id": "template"}}),
+        ("post_dms", ("dm/1",), {"content": "hi"}, "POST", "https://api.bot.qq.com/dms/dm%2F1/messages", {"content": "hi"}),
+        ("recall_group_message", ("g/1", "m/1"), {}, "DELETE", "https://api.bot.qq.com/v2/groups/g%2F1/messages/m%2F1", None),
+        ("recall_c2c_message", ("u/1", "m/1"), {}, "DELETE", "https://api.bot.qq.com/v2/users/u%2F1/messages/m%2F1", None),
+        ("recall_message", ("c/1", "m/1"), {"hidetip": True}, "DELETE", "https://api.bot.qq.com/channels/c%2F1/messages/m%2F1?hidetip=true", None),
+        ("recall_dms", ("dm/1", "m/1"), {"hidetip": False}, "DELETE", "https://api.bot.qq.com/dms/dm%2F1/messages/m%2F1?hidetip=false", None),
+        ("create_dms", ("g/1", "u/1"), {}, "POST", "https://api.bot.qq.com/users/@me/dms", {"recipient_id": "u/1", "source_guild_id": "g/1"}),
+        ("patch_guild_message", ("c/1", "m/1"), {"markdown": {"content": "hi"}}, "PATCH", "https://api.bot.qq.com/channels/c%2F1/messages/m%2F1", {"markdown": {"content": "hi"}}),
+        ("post_group_file", ("g/1", 1, "https://cdn.test/image.png"), {}, "POST", "https://api.bot.qq.com/v2/groups/g%2F1/files", {"file_type": 1, "url": "https://cdn.test/image.png", "srv_send_msg": False}),
+        ("post_c2c_file", ("u/1", 1, "https://cdn.test/image.png"), {"srv_send_msg": True}, "POST", "https://api.bot.qq.com/v2/users/u%2F1/files", {"file_type": 1, "url": "https://cdn.test/image.png", "srv_send_msg": True}),
+        ("post_group_upload_prepare", ("g/1", 1, "2", "pic.png", "a" * 32, "b" * 40, "c" * 32), {}, "POST", "https://api.bot.qq.com/v2/groups/g%2F1/upload_prepare", {"file_type": 1, "file_size": "2", "file_name": "pic.png", "md5": "a" * 32, "sha1": "b" * 40, "md5_10m": "c" * 32}),
+        ("post_c2c_upload_part_finish", ("u/1", "task", 0, "2", "d" * 32), {}, "POST", "https://api.bot.qq.com/v2/users/u%2F1/upload_part_finish", {"upload_id": "task", "part_index": 0, "block_size": "2", "md5": "d" * 32}),
+    ]
+    calls = []
+    current_payload = [{}]
+
+    class Response:
+        status = 200
+        headers = {}
+
+        @property
+        def content(self):
+            class Stream:
+                async def iter_chunked(self, size):
+                    yield json.dumps(current_payload[0]).encode()
+            return Stream()
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+    class Session:
+        def request(self, verb, destination, **kwargs):
+            calls.append((verb, destination, kwargs))
+            return Response()
+
+        async def close(self):
+            pass
+
+    async def token_provider(*, rejected=None):
+        return "token-fixture"
+
+    transport = HTTPTransport(native.client.identity, "", session_factory=Session, token_provider=token_provider)
+    native.client._state.http = transport
+    native.client._state.sender.http = transport
+    try:
+        for name, args, options, method, url, body in cases:
+            calls.clear()
+            if name == "create_dms":
+                current_payload[0] = {"guild_id": "dm-1", "extra": True}
+            elif name.endswith("file"):
+                current_payload[0] = {"file_info": "temporary-file-info", "ttl": 0}
+                if options.get("srv_send_msg"):
+                    current_payload[0]["id"] = "sent-file"
+            elif name.endswith("upload_prepare"):
+                current_payload[0] = {"upload_id": "task-001", "parts": [{"index": 0, "presigned_url": "https://upload.test/secret"}]}
+            elif name.endswith("upload_part_finish"):
+                current_payload[0] = {}
+            elif name.startswith("post_"):
+                current_payload[0] = {"id": "stream-001" if name == "post_c2c_stream_message" else "message-001", "extra": False}
+            else:
+                current_payload[0] = {}
+            result = await getattr(native.client.qq, name)(*args, **options)
+            assert result == current_payload[0], name
+            assert len(calls) == 1 and calls[0][0:2] == (method, url), name
+            assert calls[0][2]["headers"]["Authorization"] == "QQBot token-fixture"
+            assert calls[0][2]["allow_redirects"] is False
+            if body is not None:
+                assert calls[0][2]["json"] == body, name
+            else:
+                assert "json" not in calls[0][2], name
+    finally:
+        await transport.close()

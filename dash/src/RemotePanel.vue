@@ -1,13 +1,40 @@
 <script setup>
 import { computed, ref } from "vue";
+import AbSelect from "./AbSelect.vue";
+import { t, tState } from "./i18n.js";
 
-const props = defineProps({ api: { type: Object, required: true }, state: { type: Object, required: true }, busy: Boolean });
+const props = defineProps({
+  api: { type: Object, required: true },
+  state: { type: Object, required: true },
+  busy: Boolean,
+  confirm: { type: Function, required: true },
+});
 const emit = defineEmits(["status", "run"]);
 const output = ref(null);
 const plan = ref(null);
 const retained = ref(null);
 const picked = ref([]);
+
 const remoteState = computed(() => props.state.current?.remote_state?.[props.state.scene] || { state: "not_managed" });
+const targetTypeOptions = computed(() => [
+  { value: "all", label: t("remote.targetAll") },
+  { value: "specific", label: t("remote.targetSpecific") },
+]);
+
+const activeInfo = computed(() => {
+  const src = output.value || remoteState.value || {};
+  const st = src.state?.state || src.state || remoteState.value.state || "not_managed";
+  const panelId = src.panel_id || src.state?.panel_id || remoteState.value.panel_id || "";
+  const pending = src.pending || src.state?.pending || remoteState.value.pending || null;
+  const error = (typeof src.error === "object" && src.error) || (typeof remoteState.value.error === "object" && remoteState.value.error) || null;
+  const issues = src.issues || [];
+  const items = src.payload?.panel?.items || [];
+  const fingerprint = src.fingerprint || src.plan_fingerprint || remoteState.value.plan_fingerprint || "";
+  const revision = src.applied_revision ?? remoteState.value.applied_revision ?? "—";
+  const catalogVer = src.catalog_version || remoteState.value.catalog_version || "—";
+  return { st, panelId, pending, error, issues, items, fingerprint, revision, catalogVer };
+});
+
 function options() {
   return {
     target_type: props.state.panelTargetType,
@@ -17,43 +44,43 @@ function options() {
 }
 async function toggleGate() {
   const enabled = !props.state.boot.flags?.remote_menu_sync;
-  if (!window.confirm(enabled ? "打开远端同步总闸？后续稳定目录变化会按确认范围同步。" : "关闭远端同步总闸？已有面板保留，在途结果仍需核对。")) return;
+  if (!(await props.confirm(enabled ? t("remote.confirmGateOpen") : t("remote.confirmGateClose")))) return;
   await props.api.setFlag("remote_menu_sync", enabled);
-  emit("status", enabled ? "远端同步总闸已打开。" : "远端同步总闸已关闭。");
+  emit("status", enabled ? t("remote.gateOpened") : t("remote.gateClosed"));
 }
 async function makePlan() {
   plan.value = await props.api.planPanels(options());
   output.value = plan.value;
-  emit("status", `已生成${plan.value.issues?.length || 0}项面板检查结果。`);
+  emit("status", t("remote.plannedStatus"));
 }
 async function enable() {
-  if (!props.state.boot.flags?.remote_menu_sync) throw new Error("请先打开远端同步总闸。");
-  if (!plan.value) throw new Error("请先预览发布范围。");
-  if (plan.value.issues?.length) throw new Error("发布预览仍有问题，请先处理。");
-  if (!window.confirm(`确认托管 ${props.state.scene} / ${options().target_type} 并向 QQ 发布？`)) return;
+  if (!props.state.boot.flags?.remote_menu_sync) throw new Error(t("remote.errOpenGateFirst"));
+  if (!plan.value) throw new Error(t("remote.errPlanFirst"));
+  if (plan.value.issues?.length) throw new Error(t("remote.errPlanIssues"));
+  if (!(await props.confirm(t("remote.confirmEnable", { scene: t(`scene.${props.state.scene}`) })))) return;
   output.value = await props.api.enablePanels({ ...options(), plan_fingerprint: plan.value.fingerprint });
   plan.value = null;
-  emit("status", "已提交面板托管。");
+  emit("status", t("remote.enabledStatus"));
 }
 async function sync() {
-  if (!window.confirm("确认核对并同步当前已托管面板？未知结果不会自动重放。")) return;
+  if (!(await props.confirm(t("remote.confirmSync")))) return;
   output.value = await props.api.syncPanels();
-  emit("status", "已完成面板核对请求。");
+  emit("status", t("remote.syncedStatus"));
 }
 async function disable() {
-  if (!window.confirm("停止当前范围托管？远端已有面板不会删除。")) return;
+  if (!(await props.confirm(t("remote.confirmDisable")))) return;
   output.value = await props.api.disablePanels();
-  emit("status", "已停止当前范围托管。");
+  emit("status", t("remote.disabledStatus"));
 }
 async function loadRetained() {
   retained.value = await props.api.retained();
   picked.value = [];
 }
 async function discard() {
-  if (!retained.value) throw new Error("请先读取保留事件。");
+  if (!retained.value) throw new Error(t("remote.errLoadRetainedFirst"));
   const entries = retained.value.entries.filter(entry => picked.value.includes(entry.receipt)).map(({ receipt, version, confirmation }) => ({ receipt, version, confirmation }));
-  if (!entries.length) throw new Error("请先选择要丢弃的事件。");
-  if (!window.confirm(`永久丢弃 ${entries.length} 条保留事件？`)) return;
+  if (!entries.length) throw new Error(t("remote.errSelectRetained"));
+  if (!(await props.confirm(t("remote.confirmDiscardRetained", { count: entries.length })))) return;
   const result = await props.api.discardRetained({
     platform_id: retained.value.platform_id,
     fingerprint: retained.value.fingerprint,
@@ -63,31 +90,103 @@ async function discard() {
     confirm: true,
   });
   await loadRetained();
-  emit("status", `已明确丢弃 ${result.discarded} 条保留事件。`);
+  emit("status", t("remote.discardedStatus", { count: result.discarded }));
 }
 </script>
 
 <template>
   <section class="panel-grid remote-grid">
     <article class="card">
-      <h2>QQ 指令面板托管</h2>
-      <p class="muted">页面只提交托管意图。ControlAPI 会交给 PanelService，使用机器人锁、计划指纹、pending 和 reconcile 管理 QQ 写入。</p>
-      <div class="state-banner"><strong>当前状态：{{ remoteState.state || 'not_managed' }}</strong><span v-if="remoteState.panel_id">panel_id：{{ remoteState.panel_id }}</span><span v-if="remoteState.pending">待核对：{{ remoteState.pending.kind }}</span></div>
-      <button class="secondary" :disabled="busy" @click="emit('run', toggleGate)">{{ state.boot?.flags?.remote_menu_sync ? '关闭远端同步总闸' : '打开远端同步总闸' }}</button>
-      <label>范围<select v-model="state.panelTargetType"><option value="all">该场景全部目标</option><option value="specific">指定已观察目标</option></select></label>
-      <label>目标 OpenID<input v-model="state.panelTargets" maxlength="10400" placeholder="多个目标用逗号分隔"></label>
-      <label><input v-model="state.menuOnly" type="checkbox"> 只发布菜单入口，其余指令进入动态帮助</label>
-      <div class="actions"><button :disabled="busy" @click="emit('run', makePlan)">预览发布范围</button><button :disabled="busy" @click="emit('run', enable)">确认发布并托管</button><button class="secondary" :disabled="busy" @click="emit('run', sync)">核对 / 同步</button><button class="secondary" :disabled="busy" @click="emit('run', disable)">停止托管</button></div>
-      <pre class="status-box">{{ JSON.stringify(output || remoteState, null, 2) }}</pre>
-    </article>
-    <article class="card">
-      <h2>保留事件恢复</h2>
-      <p class="muted">只显示元数据。丢弃操作不可恢复，确认绑定当前实例和 60 秒快照。</p>
-      <button class="secondary" :disabled="busy" @click="emit('run', loadRetained)">读取保留事件</button>
-      <div v-if="retained" class="retained-list">
-        <label v-for="entry in retained.entries" :key="entry.receipt"><input v-model="picked" :value="entry.receipt" type="checkbox"> #{{ entry.receipt }} · {{ entry.event_type }} · {{ entry.state }} · {{ entry.reason }}</label>
+      <div class="card-head">
+        <h2>{{ t("remote.panelTitle") }}</h2>
+        <button type="button" class="secondary" :disabled="busy" @click="emit('run', toggleGate)">
+          {{ state.boot?.flags?.remote_menu_sync ? t("remote.gateClose") : t("remote.gateOpen") }}
+        </button>
       </div>
-      <button class="danger" :disabled="busy || !retained" @click="emit('run', discard)">明确丢弃所选事件</button>
+
+      <div class="form-grid">
+        <label>{{ t("remote.targetType") }}<AbSelect v-model="state.panelTargetType" :options="targetTypeOptions" /></label>
+        <label>{{ t("remote.targetOpenids") }}<input v-model="state.panelTargets" maxlength="10400" :placeholder="t('remote.targetPlaceholder')"></label>
+      </div>
+      <label class="check-row"><input v-model="state.menuOnly" type="checkbox"> {{ t("remote.menuOnly") }}</label>
+
+      <div class="actions" style="margin-top: 12px;">
+        <button type="button" :disabled="busy" @click="emit('run', makePlan)">{{ t("remote.planBtn") }}</button>
+        <button type="button" :disabled="busy" @click="emit('run', enable)">{{ t("remote.enableBtn") }}</button>
+        <button type="button" class="secondary" :disabled="busy" @click="emit('run', sync)">{{ t("remote.syncBtn") }}</button>
+        <button type="button" class="secondary" :disabled="busy" @click="emit('run', disable)">{{ t("remote.disableBtn") }}</button>
+      </div>
+
+      <div class="subcard">
+        <h3>{{ t("remote.inspectTitle") }}</h3>
+        <dl class="facts">
+          <div>
+            <dt>{{ t("remote.currentState") }}</dt>
+            <dd>
+              <span class="badge" :class="activeInfo.st === 'synced' ? 'badge-ok' : activeInfo.st === 'not_managed' ? 'badge-muted' : 'badge-warn'">
+                {{ tState(activeInfo.st) }}
+              </span>
+            </dd>
+          </div>
+          <div>
+            <dt>Panel ID</dt>
+            <dd><code>{{ activeInfo.panelId || "—" }}</code></dd>
+          </div>
+          <div>
+            <dt>{{ t("remote.fieldRevision") }}</dt>
+            <dd>{{ activeInfo.revision }}</dd>
+          </div>
+          <div>
+            <dt>{{ t("remote.fieldIssues") }}</dt>
+            <dd>
+              <div v-if="activeInfo.issues.length" class="chip-row">
+                <code v-for="iss in activeInfo.issues" :key="iss" class="code-tag danger-tag">{{ iss }}</code>
+              </div>
+              <span v-else class="badge badge-ok">{{ t("remote.issuesOk") }}</span>
+            </dd>
+          </div>
+        </dl>
+
+        <div v-if="activeInfo.pending" class="state-banner">
+          <span>{{ t("remote.pendingKind") }}：<strong>{{ tState(activeInfo.pending.kind) }}</strong></span>
+          <code v-if="activeInfo.pending.op_id" class="code-tag">{{ activeInfo.pending.op_id.slice(0, 12) }}</code>
+        </div>
+        <div v-if="activeInfo.error" class="state-banner">
+          <span class="code-tag danger-tag">{{ activeInfo.error.code }}</span>
+          <code v-if="activeInfo.error.business_code" class="code-tag">err={{ activeInfo.error.business_code }}</code>
+          <code v-if="activeInfo.error.trace_id" class="code-tag">trace_id={{ activeInfo.error.trace_id }}</code>
+        </div>
+
+        <h4>{{ t("remote.itemsTitle") }} ({{ activeInfo.items.length }})</h4>
+        <div v-if="activeInfo.items.length" class="panel-items-grid">
+          <div v-for="item in activeInfo.items" :key="item.name" class="panel-item-card">
+            <div class="panel-item-top">
+              <code>{{ item.name }}</code>
+              <span v-if="item.only_admin" class="badge badge-warn">{{ t("remote.adminOnly") }}</span>
+            </div>
+            <span class="muted">{{ item.desc }}</span>
+          </div>
+        </div>
+        <p v-else class="muted">{{ t("remote.noItems") }}</p>
+      </div>
+    </article>
+
+    <article class="card">
+      <div class="card-head">
+        <h2>{{ t("remote.retainedTitle") }}</h2>
+        <button type="button" class="secondary" :disabled="busy" @click="emit('run', loadRetained)">{{ t("remote.loadRetainedBtn") }}</button>
+      </div>
+      <div v-if="retained?.entries?.length" class="retained-list">
+        <label v-for="entry in retained.entries" :key="entry.receipt" class="retained-row">
+          <input v-model="picked" :value="entry.receipt" type="checkbox">
+          <code>#{{ entry.receipt }}</code>
+          <span class="badge badge-primary">{{ entry.event_type }}</span>
+          <span class="badge badge-warn">{{ tState(entry.state) }}</span>
+          <span class="muted">{{ entry.reason }}</span>
+        </label>
+      </div>
+      <p v-else class="muted" style="margin: 14px 0;">{{ t("remote.noRetained") }}</p>
+      <button type="button" class="danger" :disabled="busy || !retained?.entries?.length" @click="emit('run', discard)">{{ t("remote.discardBtn") }}</button>
     </article>
   </section>
 </template>

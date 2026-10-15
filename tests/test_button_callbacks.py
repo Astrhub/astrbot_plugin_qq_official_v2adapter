@@ -603,3 +603,267 @@ async def test_media_callback_ticket_lifecycle_tracks_message_outcome(callback_c
                 await event.bot.send(event.route, MessageChain([item]), operation_id="media-card-op")
             assert unknown.value.code == "send_result_unknown"
             assert len(calls) == 2 and not seen
+
+
+
+async def test_slow_callback_business_does_not_occupy_ack_intake(dispatch, monkeypatch):
+    s = dispatch
+    all_started, release, fresh_acked = asyncio.Event(), asyncio.Event(), asyncio.Event()
+    started = 0
+    original_acknowledge = s.service.acknowledge
+
+    async def track_ack(key, event):
+        result = await original_acknowledge(key, event)
+        if event.interaction_id == "fresh-menu" and result:
+            fresh_acked.set()
+        return result
+
+    async def slow_business(event, token):
+        nonlocal started
+        started += 1
+        if started == 8:
+            all_started.set()
+        await release.wait()
+        return "finished_unconfirmed"
+
+    monkeypatch.setattr(s.service.callbacks, "dispatch", slow_business)
+    monkeypatch.setattr(s.service, "acknowledge", track_ack)
+    try:
+        for index in range(8):
+            assert s.service.accept(interaction(
+                s.config, token="qv2cb.slow-fixture", interaction_id=f"slow-{index}",
+                event_id=f"slow-envelope-{index}",
+            ), NOW)
+        await asyncio.wait_for(all_started.wait(), 2)
+        assert len([path for method, path, _ in s.calls if method == "PUT"]) == 8
+        assert s.service.accept(interaction(
+            s.config, kind=12, interaction_id="fresh-menu", event_id="fresh-menu-envelope",
+        ), NOW)
+        await asyncio.wait_for(fresh_acked.wait(), 2)
+        assert ("PUT", "/interactions/fresh-menu", {"code": 0}) in s.calls
+    finally:
+        release.set()
+        await settle(s)
+
+
+async def test_group_callback_obeys_profile_allowlist_admin_exemption_and_session_gates(callback_case, monkeypatch):
+    from types import SimpleNamespace
+
+    from astrbot.core import sp
+    s, event, star, seen = callback_case
+    config = s.owner.context.get_config()
+    umo = event.unified_msg_origin
+    profile = {**config, "admins_id": [], "platform_settings": {
+        "enable_id_white_list": True, "id_whitelist": ["another-group"],
+        "wl_ignore_admin_on_group": False, "wl_ignore_admin_on_friend": False, "id_whitelist_log": False,
+    }}
+    monkeypatch.setattr(s.owner.context, "get_config", lambda target=None: profile if target == umo else config)
+
+    button = event.qq.callback_button(star.direct, label="确认", data="denied")
+    await event.send(MessageChain([Json(card(button))]))
+    s.service.accept(interaction(s.config, token=button["action"]["data"]), NOW)
+    await settle(s)
+    assert seen == [] and s.service.records()[0]["error"]["code"] == "callback_session_denied"
+
+    profile["admins_id"] = ["user-one"]
+    profile["platform_settings"]["wl_ignore_admin_on_group"] = True
+    button = event.qq.callback_button(star.direct, label="确认", data="admin-allowed")
+    await event.send(MessageChain([Json(card(button))]))
+    s.service.accept(interaction(s.config, token=button["action"]["data"], interaction_id="host-admin", event_id="admin-envelope"), NOW)
+    await settle(s)
+    assert seen == ["admin-allowed"] and s.service.records()[0]["business"] == "finished_unconfirmed"
+
+    profile["admins_id"] = []
+    profile["platform_settings"]["id_whitelist"] = [umo]
+    config["platform_settings"]["id_whitelist"] = ["unrelated-global"]
+    button = event.qq.callback_button(star.direct, label="确认", data="profile-allowed")
+    await event.send(MessageChain([Json(card(button))]))
+    s.service.accept(interaction(s.config, token=button["action"]["data"], interaction_id="profile", event_id="profile-envelope"), NOW)
+    await settle(s)
+    assert seen == ["admin-allowed", "profile-allowed"]
+
+    seen.clear()
+    button = event.qq.callback_button(star.direct, label="确认", data="session-off")
+    await event.send(MessageChain([Json(card(button))]))
+    await sp.put_async("umo", umo, "session_service_config", {"session_enabled": False})
+    try:
+        s.service.accept(interaction(s.config, token=button["action"]["data"], interaction_id="sess-off", event_id="sess-off-env"), NOW)
+        await settle(s)
+        assert not seen and s.service.records()[0]["error"]["code"] == "callback_session_disabled"
+    finally:
+        await sp.remove_async("umo", umo, "session_service_config")
+
+    button = event.qq.callback_button(star.direct, label="确认", data="plugin-off")
+    await event.send(MessageChain([Json(card(button))]))
+    await sp.put_async("umo", umo, "session_plugin_config", {umo: {"disabled_plugins": ["third-party-buttons"]}})
+    try:
+        s.service.accept(interaction(s.config, token=button["action"]["data"], interaction_id="session-plugin", event_id="session-plugin-envelope"), NOW)
+        await settle(s)
+        assert not seen and s.service.records()[0]["business"] == "rejected"
+    finally:
+        await sp.remove_async("umo", umo, "session_plugin_config")
+
+
+async def test_c2c_callback_obeys_friend_allowlist_and_host_admin_exemption(callback_case):
+    s, _, star, seen = callback_case
+    accept(s.owner, s.instance, event="C2C_MESSAGE_CREATE", target="user-one", message_id="friend-gate")
+    assert s.instance.consumer.step()
+    event = s.instance._event_queue.get_nowait()
+    calls = []
+
+    async def handler(request):
+        if request.path == "/app/getAppAccessToken":
+            return web.json_response({"access_token": "friend-gate-fixture", "expires_in": 7200})
+        calls.append((request.method, request.path, await request.json()))
+        return web.Response(status=204) if request.method == "PUT" else web.json_response({"id": "friend-gate-message"})
+
+    def click(token, interaction_id):
+        frame = interaction(s.config, token=token, interaction_id=interaction_id, event_id=f"{interaction_id}-envelope")
+        frame["d"].update(scene="c2c", chat_type=2, user_openid="user-one")
+        frame["d"].pop("group_openid")
+        frame["d"].pop("group_member_openid")
+        return frame
+
+    try:
+        async with upstream(handler) as base:
+            s.instance.http._factory = lambda: MappedSession(base)
+            s.instance.ack_http._factory = lambda: MappedSession(base)
+            button = event.qq.callback_button(star.direct, label="执行", data="denied-friend")
+            await event.send(MessageChain([Json(card(button))]))
+            config = s.owner.context.get_config()
+            config["platform_settings"] = {
+                "enable_id_white_list": True, "id_whitelist": ["another-user"],
+                "wl_ignore_admin_on_group": False, "wl_ignore_admin_on_friend": False, "id_whitelist_log": False,
+            }
+            s.service.accept(click(button["action"]["data"], "friend-denied"), NOW)
+            await settle(s)
+            assert not seen and s.service.records()[0]["error"]["code"] == "callback_session_denied"
+            config["admins_id"] = ["user-one"]
+            config["platform_settings"]["wl_ignore_admin_on_friend"] = True
+            button = event.qq.callback_button(star.direct, label="执行", data="allowed-friend")
+            await event.send(MessageChain([Json(card(button))]))
+            s.service.accept(click(button["action"]["data"], "friend-admin"), NOW)
+            await settle(s)
+            assert seen == ["allowed-friend"] and s.service.records()[0]["business"] == "finished_unconfirmed"
+    finally:
+        event.cleanup_temporary_local_files()
+
+
+async def test_callback_ticket_capacity_isolated_by_appid_and_environment(callback_case):
+    import hashlib
+
+    from v2.messaging.store import robot_key
+    s, event, star, _ = callback_case
+    owner, instance = s.owner, s.instance
+    clock = [NOW]
+    owner.messages.clock = lambda: clock[0]
+    route = event.route
+    first = event.qq.callback_button(star.direct, label="执行")
+    key = robot_key(route.robot)
+    stored = owner.messages.db.execute(
+        "SELECT expires,body FROM callback_tickets WHERE token=? AND robot=?",
+        (hashlib.sha256(first["action"]["data"].encode()).hexdigest(), key),
+    ).fetchone()
+    assert stored is not None and stored["expires"] == NOW + 120
+
+    with owner.messages.transaction():
+        owner.messages.db.executemany(
+            "INSERT INTO callback_tickets VALUES(?,?,?,?,?,?,?)",
+            ((hashlib.sha256(f"qv2cb.fixture-{i:04d}".encode()).hexdigest(), key,
+              stored["expires"], 0, 0, None, stored["body"]) for i in range(4095)),
+        )
+    with pytest.raises(RuntimeError) as full:
+        event.qq.callback_button(star.direct, label="满额")
+    assert full.value.code == "ticket_capacity"
+
+    sibling_cfg = {**s.config, "id": "second-platform", "appid": "second-app"}
+    owner.context.get_config()["platform"].append(sibling_cfg)
+    sibling = owner.adapter_class(sibling_cfg, {}, asyncio.Queue())
+    s_key = sibling.identity.settings_key
+    cur = owner.store.get(s_key)
+    saved = owner.store.mutate(s_key, cur["revision"], "fixture", operation="save", patch={"extensions": {"keyboard_enabled": True}})
+    owner.store.mutate(s_key, saved["revision"], "fixture", operation="apply")
+
+    clock[0] = NOW + 119
+    sibling_route = sibling.client.route_for("group", "group-one")
+    button = sibling.extensions.callbacks.issue(sibling_route, "user-one", star.direct, label="独立")
+    ticket = button["action"]["data"]
+    sibling.extensions.callbacks.validate(sibling_route, ticket, button["action"]["permission"])
+    with pytest.raises(RuntimeError) as mismatch:
+        instance.extensions.callbacks._lookup(ticket)
+    assert mismatch.value.code == "ticket_unavailable"
+
+    clock[0] = NOW + 121
+    renewed = event.qq.callback_button(star.direct, label="已回收")
+    instance.extensions.callbacks.validate(route, renewed["action"]["data"], renewed["action"]["permission"])
+
+
+async def test_handler_fingerprint_stability_and_cross_process_reproducibility(callback_case, monkeypatch):
+    import os
+    import subprocess
+    import sys
+    import types
+    from types import SimpleNamespace
+
+    from v2.commands import binding_fingerprint
+
+    _, event, star, _ = callback_case
+    namespace = {}
+    exec(compile('def make_callback():\n    seen = []\n    async def callback(self, event):\n        seen.append(event)\n        yield event.plain_result("callback constant fixture")\n    return callback\n',
+                 "<callback-ticket-fixture>", "exec"), namespace)
+    function = star.confirm.__func__
+    monkeypatch.setattr(function, "__code__", namespace["make_callback"]().__code__)
+    constant_index = next(index for index, value in enumerate(function.__code__.co_consts)
+                          if isinstance(value, str) and value == "callback constant fixture")
+    button = event.qq.callback_button(star.confirm, label="确认")
+    retained = function.__code__.co_consts[constant_index]
+    assert retained == "callback constant fixture"
+    await event.send(MessageChain([Json(card(button))]))
+    assert event.get_extra("qq_send_result")["state"] == "sent"
+
+    nested_source = (
+        'async def callback(self, event):\n'
+        '    values = ("alpha", "beta", (7, 11))\n'
+        '    async def nested(value):\n'
+        '        return ("nested constant", values, value in {"plum", "oak", "pear", "melon", "fig", "apple", "mango"})\n'
+        '    yield await nested(event)\n'
+    )
+    ns2 = {}
+    exec(compile(nested_source, "<nested-fingerprint-fixture>", "exec"), ns2)
+    fn2 = ns2["callback"]
+    inst_obj = object()
+    plugin = SimpleNamespace(name="nested-fixture", star_cls=inst_obj)
+    handler = SimpleNamespace(handler=functools.partial(fn2, inst_obj),
+                              handler_module_path="fixture.nested", handler_full_name="fixture.nested_callback")
+    before = binding_fingerprint(plugin, handler, [], [])
+    nested = next(value for value in fn2.__code__.co_consts if isinstance(value, types.CodeType))
+    c_idx = next(index for index, value in enumerate(nested.co_consts)
+                 if isinstance(value, str) and value == "nested constant")
+    _ = (fn2.__code__.co_consts, nested.co_consts, nested.co_consts[c_idx])
+    assert binding_fingerprint(plugin, handler, [], []) == before
+
+    child = (
+        'import functools\n'
+        'from types import SimpleNamespace\n'
+        'from v2.commands import binding_fingerprint\n'
+        f'source = {nested_source!r}\n'
+        'namespace = {}\n'
+        'exec(compile(source, "<nested-fingerprint-fixture>", "exec"), namespace)\n'
+        'instance = object()\n'
+        'plugin = SimpleNamespace(name="nested-fixture", star_cls=instance)\n'
+        'handler = SimpleNamespace(handler=functools.partial(namespace["callback"], instance), '
+        'handler_module_path="fixture.nested", handler_full_name="fixture.nested_callback")\n'
+        'print(binding_fingerprint(plugin, handler, [], []))\n'
+    )
+    for seed in ("0", "random"):
+        result = subprocess.check_output(
+            [sys.executable, "-c", child], env={**os.environ, "PYTHONHASHSEED": seed}, text=True, timeout=20,
+        )
+        assert result.strip().splitlines()[-1] == before
+
+    changed = nested.replace(co_consts=tuple("changed nested result" if value == "nested constant" else value
+                                             for value in nested.co_consts))
+    fn2.__code__ = fn2.__code__.replace(co_consts=tuple(changed if value is nested else value
+                                                        for value in fn2.__code__.co_consts))
+    handler.handler = functools.partial(fn2, inst_obj)
+    assert binding_fingerprint(plugin, handler, [], []) != before

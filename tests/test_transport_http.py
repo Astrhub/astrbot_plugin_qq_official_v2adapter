@@ -188,3 +188,53 @@ async def test_stop_cancels_pending_refresh_and_closes_session(config):
         await asyncio.gather(task, return_exceptions=True)
         assert http.session.closed and http._refresh is None and task.done() and not http._active
         assert not http._token
+
+
+
+async def test_body_trace_id_err_code_public_rate_limit_and_once_retry(config, monkeypatch):
+    import v2.transport.http as http_mod
+
+    warnings = []
+    monkeypatch.setattr(http_mod.logger, "warning", lambda msg, *a, **k: warnings.append(str(msg)))
+    step = [0]
+
+    async def handler(request):
+        if request.path == "/app/getAppAccessToken":
+            return web.json_response({"access_token": "token-fixture-123", "expires_in": 7200})
+        step[0] += 1
+        if step[0] == 1:
+            return web.json_response({"id": "ok-1", "trace_id": "body-trace-ok"})
+        if step[0] == 2:
+            return web.json_response({"err_code": 11252, "trace_id": "once-retry-1"}, status=400)
+        if step[0] == 3:
+            return web.json_response({"id": "ok-after-once-retry", "trace_id": "once-retry-2"})
+        if step[0] in (4, 5):
+            return web.json_response({"code": 11281, "trace_id": f"twice-fail-{step[0]}"}, status=400)
+        return web.json_response({"err_code": 20028, "trace_id": "rate-trace-1"}, status=200)
+
+    async with upstream(handler) as base:
+        http = HTTPTransport(InstanceKey.from_config(config), config["secret"],
+                             session_factory=lambda: MappedSession(base), sleep=lambda _: asyncio.sleep(0))
+        try:
+            res1 = await http.request(spec(config, "GET"))
+            assert res1.trace_id == "body-trace-ok"
+
+            res2 = await http.request(spec(config, "GET"))
+            assert res2.data["id"] == "ok-after-once-retry" and res2.trace_id == "once-retry-2"
+            assert step[0] == 3
+
+            with pytest.raises(V2Error) as once_exhausted:
+                await http.request(spec(config, "GET"))
+            assert once_exhausted.value.business_code == 11281
+            assert once_exhausted.value.trace_id == "twice-fail-5"
+            assert step[0] == 5
+            assert any("trace_id=twice-fail-5" in m and "business_code=11281" in m for m in warnings)
+
+            with pytest.raises(V2Error) as rate_limited:
+                await http.request(spec(config, "POST"))
+            assert rate_limited.value.code == "qq_rate_limited"
+            assert rate_limited.value.business_code == 20028
+            assert rate_limited.value.trace_id == "rate-trace-1"
+            assert any("trace_id=rate-trace-1" in m and "business_code=20028" in m for m in warnings)
+        finally:
+            await http.close()
