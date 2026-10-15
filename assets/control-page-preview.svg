@@ -1,0 +1,230 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="820" viewBox="0 0 1280 820" role="img" aria-label="QQ 官方 V2 控制台预览">
+  <defs>
+    <style>
+      .bg { fill: #ffffff; }
+      .subtle { fill: #f8fafc; stroke: #e2e8f0; stroke-width: 1; }
+      .card { fill: #ffffff; stroke: #e2e8f0; stroke-width: 1; }
+      .sidebar { fill: #ffffff; stroke: #e5e7eb; stroke-width: 1; }
+      .header { fill: #ffffff; stroke: #e5e7eb; stroke-width: 1; }
+      .primary { fill: #3c96ca; }
+      .primary-soft { fill: #eef2f6; }
+      .badge-ok-bg { fill: #e6f9ee; }
+      .badge-ok-fg { fill: #00a846; font: 700 11px "PingFang SC", "Noto Sans CJK SC", "Microsoft YaHei", sans-serif; }
+      .input { fill: #ffffff; stroke: #cbd5e1; stroke-width: 1; }
+      .title { fill: #1b1c1d; font: 700 15px "Outfit", "PingFang SC", "Noto Sans CJK SC", "Microsoft YaHei", sans-serif; }
+      .h2 { fill: #1b1c1d; font: 700 16px "Outfit", "PingFang SC", "Noto Sans CJK SC", "Microsoft YaHei", sans-serif; }
+      .h3 { fill: #1b1c1d; font: 700 13px "Outfit", "PingFang SC", "Noto Sans CJK SC", "Microsoft YaHei", sans-serif; }
+      .nav { fill: #5f6368; font: 600 13px "PingFang SC", "Noto Sans CJK SC", "Microsoft YaHei", sans-serif; }
+      .nav-active { fill: #3c96ca; font: 700 13px "PingFang SC", "Noto Sans CJK SC", "Microsoft YaHei", sans-serif; }
+      .body { fill: #1b1c1d; font: 500 13px "PingFang SC", "Noto Sans CJK SC", "Microsoft YaHei", sans-serif; }
+      .muted { fill: #64748b; font: 500 12px "PingFang SC", "Noto Sans CJK SC", "Microsoft YaHei", sans-serif; }
+      .label { fill: #475569; font: 600 12px "PingFang SC", "Noto Sans CJK SC", "Microsoft YaHei", sans-serif; }
+      .pill-text { fill: #1b1c1d; font: 600 12px "Outfit", "PingFang SC", "Noto Sans CJK SC", sans-serif; }
+      .mono { fill: #0f172a; font: 600 12px "JetBrains Mono", "SFMono-Regular", Consolas, monospace; }
+      .btn-text { fill: #ffffff; font: 600 13px "PingFang SC", "Noto Sans CJK SC", "Microsoft YaHei", sans-serif; }
+      .btn-sec-text { fill: #1b1c1d; font: 600 13px "PingFang SC", "Noto Sans CJK SC", "Microsoft YaHei", sans-serif; }
+    </style>
+  </defs>
+
+  <!-- App Background -->
+  <rect width="1280" height="820" rx="12" class="bg"/>
+  <rect x="0.5" y="0.5" width="1279" height="819" rx="12" fill="none" stroke="#dbe2ea"/>
+
+  <!-- Left-Flush Sidebar (AstrBot style) -->
+  <rect x="1" y="1" width="216" height="818" class="sidebar"/>
+  <circle cx="24" cy="30" r="4.5" fill="#00c853"/>
+  <text x="36" y="35" class="title">QQ 官方 V2 控制台</text>
+  <line x1="12" y1="52" x2="204" y2="52" stroke="#eef2f6"/>
+
+  <!-- Nav Items -->
+  <g transform="translate(10, 64)">
+    <rect width="196" height="38" rx="8" class="primary-soft"/>
+    <rect x="0" y="8" width="3.5" height="22" rx="2" class="primary"/>
+    <text x="34" y="24" class="nav-active">连接与接入</text>
+    <circle cx="20" cy="19" r="5" fill="none" stroke="#3c96ca" stroke-width="1.8"/>
+  </g>
+  <g transform="translate(10, 108)">
+    <rect width="196" height="38" rx="8" fill="transparent"/>
+    <line x1="14" y1="14" x2="26" y2="14" stroke="#64748b" stroke-width="1.8" stroke-linecap="round"/>
+    <line x1="14" y1="19" x2="26" y2="19" stroke="#64748b" stroke-width="1.8" stroke-linecap="round"/>
+    <line x1="14" y1="24" x2="22" y2="24" stroke="#64748b" stroke-width="1.8" stroke-linecap="round"/>
+    <text x="34" y="24" class="nav">本地菜单与策略</text>
+  </g>
+  <g transform="translate(10, 152)">
+    <rect width="196" height="38" rx="8" fill="transparent"/>
+    <rect x="14" y="12" width="13" height="14" rx="2" fill="none" stroke="#64748b" stroke-width="1.8"/>
+    <text x="34" y="24" class="nav">QQ 面板与恢复</text>
+  </g>
+  <g transform="translate(10, 196)">
+    <rect width="196" height="38" rx="8" fill="transparent"/>
+    <path d="M16 15 L12 19 L16 23 M22 15 L26 19 L22 23" fill="none" stroke="#64748b" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="34" y="24" class="nav">SDK 能力清单</text>
+  </g>
+
+  <!-- Right Main Wrap: Top Header -->
+  <rect x="217" y="1" width="1062" height="76" class="header"/>
+  <g transform="translate(238, 16)">
+    <!-- Runtime Strip Pills -->
+    <rect x="0" y="0" width="218" height="26" rx="6" class="subtle"/>
+    <circle cx="13" cy="13" r="4" fill="#00c853"/>
+    <text x="24" y="17" class="pill-text">qq_v2 · AppID 102030405</text>
+
+    <rect x="226" y="0" width="88" height="26" rx="6" class="subtle"/>
+    <text x="238" y="17" class="pill-text">运行：在线</text>
+
+    <rect x="322" y="0" width="88" height="26" rx="6" class="subtle"/>
+    <text x="334" y="17" class="pill-text">消息：就绪</text>
+
+    <rect x="418" y="0" width="86" height="26" rx="6" class="subtle"/>
+    <text x="430" y="17" class="pill-text">分片：1/1</text>
+
+    <text x="2" y="46" class="muted">已加载实例配置</text>
+  </g>
+
+  <!-- Header Right Toolbar (AbSelect Comboboxes) -->
+  <g transform="translate(836, 14)">
+    <text x="0" y="11" class="muted">实例 ID</text>
+    <rect x="0" y="16" width="164" height="34" rx="8" class="input"/>
+    <text x="12" y="37" class="body">qq_v2</text>
+    <path d="M144 31 L149 36 L154 31" fill="none" stroke="#64748b" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+
+    <text x="174" y="11" class="muted">场景</text>
+    <rect x="174" y="16" width="146" height="34" rx="8" class="input"/>
+    <text x="186" y="37" class="body">群聊</text>
+    <path d="M300 31 L305 36 L310 31" fill="none" stroke="#64748b" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+
+    <rect x="330" y="16" width="76" height="34" rx="8" class="primary-soft" stroke="#dbe2ea"/>
+    <text x="355" y="37" class="btn-sec-text">刷新</text>
+  </g>
+
+  <!-- Main Workspace Area: Left Card (Runtime & Gateway Status) -->
+  <g transform="translate(238, 96)">
+    <rect width="460" height="696" rx="10" class="card"/>
+    <text x="20" y="34" class="h2">运行与网关状态</text>
+
+    <!-- 2x2 Facts Grid -->
+    <rect x="20" y="50" width="204" height="62" rx="8" class="subtle"/>
+    <text x="32" y="70" class="muted">接入方式</text>
+    <text x="32" y="96" class="h3">WebSocket</text>
+
+    <rect x="236" y="50" width="204" height="62" rx="8" class="subtle"/>
+    <text x="248" y="70" class="muted">凭据状态</text>
+    <rect x="248" y="80" width="54" height="22" rx="11" class="badge-ok-bg"/>
+    <text x="258" y="95" class="badge-ok-fg">已配置</text>
+
+    <rect x="20" y="122" width="204" height="62" rx="8" class="subtle"/>
+    <text x="32" y="142" class="muted">运行状态</text>
+    <rect x="32" y="152" width="44" height="22" rx="11" class="badge-ok-bg"/>
+    <text x="42" y="167" class="badge-ok-fg">在线</text>
+
+    <rect x="236" y="122" width="204" height="62" rx="8" class="subtle"/>
+    <text x="248" y="142" class="muted">消息通道</text>
+    <rect x="248" y="152" width="44" height="22" rx="11" class="badge-ok-bg"/>
+    <text x="258" y="167" class="badge-ok-fg">就绪</text>
+
+    <!-- Gateway Shards Visual Subcard -->
+    <rect x="20" y="200" width="420" height="114" rx="9" class="subtle"/>
+    <text x="34" y="224" class="h3">WebSocket 网关分片</text>
+    <rect x="382" y="209" width="44" height="22" rx="11" class="badge-ok-bg"/>
+    <text x="392" y="224" class="badge-ok-fg">在线</text>
+
+    <text x="34" y="250" class="muted">建议分片 <tspan fill="#1b1c1d" font-weight="700">1</tspan></text>
+    <text x="122" y="250" class="muted">计划分片 <tspan fill="#1b1c1d" font-weight="700">1</tspan></text>
+    <text x="210" y="250" class="muted">已连接 <tspan fill="#1b1c1d" font-weight="700">1</tspan></text>
+
+    <rect x="34" y="264" width="164" height="36" rx="7" class="card"/>
+    <text x="46" y="286" class="mono">[0, 1]</text>
+    <rect x="142" y="271" width="44" height="22" rx="11" class="badge-ok-bg"/>
+    <text x="152" y="286" class="badge-ok-fg">在线</text>
+
+    <!-- QR Code Onboarding Box -->
+    <line x1="20" y1="334" x2="440" y2="334" stroke="#eef2f6"/>
+    <text x="20" y="362" class="h3">QQ 扫码接入</text>
+    <text x="20" y="384" class="muted">扫码获取并填充凭据，保存后需启用并重载实例。</text>
+
+    <rect x="134" y="404" width="192" height="192" rx="8" class="card"/>
+    <g fill="#1e293b" transform="translate(154, 424)">
+      <rect x="0" y="0" width="42" height="42"/>
+      <rect x="6" y="6" width="30" height="30" fill="#ffffff"/>
+      <rect x="12" y="12" width="18" height="18"/>
+      <rect x="110" y="0" width="42" height="42"/>
+      <rect x="116" y="6" width="30" height="30" fill="#ffffff"/>
+      <rect x="122" y="12" width="18" height="18"/>
+      <rect x="0" y="110" width="42" height="42"/>
+      <rect x="6" y="116" width="30" height="30" fill="#ffffff"/>
+      <rect x="12" y="122" width="18" height="18"/>
+      <rect x="56" y="14" width="14" height="14"/>
+      <rect x="80" y="28" width="14" height="14"/>
+      <rect x="56" y="56" width="40" height="14"/>
+      <rect x="20" y="70" width="24" height="14"/>
+      <rect x="70" y="84" width="26" height="26"/>
+      <rect x="112" y="70" width="26" height="14"/>
+      <rect x="112" y="112" width="28" height="28"/>
+    </g>
+
+    <rect x="20" y="620" width="114" height="36" rx="8" class="primary"/>
+    <text x="40" y="643" class="btn-text">生成二维码</text>
+  </g>
+
+  <!-- Main Workspace Area: Right Card (Connection Settings Form) -->
+  <g transform="translate(716, 96)">
+    <rect width="540" height="696" rx="10" class="card"/>
+    <text x="22" y="34" class="h2">连接与实例配置</text>
+
+    <!-- AppID + Adapter Type -->
+    <text x="22" y="64" class="label">AppID</text>
+    <rect x="22" y="72" width="240" height="36" rx="8" class="input"/>
+    <text x="34" y="95" class="mono">102030405</text>
+
+    <text x="278" y="64" class="label">适配器类型</text>
+    <rect x="278" y="72" width="240" height="36" rx="8" class="input"/>
+    <text x="290" y="95" class="body">WebSocket</text>
+    <path d="M498 88 L503 93 L508 88" fill="none" stroke="#64748b" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+
+    <!-- Checkboxes -->
+    <rect x="22" y="124" width="16" height="16" rx="4" class="primary"/>
+    <path d="M26 132 L29 135 L35 129" fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="46" y="137" class="body">默认使用官方 Markdown 发送文本</text>
+
+    <rect x="22" y="152" width="16" height="16" rx="4" class="primary"/>
+    <path d="M26 160 L29 163 L35 157" fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="46" y="165" class="body">启用此平台实例</text>
+
+    <!-- Intents -->
+    <text x="22" y="196" class="label">事件意图掩码 (Intents)</text>
+    <rect x="22" y="204" width="496" height="36" rx="8" class="input"/>
+    <text x="34" y="227" class="mono">1174409216</text>
+
+    <!-- WebSocket Sharding Fieldset -->
+    <rect x="22" y="258" width="496" height="92" rx="10" class="subtle"/>
+    <text x="36" y="280" class="h3">WebSocket 分片</text>
+    <text x="36" y="302" class="label">分片模式</text>
+    <rect x="36" y="308" width="468" height="34" rx="8" class="input"/>
+    <text x="48" y="330" class="body">自动（按官方建议）</text>
+    <path d="M484 323 L489 328 L494 323" fill="none" stroke="#64748b" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+
+    <!-- AppSecret Action + New Secret -->
+    <text x="22" y="378" class="label">AppSecret 操作</text>
+    <rect x="22" y="386" width="240" height="36" rx="8" class="input"/>
+    <text x="34" y="409" class="body">保留现有凭据</text>
+    <path d="M242 402 L247 407 L252 402" fill="none" stroke="#64748b" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+
+    <text x="278" y="378" class="label">新的 AppSecret</text>
+    <rect x="278" y="386" width="240" height="36" rx="8" class="input"/>
+    <text x="290" y="409" class="muted">保留现有凭据时留空</text>
+
+    <!-- Confirm Checkboxes -->
+    <rect x="22" y="440" width="16" height="16" rx="4" class="input"/>
+    <text x="46" y="453" class="body">确认替换或清空 AppSecret</text>
+
+    <rect x="22" y="468" width="16" height="16" rx="4" class="input"/>
+    <text x="46" y="481" class="body">确认修改已绑定的 AppID</text>
+
+    <!-- Save & Reload Buttons -->
+    <rect x="22" y="510" width="104" height="36" rx="8" class="primary"/>
+    <text x="48" y="533" class="btn-text">保存配置</text>
+
+    <rect x="136" y="510" width="104" height="36" rx="8" class="primary-soft" stroke="#dbe2ea"/>
+    <text x="162" y="533" class="btn-sec-text">重载实例</text>
+  </g>
+</svg>
