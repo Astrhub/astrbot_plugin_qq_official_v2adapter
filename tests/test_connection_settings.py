@@ -240,7 +240,6 @@ async def test_legacy_host_form_merge_and_initialization_batch_atomicity(plugin_
         assert other is foreign
         assert ws["type"] == "qq_official_v2" and ws["use_markdown"] is True and ws["shard_mode"] == "manual"
         assert wh["type"] == "qq_official_v2_webhook" and wh["webhook_uuid"] == hook["webhook_uuid"]
-        frozen = Path(host.config_path).read_bytes()
     finally:
         await first.terminate()
 

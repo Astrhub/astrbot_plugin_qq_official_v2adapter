@@ -647,7 +647,6 @@ async def test_slow_callback_business_does_not_occupy_ack_intake(dispatch, monke
 
 
 async def test_group_callback_obeys_profile_allowlist_admin_exemption_and_session_gates(callback_case, monkeypatch):
-    from types import SimpleNamespace
 
     from astrbot.core import sp
     s, event, star, seen = callback_case

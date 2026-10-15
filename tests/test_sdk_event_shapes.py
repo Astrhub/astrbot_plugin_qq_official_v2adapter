@@ -1,6 +1,5 @@
 """Documented QQ dispatch samples remain typed without losing wire extras."""
 
-import pytest
 
 from v2.sdk.event_types import SHAPES
 from v2.sdk.events import EventContext, NativeEvent

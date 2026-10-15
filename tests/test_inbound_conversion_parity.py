@@ -184,7 +184,7 @@ def test_attachment_classification_and_dangerous_url_isolation(config, forbid_me
         ({"content_type": 42}, File, None, None),
     ]
     items = [{"url": f"https://fixture.invalid/{i}/download.wav", **item}
-             for i, (item, _, _, _) in enumerate(cases)]
+             for i, (item, *_) in enumerate(cases)]
     for event in ("GROUP_MESSAGE_CREATE", "C2C_MESSAGE_CREATE"):
         for context in ("body", "quote"):
             payload = chat_payload(event, text="current")

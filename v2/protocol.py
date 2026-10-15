@@ -144,9 +144,8 @@ def extract_trace_id(headers: dict, data=None, *, forbidden=()):
     candidate = headers.get("x-tps-trace-id")
     if not candidate and isinstance(data, dict):
         raw = data.get("trace_id")
-        if isinstance(raw, str) and 1 <= len(raw) <= 128 and all(32 <= ord(c) < 127 for c in raw):
-            if not any(s and s in raw for s in forbidden):
-                candidate = raw
+        if isinstance(raw, str) and 1 <= len(raw) <= 128 and all(32 <= ord(c) < 127 for c in raw) and not any(s and s in raw for s in forbidden):
+            candidate = raw
     return candidate
 
 
