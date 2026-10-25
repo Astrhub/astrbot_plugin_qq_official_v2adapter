@@ -9,6 +9,7 @@ This file defines the shared contribution and review contract. Base requirements
 - `pages/control/` contains plain HTML, CSS, and JavaScript; `assets/` includes the platform icon and its license.
 - `tests/` holds regression tests and host assembly helpers; `scripts/` contains the isolated runner.
 - `_conf_schema.json` defines settings, `metadata.yaml` declares compatibility, and `docs/ONEBOT.md` documents network integration.
+- `docs/qqbot-wiki-v2/` is the tracked QQ Bot API V2 mirror; start with `README.md`, and use `MIRROR_AUDIT.md` and `MANIFEST.json` for provenance and per-page metadata.
 
 ## Build, Test, and Development Commands
 
@@ -31,6 +32,8 @@ Use four-space Python indentation, `snake_case` functions/modules, `PascalCase` 
 ## Testing Guidelines
 
 Use pytest/pytest-asyncio, `test_*.py` files, and `test_<behavior>` functions. Page tests invoke Node. Always use the isolated runner; tests reject execution outside its sandbox. Cover changed behavior with temporary stores and local upstream fixtures. No numeric coverage threshold is configured.
+
+Do not add tests for documentation mirrors; behavior tests must not depend on documentation paths, source labels, or contents.
 
 ## Review Requirements
 

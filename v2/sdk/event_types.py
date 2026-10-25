@@ -281,7 +281,7 @@ class EventShape:
     types: dict[str, object]
     documented_body: bool = True
 
-_BASE = "plan/qq-wiki-v2/develop/api-v2/"
+_BASE = "docs/qqbot-wiki-v2/develop/api-v2/"
 _AUTO = _BASE + "autogen/event/"
 _CHANNEL = _BASE + "server-inter/channel/"
 

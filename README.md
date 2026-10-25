@@ -204,6 +204,7 @@ astrbot_plugin_qq_official_v2adapter/
 
 ## 开发者文档
 
+- [QQ 官方 API V2 文档镜像（192 页）](docs/qqbot-wiki-v2/README.md)
 - [开发者文档索引](docs/README.md)
 - [SDK 使用指南](docs/development/sdk.md)
 - [Vue 控制页面与 SDK 集成](docs/development/vue-control-page.md)

@@ -4,68 +4,64 @@
 from v2.sdk.event_types import SHAPES
 from v2.sdk.events import EventContext, NativeEvent
 
-DOC = "plan/qq-wiki-v2/develop/api-v2/"
-AUTO = DOC + "autogen/event/"
-CHANNEL = DOC + "server-inter/channel/"
-CONNECTION = DOC + "dev-prepare/interface-framework/reference.md"
 
 # Each event name is a literal fixture, independent of the production event catalog.
 DOCUMENTED = [
-    ("GUILD_CREATE", {"id": "guild", "name": "guild-name", "member_count": 0}, AUTO + "guild_create.md"),
-    ("GUILD_UPDATE", {"id": "guild", "name": "renamed", "member_count": 1}, AUTO + "guild_update.md"),
-    ("GUILD_DELETE", {"id": "guild", "name": "old"}, AUTO + "guild_delete.md"),
-    ("CHANNEL_CREATE", {"id": "channel", "guild_id": "guild", "name": "channel"}, AUTO + "channel_create.md"),
-    ("CHANNEL_UPDATE", {"id": "channel", "guild_id": "guild", "name": "renamed"}, AUTO + "channel_update.md"),
-    ("CHANNEL_DELETE", {"id": "channel", "guild_id": "guild"}, AUTO + "channel_delete.md"),
-    ("GUILD_MEMBER_ADD", {"guild_id": "guild", "joined_at": "2026-01-01T00:00:00Z", "user": {"id": "u"}, "roles": ["1"]}, CHANNEL + "role/guild_member.md"),
-    ("GUILD_MEMBER_UPDATE", {"guild_id": "guild", "user": {"id": "u"}, "nick": "new"}, CHANNEL + "role/guild_member.md"),
-    ("GUILD_MEMBER_REMOVE", {"guild_id": "guild", "user": {"id": "u"}, "op_user_id": "admin"}, CHANNEL + "role/guild_member.md"),
-    ("MESSAGE_CREATE", {"id": "m", "guild_id": "guild", "channel_id": "channel", "author": {"id": "u"}, "content": "hi", "timestamp": "2026-01-01T00:00:00Z", "seq": 5}, CHANNEL + "message/event.md"),
-    ("AT_MESSAGE_CREATE", {"id": "m", "guild_id": "guild", "channel_id": "channel", "author": {"id": "u"}, "content": "@bot"}, CHANNEL + "message/event.md"),
-    ("DIRECT_MESSAGE_CREATE", {"id": "m", "guild_id": "guild", "channel_id": "dm", "author": {"id": "u"}}, CHANNEL + "message/event.md"),
-    ("MESSAGE_REACTION_ADD", {"user_id": "u", "emoji": {"id": "277", "type": 1}, "channel_id": "c", "guild_id": "g", "target": {"id": "m", "type": 0}}, DOC + "server-inter/message/trans/emoji.md"),
-    ("MESSAGE_REACTION_REMOVE", {"user_id": "u", "emoji": {"id": "277", "type": 1}, "channel_id": "c", "guild_id": "g", "target": {"id": "m", "type": 0}}, DOC + "server-inter/message/trans/emoji.md"),
-    ("GROUP_MEMBER_ADD", {"timestamp": 1784276757, "group_openid": "g", "member_openid": "u", "user_openid": "cross-app-id"}, AUTO + "group_member_add.md"),
-    ("GROUP_MEMBER_REMOVE", {"timestamp": 1784276758, "group_openid": "g", "member_openid": "u"}, AUTO + "group_member_remove.md"),
-    ("GROUP_JOIN_REQUEST", {"group_openid": "g", "join_request_id": "flag", "member_openid": "u", "apply_at": "2026-08-05T16:21:40+08:00", "apply_source": "self_apply", "verify_info": {"method": "verify_message"}}, AUTO + "group_join_request.md"),
-    ("GROUP_AT_MESSAGE_CREATE", {"id": "m", "author": {"member_openid": "u"}, "group_openid": "g", "timestamp": "2026-01-01T00:00:00Z", "mentions": [{"member_openid": "bot"}]}, AUTO + "group_at_message_create.md"),
-    ("GROUP_MESSAGE_CREATE", {"id": "m", "author": {"member_openid": "u"}, "group_openid": "g", "timestamp": "2026-01-01T00:00:00Z"}, AUTO + "group_message_create.md"),
-    ("C2C_MESSAGE_CREATE", {"id": "m", "author": {"user_openid": "u"}, "content": "hi", "timestamp": "2026-01-01T00:00:00Z"}, AUTO + "c2c_message_create.md"),
-    ("FRIEND_ADD", {"timestamp": 1784276800, "openid": "u", "scene": 1, "author": {"username": "friend"}}, AUTO + "friend_add.md"),
-    ("FRIEND_DEL", {"timestamp": 1784276801, "openid": "u"}, AUTO + "friend_del.md"),
-    ("C2C_MSG_REJECT", {"timestamp": 1784276800, "openid": "u"}, AUTO + "c2c_msg_reject.md"),
-    ("C2C_MSG_RECEIVE", {"timestamp": 1784276800, "openid": "u"}, AUTO + "c2c_msg_receive.md"),
-    ("GROUP_ADD_ROBOT", {"timestamp": 1784276800, "group_openid": "g", "op_member_openid": "admin"}, AUTO + "group_add_robot.md"),
-    ("GROUP_DEL_ROBOT", {"timestamp": 1784276800, "group_openid": "g", "op_member_openid": "admin"}, AUTO + "group_del_robot.md"),
-    ("GROUP_MSG_REJECT", {"timestamp": 1784276800, "group_openid": "g", "op_member_openid": "admin"}, AUTO + "group_msg_reject.md"),
-    ("GROUP_MSG_RECEIVE", {"timestamp": 1784276800, "group_openid": "g", "op_member_openid": "admin"}, AUTO + "group_msg_receive.md"),
-    ("INTERACTION_CREATE", {"id": "interaction", "type": 11, "scene": "group", "group_openid": "g", "timestamp": "2026-07-20T21:53:54+08:00", "data": {"resolved": {"button_id": "confirm"}}}, AUTO + "interaction_create.md"),
-    ("MESSAGE_AUDIT_PASS", {"audit_id": "audit", "audit_time": "2026-01-01T00:00:00Z", "guild_id": "g", "channel_id": "c", "message_id": "m"}, CHANNEL + "message/event.md"),
-    ("MESSAGE_AUDIT_REJECT", {"audit_id": "audit", "guild_id": "g", "channel_id": "c", "message_id": "m"}, CHANNEL + "message/event.md"),
-    ("SUBSCRIBE_MESSAGE_STATUS", {"openid": "u", "result": [{"template_id": 10001, "op": 1, "subscribe_id": "sub"}]}, AUTO + "subscribe_message_status.md"),
-    ("AUDIO_OR_LIVE_CHANNEL_MEMBER_ENTER", {"guild_id": "g", "channel_id": "c", "channel_type": 2, "user_id": "u"}, CHANNEL + "role/audio_or_live_channel_member.md"),
-    ("AUDIO_OR_LIVE_CHANNEL_MEMBER_EXIT", {"guild_id": "g", "channel_id": "c", "channel_type": 5, "user_id": "u"}, CHANNEL + "role/audio_or_live_channel_member.md"),
-    ("OPEN_FORUM_THREAD_CREATE", {"guild_id": "g", "channel_id": "c", "author_id": "u"}, CHANNEL + "content/forum/open_forum.md"),
-    ("OPEN_FORUM_THREAD_UPDATE", {"guild_id": "g", "channel_id": "c", "author_id": "u"}, CHANNEL + "content/forum/open_forum.md"),
-    ("OPEN_FORUM_THREAD_DELETE", {"guild_id": "g", "channel_id": "c", "author_id": "u"}, CHANNEL + "content/forum/open_forum.md"),
-    ("OPEN_FORUM_POST_CREATE", {"guild_id": "g", "channel_id": "c", "author_id": "u"}, CHANNEL + "content/forum/open_forum.md"),
-    ("OPEN_FORUM_POST_DELETE", {"guild_id": "g", "channel_id": "c", "author_id": "u"}, CHANNEL + "content/forum/open_forum.md"),
-    ("OPEN_FORUM_REPLY_CREATE", {"guild_id": "g", "channel_id": "c", "author_id": "u"}, CHANNEL + "content/forum/open_forum.md"),
-    ("OPEN_FORUM_REPLY_DELETE", {"guild_id": "g", "channel_id": "c", "author_id": "u"}, CHANNEL + "content/forum/open_forum.md"),
-    ("FORUM_THREAD_CREATE", {"guild_id": 47129941624960822, "channel_id": 1661124, "author_id": 144115218182563108, "thread_info": {"thread_id": "t"}}, CHANNEL + "content/forum/forum.md"),
-    ("FORUM_THREAD_UPDATE", {"guild_id": "g", "channel_id": "c", "author_id": "u", "thread_info": {"thread_id": "t"}}, CHANNEL + "content/forum/forum.md"),
-    ("FORUM_THREAD_DELETE", {"guild_id": "g", "channel_id": "c", "author_id": "u", "thread_info": {"thread_id": "t"}}, CHANNEL + "content/forum/forum.md"),
-    ("FORUM_POST_CREATE", {"guild_id": "g", "channel_id": "c", "author_id": "u", "post_info": {"thread_id": "t", "post_id": "p"}}, CHANNEL + "content/forum/forum.md"),
-    ("FORUM_POST_DELETE", {"guild_id": "g", "channel_id": "c", "author_id": "u", "post_info": {"thread_id": "t", "post_id": "p"}}, CHANNEL + "content/forum/forum.md"),
-    ("FORUM_REPLY_CREATE", {"guild_id": "g", "channel_id": "c", "author_id": "u", "reply_info": {"thread_id": "t", "post_id": "p", "reply_id": "r"}}, CHANNEL + "content/forum/forum.md"),
-    ("FORUM_REPLY_DELETE", {"guild_id": "g", "channel_id": "c", "author_id": "u", "reply_info": {"thread_id": "t", "post_id": "p", "reply_id": "r"}}, CHANNEL + "content/forum/forum.md"),
-    ("FORUM_PUBLISH_AUDIT_RESULT", {"guild_id": "g", "channel_id": "c", "author_id": "u", "thread_id": "t", "type": 1, "result": 0}, CHANNEL + "content/forum/forum.md"),
-    ("AUDIO_START", {"guild_id": "g", "channel_id": "c", "audio_url": "https://audio.test/a.mp3"}, CHANNEL + "content/audio/model.md"),
-    ("AUDIO_FINISH", {"guild_id": "g", "channel_id": "c"}, CHANNEL + "content/audio/model.md"),
-    ("AUDIO_ON_MIC", {"guild_id": "g", "channel_id": "c"}, CHANNEL + "content/audio/model.md"),
-    ("AUDIO_OFF_MIC", {"guild_id": "g", "channel_id": "c"}, CHANNEL + "content/audio/model.md"),
-    ("READY", {"session_id": "session", "user": {"id": "bot", "bot": True}, "shard": [0, 1], "version": 1}, CONNECTION),
-    ("RESUMED", "", CONNECTION),
+    ("GUILD_CREATE", {"id": "guild", "name": "guild-name", "member_count": 0}),
+    ("GUILD_UPDATE", {"id": "guild", "name": "renamed", "member_count": 1}),
+    ("GUILD_DELETE", {"id": "guild", "name": "old"}),
+    ("CHANNEL_CREATE", {"id": "channel", "guild_id": "guild", "name": "channel"}),
+    ("CHANNEL_UPDATE", {"id": "channel", "guild_id": "guild", "name": "renamed"}),
+    ("CHANNEL_DELETE", {"id": "channel", "guild_id": "guild"}),
+    ("GUILD_MEMBER_ADD", {"guild_id": "guild", "joined_at": "2026-01-01T00:00:00Z", "user": {"id": "u"}, "roles": ["1"]}),
+    ("GUILD_MEMBER_UPDATE", {"guild_id": "guild", "user": {"id": "u"}, "nick": "new"}),
+    ("GUILD_MEMBER_REMOVE", {"guild_id": "guild", "user": {"id": "u"}, "op_user_id": "admin"}),
+    ("MESSAGE_CREATE", {"id": "m", "guild_id": "guild", "channel_id": "channel", "author": {"id": "u"}, "content": "hi", "timestamp": "2026-01-01T00:00:00Z", "seq": 5}),
+    ("AT_MESSAGE_CREATE", {"id": "m", "guild_id": "guild", "channel_id": "channel", "author": {"id": "u"}, "content": "@bot"}),
+    ("DIRECT_MESSAGE_CREATE", {"id": "m", "guild_id": "guild", "channel_id": "dm", "author": {"id": "u"}}),
+    ("MESSAGE_REACTION_ADD", {"user_id": "u", "emoji": {"id": "277", "type": 1}, "channel_id": "c", "guild_id": "g", "target": {"id": "m", "type": 0}}),
+    ("MESSAGE_REACTION_REMOVE", {"user_id": "u", "emoji": {"id": "277", "type": 1}, "channel_id": "c", "guild_id": "g", "target": {"id": "m", "type": 0}}),
+    ("GROUP_MEMBER_ADD", {"timestamp": 1784276757, "group_openid": "g", "member_openid": "u", "user_openid": "cross-app-id"}),
+    ("GROUP_MEMBER_REMOVE", {"timestamp": 1784276758, "group_openid": "g", "member_openid": "u"}),
+    ("GROUP_JOIN_REQUEST", {"group_openid": "g", "join_request_id": "flag", "member_openid": "u", "apply_at": "2026-08-05T16:21:40+08:00", "apply_source": "self_apply", "verify_info": {"method": "verify_message"}}),
+    ("GROUP_AT_MESSAGE_CREATE", {"id": "m", "author": {"member_openid": "u"}, "group_openid": "g", "timestamp": "2026-01-01T00:00:00Z", "mentions": [{"member_openid": "bot"}]}),
+    ("GROUP_MESSAGE_CREATE", {"id": "m", "author": {"member_openid": "u"}, "group_openid": "g", "timestamp": "2026-01-01T00:00:00Z"}),
+    ("C2C_MESSAGE_CREATE", {"id": "m", "author": {"user_openid": "u"}, "content": "hi", "timestamp": "2026-01-01T00:00:00Z"}),
+    ("FRIEND_ADD", {"timestamp": 1784276800, "openid": "u", "scene": 1, "author": {"username": "friend"}}),
+    ("FRIEND_DEL", {"timestamp": 1784276801, "openid": "u"}),
+    ("C2C_MSG_REJECT", {"timestamp": 1784276800, "openid": "u"}),
+    ("C2C_MSG_RECEIVE", {"timestamp": 1784276800, "openid": "u"}),
+    ("GROUP_ADD_ROBOT", {"timestamp": 1784276800, "group_openid": "g", "op_member_openid": "admin"}),
+    ("GROUP_DEL_ROBOT", {"timestamp": 1784276800, "group_openid": "g", "op_member_openid": "admin"}),
+    ("GROUP_MSG_REJECT", {"timestamp": 1784276800, "group_openid": "g", "op_member_openid": "admin"}),
+    ("GROUP_MSG_RECEIVE", {"timestamp": 1784276800, "group_openid": "g", "op_member_openid": "admin"}),
+    ("INTERACTION_CREATE", {"id": "interaction", "type": 11, "scene": "group", "group_openid": "g", "timestamp": "2026-07-20T21:53:54+08:00", "data": {"resolved": {"button_id": "confirm"}}}),
+    ("MESSAGE_AUDIT_PASS", {"audit_id": "audit", "audit_time": "2026-01-01T00:00:00Z", "guild_id": "g", "channel_id": "c", "message_id": "m"}),
+    ("MESSAGE_AUDIT_REJECT", {"audit_id": "audit", "guild_id": "g", "channel_id": "c", "message_id": "m"}),
+    ("SUBSCRIBE_MESSAGE_STATUS", {"openid": "u", "result": [{"template_id": 10001, "op": 1, "subscribe_id": "sub"}]}),
+    ("AUDIO_OR_LIVE_CHANNEL_MEMBER_ENTER", {"guild_id": "g", "channel_id": "c", "channel_type": 2, "user_id": "u"}),
+    ("AUDIO_OR_LIVE_CHANNEL_MEMBER_EXIT", {"guild_id": "g", "channel_id": "c", "channel_type": 5, "user_id": "u"}),
+    ("OPEN_FORUM_THREAD_CREATE", {"guild_id": "g", "channel_id": "c", "author_id": "u"}),
+    ("OPEN_FORUM_THREAD_UPDATE", {"guild_id": "g", "channel_id": "c", "author_id": "u"}),
+    ("OPEN_FORUM_THREAD_DELETE", {"guild_id": "g", "channel_id": "c", "author_id": "u"}),
+    ("OPEN_FORUM_POST_CREATE", {"guild_id": "g", "channel_id": "c", "author_id": "u"}),
+    ("OPEN_FORUM_POST_DELETE", {"guild_id": "g", "channel_id": "c", "author_id": "u"}),
+    ("OPEN_FORUM_REPLY_CREATE", {"guild_id": "g", "channel_id": "c", "author_id": "u"}),
+    ("OPEN_FORUM_REPLY_DELETE", {"guild_id": "g", "channel_id": "c", "author_id": "u"}),
+    ("FORUM_THREAD_CREATE", {"guild_id": 47129941624960822, "channel_id": 1661124, "author_id": 144115218182563108, "thread_info": {"thread_id": "t"}}),
+    ("FORUM_THREAD_UPDATE", {"guild_id": "g", "channel_id": "c", "author_id": "u", "thread_info": {"thread_id": "t"}}),
+    ("FORUM_THREAD_DELETE", {"guild_id": "g", "channel_id": "c", "author_id": "u", "thread_info": {"thread_id": "t"}}),
+    ("FORUM_POST_CREATE", {"guild_id": "g", "channel_id": "c", "author_id": "u", "post_info": {"thread_id": "t", "post_id": "p"}}),
+    ("FORUM_POST_DELETE", {"guild_id": "g", "channel_id": "c", "author_id": "u", "post_info": {"thread_id": "t", "post_id": "p"}}),
+    ("FORUM_REPLY_CREATE", {"guild_id": "g", "channel_id": "c", "author_id": "u", "reply_info": {"thread_id": "t", "post_id": "p", "reply_id": "r"}}),
+    ("FORUM_REPLY_DELETE", {"guild_id": "g", "channel_id": "c", "author_id": "u", "reply_info": {"thread_id": "t", "post_id": "p", "reply_id": "r"}}),
+    ("FORUM_PUBLISH_AUDIT_RESULT", {"guild_id": "g", "channel_id": "c", "author_id": "u", "thread_id": "t", "type": 1, "result": 0}),
+    ("AUDIO_START", {"guild_id": "g", "channel_id": "c", "audio_url": "https://audio.test/a.mp3"}),
+    ("AUDIO_FINISH", {"guild_id": "g", "channel_id": "c"}),
+    ("AUDIO_ON_MIC", {"guild_id": "g", "channel_id": "c"}),
+    ("AUDIO_OFF_MIC", {"guild_id": "g", "channel_id": "c"}),
+    ("READY", {"session_id": "session", "user": {"id": "bot", "bot": True}, "shard": [0, 1], "version": 1}),
+    ("RESUMED", ""),
 ]
 
 # Botpy dispatches these names; their current dedicated body pages were not found.
@@ -82,11 +78,11 @@ def make_event(name, body, *, platform_id="platform", appid="app", generation="g
 
 
 def test_documented_and_sdk_compatible_event_shapes_keep_extra_fields_and_validate_types():
-    for name, body, source in DOCUMENTED:
+    for name, body in DOCUMENTED:
         sample = {**body, "future_field": {"nested": [0, False, None]}} if isinstance(body, dict) else body
         notice = make_event(name, sample)
         assert notice.known and notice.schema_valid, (name, notice.schema_missing, notice.schema_invalid)
-        assert notice.shape.source == source and notice.shape.documented_body
+        assert notice.shape is SHAPES[name]
         assert notice.typed == {"t": name, "d": sample}
         assert notice.raw()["d"] == sample and notice.payload["d"] == notice.d
         if isinstance(sample, dict):
@@ -101,8 +97,8 @@ def test_documented_and_sdk_compatible_event_shapes_keep_extra_fields_and_valida
 
     for name, body in SDK_COMPATIBILITY:
         notice = make_event(name, body)
-        assert notice.known and notice.schema_valid and not notice.shape.documented_body
-        assert "botpy 1.2.1" in notice.shape.source and notice.shape.required == ()
+        assert notice.known and notice.schema_valid
+        assert notice.shape is SHAPES[name] and notice.shape.required == ()
         assert notice.typed == {"t": name, "d": body}
 
 def test_all_fifty_six_business_events_and_connection_notices_have_an_independent_fixture():
