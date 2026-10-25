@@ -1,18 +1,28 @@
 <!-- 来源: https://bot.q.qq.com/wiki/develop/api-v2/server-inter/menu-panel/index.html · 抓取 2026-10-25 -->
 
 # 自定义菜单与指令面板
+
 机器人可在单聊场景下配置**自定义菜单**，在单聊、群聊、文字子频道、频道私信场景下配置**指令面板**，帮助用户更便捷地发现和使用机器人能力。
+
 | 自定义菜单 | 指令面板 |
 | --- | --- |
 | ![自定义菜单](https://qq-ai.cdn-go.cn/web/bot-docs/-/v1.42.0/assets/img/custom-menu.674eb658.png) | ![指令面板](https://qq-ai.cdn-go.cn/web/bot-docs/-/v1.42.0/assets/img/command-panel.4fde9574.png) |
+
 ## 自定义菜单
+
 自定义菜单展示在机器人单聊窗口底部，支持开关、发送消息、链接跳转、含子菜单的折叠项等按钮类型，设置后对所有用户生效。
+
 相关接口：
+
 - [查询全局自定义菜单](../../autogen/api/v2_menu.get.md)
 - [修改全局自定义菜单](../../autogen/api/v2_menu.put.md)
+
 ## 指令面板
+
 指令面板以面板形式展示指令或链接，支持按 c2c（单聊）、group（群聊）、channel（文字子频道）、dm（频道私信）场景生效，并可指定用户/群生效。
+
 相关接口：
+
 - [查询指令面板列表](../../autogen/api/v2_panels.get.md)
 - [创建指令面板](../../autogen/api/v2_panels.post.md)
 - [查询指令面板详情](../../autogen/api/v2_panels_panel_id.get.md)

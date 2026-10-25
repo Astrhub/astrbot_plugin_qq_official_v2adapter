@@ -1,7 +1,9 @@
 <!-- 来源: https://bot.q.qq.com/wiki/develop/api-v2/server-inter/channel/speak/setting/model.html · 抓取 2026-10-25 -->
 
 # 频道消息频率设置对象 (MessageSetting)
+
 ## MessageSetting
+
 | 字段名 | 类型 | 描述 |
 | --- | --- | --- |
 | disable_create_dm | string | 是否允许创建私信 |

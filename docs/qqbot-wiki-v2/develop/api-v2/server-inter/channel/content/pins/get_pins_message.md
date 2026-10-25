@@ -1,22 +1,35 @@
 <!-- 来源: https://bot.q.qq.com/wiki/develop/api-v2/server-inter/channel/content/pins/get_pins_message.html · 抓取 2026-10-25 -->
 
 # 获取精华消息
+
 ## 接口
+
 ```http
 GET /channels/{channel_id}/pins
 ```
+
 ## 功能描述
+
 用于获取子频道 `channel_id` 内的精华消息。
+
 ## Content-Type
+
 ```http
 application/json
 ```
+
 ## 返回
-返回 [PinsMessage](model.md#PinsMessage) 对象。
+
+返回 [PinsMessage](model.md#pinsmessage) 对象。
+
 ## 错误码
+
 详见[错误码](../../../../openapi/error/error.md)。
+
 ## 示例
+
 响应数据包
+
 ```json
 {
   "guild_id": "xxxxxx",

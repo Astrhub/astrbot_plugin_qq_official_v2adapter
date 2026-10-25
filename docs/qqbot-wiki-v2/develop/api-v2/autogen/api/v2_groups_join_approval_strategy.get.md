@@ -1,32 +1,45 @@
 <!-- 来源: https://bot.q.qq.com/wiki/develop/api-v2/autogen/api/v2_groups_join_approval_strategy.get.html · 抓取 2026-10-25 -->
 
 # 查询入群自动审批策略列表
+
 查询当前生效中的策略列表，按创建时间倒序，支持分页。
+
 ## 请求
+
 ### 基础信息
+
 | 字段 | 值 |
 | --- | --- |
 | HTTP URL | /v2/groups/join_approval_strategy |
 | HTTP Method | GET |
 | 接口频率限制 | 60 QPM |
+
 ## 请求体
+
 | 名称 | 类型 | 必填 | 描述 |
 | --- | --- | --- | --- |
 | cursor | string | 否 | 分页游标，首次请求可不传或传空串 |
 | limit | integer | 否 | 单页数量，默认 20，最大 50 |
+
 ### 请求示例
+
 ```text
 GET /v2/groups/join_approval_strategy
 
 {}
 ```
+
 ## 响应
+
 ### 响应体
+
 | 名称 | 类型 | 描述 |
 | --- | --- | --- |
-| strategies | [][JoinApprovalStrategy](#schema-joinapprovalstrategy) | 生效中的策略列表 |
+| strategies | [][JoinApprovalStrategy](#joinapprovalstrategy) | 生效中的策略列表 |
 | next_cursor | string | 下一页游标，空串表示已到末页 |
-**JoinApprovalStrategy**
+
+#### JoinApprovalStrategy
+
 | 名称 | 类型 | 描述 |
 | --- | --- | --- |
 | strategy_id | string | 策略 ID |
@@ -38,7 +51,9 @@ GET /v2/groups/join_approval_strategy
 | created_at | string | 创建时间（RFC3339 格式） |
 | updated_at | string | 最近更新时间（RFC3339 格式） |
 | remark | string | 策略备注 |
+
 ## 响应示例
+
 ```json
 {
   "strategies": [

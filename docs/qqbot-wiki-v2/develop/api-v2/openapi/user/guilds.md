@@ -8,7 +8,7 @@ GET /users/@me/guilds
 ### 功能描述
 用于获取当前用户（机器人）所加入的频道列表，支持分页。
 当 `HTTP Authorization` 中填入 `Bot Token` 是获取机器人的数据，填入 `Bearer Token` 则获取用户的数据。
-[票据说明](../../index.md#票据)。
+[票据说明](../../index.md#%E6%8E%A5%E5%85%A5%E7%A5%A8%E6%8D%AE)。
 ### Content-Type
 ```http
 application/json

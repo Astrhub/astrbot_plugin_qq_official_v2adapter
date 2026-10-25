@@ -1,17 +1,26 @@
 <!-- 来源: https://bot.q.qq.com/wiki/develop/api-v2/server-inter/message/type/ark.html · 抓取 2026-10-25 -->
 
 # 结构化卡片消息
+
 > **说明**
+>
 > 达到准入条件的开发者，向平台运营申请后获得权限。
+
 ## 发送方式
+
 选择合适的 结构化卡片消息（ARK） 模板，将模板变量以 key-value 对填充后发送。每个模板定义了自己的变量（`#XXX#`），变量类型可以是字符串、数组、URL 等。
+
 ### 数据结构
+
 消息发送接口中 `ark` 字段的结构：
+
 | 属性 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
 | template_id | int | 是 | 模板 ID，可选 23 / 24 / 37 |
 | kv | kv 数组 | 是 | `[{key: "#变量#", value: "填充值"}]`，模板变量与填充值的映射 |
+
 当变量类型为数组时，kv 元素使用 `obj` 嵌套数组结构：
+
 ```json
 {
   "key": "#LIST#",
@@ -25,7 +34,9 @@
   ]
 }
 ```
+
 ### 请求示例
+
 ```json
 {
   "ark": {
@@ -56,10 +67,15 @@
   }
 }
 ```
+
 ## 模板 23 — 链接+文本列表
+
 ![23](https://qq-ai.cdn-go.cn/web/bot-docs/-/v1.42.0/assets/img/23.dcdba41f.png)
+
 模板 id = 23。
+
 ### 模板格式
+
 ```json
 {
   "app": "com.tencent.channel.robot",
@@ -74,18 +90,24 @@
   }
 }
 ```
+
 ### 字段说明
+
 | 变量 | 类型 | 描述 |
 | --- | --- | --- |
 | #DESC# | string | 描述 |
 | #PROMPT# | string | 提示消息 |
 | #LIST# | array | 文本列表，每个元素为 `{desc, link}` |
+
 **#LIST# 元素结构**：
+
 | 字段 | 类型 | 描述 |
 | --- | --- | --- |
 | desc | string | 文本内容 |
 | link | string | 跳转链接（需提前报备），不填则仅显示文本 |
+
 ### 请求示例
+
 ```json
 {
   "ark": {
@@ -129,10 +151,15 @@
   }
 }
 ```
+
 ## 模板 24 — 文本+缩略图
+
 ![24](https://qq-ai.cdn-go.cn/web/bot-docs/-/v1.42.0/assets/img/24.4656049a.png)
+
 模板 id = 24。
+
 ### 模板格式
+
 ```json
 {
   "app": "com.tencent.channelrobot.smallpic",
@@ -151,7 +178,9 @@
   }
 }
 ```
+
 ### 字段说明
+
 | 变量 | 类型 | 描述 |
 | --- | --- | --- |
 | #DESC# | string | 描述 |
@@ -161,7 +190,9 @@
 | #IMG# | string | 图片链接 |
 | #LINK# | string | 跳转链接 |
 | #SUBTITLE# | string | 来源 |
+
 ### 请求示例
+
 ```json
 {
   "ark": {
@@ -178,10 +209,15 @@
   }
 }
 ```
+
 ## 模板 37 — 大图
+
 ![37](https://qq-ai.cdn-go.cn/web/bot-docs/-/v1.42.0/assets/img/37.2955062b.png)
+
 模板 id = 37。
+
 ### 模板格式
+
 ```json
 {
   "app": "com.tencent.imagetextbot",
@@ -198,7 +234,9 @@
   }
 }
 ```
+
 ### 字段说明
+
 | 变量 | 类型 | 描述 |
 | --- | --- | --- |
 | #PROMPT# | string | 提示消息 |
@@ -206,7 +244,9 @@
 | #METASUBTITLE# | string | 子标题 |
 | #METACOVER# | string | 大图，尺寸 975×540 |
 | #METAURL# | string | 跳转链接 |
+
 ### 请求示例
+
 ```json
 {
   "ark": {

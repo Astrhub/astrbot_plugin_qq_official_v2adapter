@@ -1,46 +1,65 @@
 <!-- 来源: https://bot.q.qq.com/wiki/develop/api-v2/autogen/api/v2_groups_group_openid_restrict_chat_setting.get.html · 抓取 2026-10-25 -->
 
 # 查询群禁言状态
+
 查询群禁言状态，包含全员禁言模式与成员级禁言列表。
+
 机器人需拥有群管理员身份。
+
 ## 请求
+
 ### 基础信息
+
 | 字段 | 值 |
 | --- | --- |
 | HTTP URL | /v2/groups/{group_openid}/restrict_chat_setting |
 | HTTP Method | GET |
 | 接口频率限制 | 30 QPM |
+
 ## 路径参数
+
 | 名称 | 类型 | 必填 | 描述 |
 | --- | --- | --- | --- |
 | group_openid | string | 是 | 群OpenID |
+
 ### 请求示例
+
 **查询群内有禁言状态**
+
 ```text
 GET /v2/groups/30584554AA2BF4E72BD3B8F27A70339D/restrict_chat_setting
 
 {}
 ```
+
 ## 响应
+
 ### 响应体
+
 | 名称 | 类型 | 描述 |
 | --- | --- | --- |
-| global_rule | [GlobalMuteRule](#schema-globalmuterule) | 群级禁言规则（全员禁言配置） |
-| members | [][MemberMuteState](#schema-membermutestate) | 当前处于禁言中的用户列表（不含已过期） |
-**GlobalMuteRule**
+| global_rule | [GlobalMuteRule](#globalmuterule) | 群级禁言规则（全员禁言配置） |
+| members | [][MemberMuteState](#membermutestate) | 当前处于禁言中的用户列表（不含已过期） |
+
+#### GlobalMuteRule
+
 | 名称 | 类型 | 描述 |
 | --- | --- | --- |
 | mode | string | 全员禁言模式：none 未开启，always 始终禁言，schedule 定时禁言(定时和周期性) |
-| schedule_rules | [][MuteScheduleRule](#schema-muteschedulerule) | 定时禁言规则列表（可包含多条） |
-| recurring_rules | [][MuteRecurringRule](#schema-muterecurringrule) | 周期禁言规则列表（可包含多条） |
-**MuteScheduleRule**
+| schedule_rules | [][MuteScheduleRule](#muteschedulerule) | 定时禁言规则列表（可包含多条） |
+| recurring_rules | [][MuteRecurringRule](#muterecurringrule) | 周期禁言规则列表（可包含多条） |
+
+#### MuteScheduleRule
+
 | 名称 | 类型 | 描述 |
 | --- | --- | --- |
 | task_id | string | 任务ID，用于标记此定时禁言任务 |
 | start_at | string | 禁言开始时间（RFC3339 格式） |
 | end_at | string | 禁言结束时间（RFC3339 格式） |
 | enabled | boolean | 此规则是否启用 |
-**MuteRecurringRule**
+
+#### MuteRecurringRule
+
 | 名称 | 类型 | 描述 |
 | --- | --- | --- |
 | task_id | string | 任务ID，用于标记此周期禁言规则 |
@@ -48,14 +67,18 @@ GET /v2/groups/30584554AA2BF4E72BD3B8F27A70339D/restrict_chat_setting
 | start_time | string | 时段开始时间，格式 HH:mm（北京时间） |
 | end_time | string | 时段结束时间，格式 HH:mm（北京时间）；若小于 start_time 表示跨天到次日 |
 | enabled | boolean | 此规则是否启用 |
-**MemberMuteState**
+
+#### MemberMuteState
+
 | 名称 | 类型 | 描述 |
 | --- | --- | --- |
 | member_openid | string | 被禁言成员的 openid |
 | mute_expire_at | string | 禁言到期时间（RFC3339 格式） |
 | username | string | 被禁言成员的昵称 |
 | union_openid | string | 用户在应用/开放平台下的统一标识（如有） |
+
 ## 响应示例
+
 ```json
 {
   "global_rule": {

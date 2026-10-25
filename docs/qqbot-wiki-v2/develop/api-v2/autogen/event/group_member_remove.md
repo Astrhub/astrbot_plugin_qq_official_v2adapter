@@ -1,21 +1,29 @@
 <!-- 来源: https://bot.q.qq.com/wiki/develop/api-v2/autogen/event/group_member_remove.html · 抓取 2026-10-25 -->
 
 # 群成员退出
+
 群成员退出或被移出群聊时触发。
+
 ## 事件
+
 | 字段 | 值 |
 | --- | --- |
 | 事件名 | GROUP_MEMBER_REMOVE |
 | Intent | GROUP_MEMBER_EVENT (1<<24) |
+
 ### 事件体
+
 | 名称 | 类型 | 描述 |
 | --- | --- | --- |
 | timestamp | integer | 事件时间戳（Unix 秒） |
 | group_openid | string | 群 OpenID |
 | member_openid | string | 退出成员的 OpenID |
 | user_openid | string | 退出成员的用户 OpenID（可能为空） |
+
 ### 事件示例
+
 **示例1**
+
 ```text
 {
   "timestamp": 1784276759,

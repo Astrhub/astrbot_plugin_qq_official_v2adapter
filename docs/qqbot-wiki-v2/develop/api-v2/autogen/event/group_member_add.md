@@ -1,20 +1,28 @@
 <!-- 来源: https://bot.q.qq.com/wiki/develop/api-v2/autogen/event/group_member_add.html · 抓取 2026-10-25 -->
 
 # 群成员加入
+
 有新成员加入群聊时触发。
+
 ## 事件
+
 | 字段 | 值 |
 | --- | --- |
 | 事件名 | GROUP_MEMBER_ADD |
 | Intent | GROUP_MEMBER_EVENT (1<<24) |
+
 ### 事件体
+
 | 名称 | 类型 | 描述 |
 | --- | --- | --- |
 | timestamp | integer | 事件时间戳（Unix 秒） |
 | group_openid | string | 群 OpenID |
 | member_openid | string | 新加入成员的 OpenID |
+
 ### 事件示例
+
 **示例1**
+
 ```text
 {
   "timestamp": 1784276757,

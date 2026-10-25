@@ -1,29 +1,41 @@
 <!-- 来源: https://bot.q.qq.com/wiki/develop/api-v2/autogen/api/v2_groups_group_id_upload_part_finish.post.html · 抓取 2026-10-25 -->
 
 # 群聊分片上传完成
+
 通知服务端某个分片已上传完成。需在每片 PUT 成功后调用。全部分片完成后，用 upload_id 作为 MediaUpload 的 upload_id 字段调一次上传接口完成合并
+
 分片上传第二步。每个分片 PUT 到预签名 URL 成功后调用，通知服务端该分片已上传完成。
 全部分片完成后，携带 upload_id 调用 /v2/groups/{group_openid}/files 完成合并。
+
 ## 请求
+
 ### 基础信息
+
 | 字段 | 值 |
 | --- | --- |
 | HTTP URL | /v2/groups/{group_id}/upload_part_finish |
 | HTTP Method | POST |
 | 接口频率限制 | 10 QPS |
+
 ## 路径参数
+
 | 名称 | 类型 | 必填 | 描述 |
 | --- | --- | --- | --- |
 | group_id | string | 是 | 群 OpenID |
+
 ## 请求体
+
 | 名称 | 类型 | 必填 | 描述 |
 | --- | --- | --- | --- |
 | upload_id | string | 否 | 上传任务 ID，来自预上传响应 |
 | part_index | integer | 否 | 分片序号，对应 UploadPart.index |
 | block_size | string | 否 | 该分块的实际大小（字节） |
 | md5 | string | 否 | 该分片的 MD5 校验值 |
+
 ### 请求示例
+
 **通知分片 0 上传完成**
+
 ```text
 POST /v2/groups/B2C3D4E5F6A1B2C3D4E5F6A1B2C3D4E5/upload_part_finish
 {
@@ -33,14 +45,21 @@ POST /v2/groups/B2C3D4E5F6A1B2C3D4E5F6A1B2C3D4E5/upload_part_finish
   "md5": "c4d8c5f3a2b1e0f9a8b7c6d5e4f3a2b1"
 }
 ```
+
 ## 响应
+
 无
+
 ## 响应示例
+
 **分片完成确认**
+
 ```json
 {}
 ```
+
 ### 错误码
+
 | 错误码 | 描述 | 排查建议 |
 | --- | --- | --- |
 | 850018 | 群被禁言或者机器人被禁言 | 请检查机器人是否被禁言 |

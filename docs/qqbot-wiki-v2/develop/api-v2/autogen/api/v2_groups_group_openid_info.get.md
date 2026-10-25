@@ -1,25 +1,37 @@
 <!-- 来源: https://bot.q.qq.com/wiki/develop/api-v2/autogen/api/v2_groups_group_openid_info.get.html · 抓取 2026-10-25 -->
 
 # 获取群基本信息
+
 获取指定群的基本信息。
+
 ## 请求
+
 ### 基础信息
+
 | 字段 | 值 |
 | --- | --- |
 | HTTP URL | /v2/groups/{group_openid}/info |
 | HTTP Method | GET |
 | 接口频率限制 | 30 QPM |
+
 ## 路径参数
+
 | 名称 | 类型 | 必填 | 描述 |
 | --- | --- | --- | --- |
 | group_openid | string | 是 | 群OpenID |
+
 ### 请求示例
+
 **获取群信息**
+
 ```text
 GET /v2/groups/3E5D8A1F7B2C9E4D6A0F1B3C5D7E9F2A/info
 ```
+
 ## 响应
+
 ### 响应体
+
 | 名称 | 类型 | 描述 |
 | --- | --- | --- |
 | group_openid | string | 群 OpenID |
@@ -28,8 +40,11 @@ GET /v2/groups/3E5D8A1F7B2C9E4D6A0F1B3C5D7E9F2A/info
 | group_class_text | string | 群分类 |
 | group_tags | []string | 群标签列表 |
 | group_member_num | integer | 群成员人数 |
+
 ## 响应示例
+
 **获取群信息**
+
 ```json
 {
   "group_openid": "3E5D8A1F7B2C9E4D6A0F1B3C5D7E9F2A",
@@ -44,7 +59,9 @@ GET /v2/groups/3E5D8A1F7B2C9E4D6A0F1B3C5D7E9F2A/info
   "group_member_num": 256
 }
 ```
+
 ### 错误码
+
 | 错误码 | 描述 | 排查建议 |
 | --- | --- | --- |
 | 11253 | 应用无接口访问权限 | 该接口仅白名单机器人可用，请联系平台运营申请权限 |

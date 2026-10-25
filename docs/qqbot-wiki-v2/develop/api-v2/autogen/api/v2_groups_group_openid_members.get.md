@@ -1,34 +1,50 @@
 <!-- 来源: https://bot.q.qq.com/wiki/develop/api-v2/autogen/api/v2_groups_group_openid_members.get.html · 抓取 2026-10-25 -->
 
 # 获取群成员列表
+
 获取群成员列表，每次最多返回 30 条，支持分页。
+
 该能力正在内邀接入中，敬请期待
+
 ## 请求
+
 ### 基础信息
+
 | 字段 | 值 |
 | --- | --- |
 | HTTP URL | /v2/groups/{group_openid}/members |
 | HTTP Method | GET |
 | 接口频率限制 | 60 QPM |
+
 ## 路径参数
+
 | 名称 | 类型 | 必填 | 描述 |
 | --- | --- | --- | --- |
 | group_openid | string | 是 | 群OpenID |
+
 ## 请求体
+
 | 名称 | 类型 | 必填 | 描述 |
 | --- | --- | --- | --- |
 | cursor | string | 否 | 分页游标，首次请求可不传或传空串；后续传上一次响应的 next_cursor |
+
 ### 请求示例
+
 ```text
 GET /v2/groups/3E5D8A1F7B2C9E4D6A0F1B3C5D7E9F2A/members?cursor=
 ```
+
 ## 响应
+
 ### 响应体
+
 | 名称 | 类型 | 描述 |
 | --- | --- | --- |
-| members | [][Member](#schema-member) | 成员列表，每次最多返回 30 条 |
+| members | [][Member](#member) | 成员列表，每次最多返回 30 条 |
 | next_cursor | string | 下一页游标，空串表示已到末页 |
-**Member**
+
+#### Member
+
 | 名称 | 类型 | 描述 |
 | --- | --- | --- |
 | member_openid | string | 成员 OpenID |
@@ -37,7 +53,9 @@ GET /v2/groups/3E5D8A1F7B2C9E4D6A0F1B3C5D7E9F2A/members?cursor=
 | bot | boolean | 是否机器人 |
 | joined_at | string | 入群时间戳（RFC3339格式） |
 | union_openid | string | 用户在应用/开放平台下的统一标识（如有） |
+
 ## 响应示例
+
 ```json
 {
     "members": [
@@ -61,7 +79,9 @@ GET /v2/groups/3E5D8A1F7B2C9E4D6A0F1B3C5D7E9F2A/members?cursor=
     "next_cursor": "bG1fNmIxOTM1NTRjNy4zMA"
 }
 ```
+
 ### 错误码
+
 | 错误码 | 描述 | 排查建议 |
 | --- | --- | --- |
 | 11253 | 应用无接口访问权限 | 该接口仅白名单机器人可用，请联系平台运营申请权限 |

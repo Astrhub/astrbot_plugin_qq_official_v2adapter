@@ -1,13 +1,21 @@
 <!-- 来源: https://bot.q.qq.com/wiki/develop/api-v2/server-inter/channel/role/guild_member.html · 抓取 2026-10-25 -->
 
 # 频道成员事件
+
 ## 内容
-在 [MemberWithGuildID](member/model.md#MemberWithGuildID) 基础上，增加 `op_user_id` 代表操作人。
+
+在 [MemberWithGuildID](member/model.md#memberwithguildid) 基础上，增加 `op_user_id` 代表操作人。
+
 注：此事件由于开发较早，尚有一些字段未标准化处理，如 `joined_at`, `roles` 请开发者适配的时候注意。晚些时候我们也会将这些字段标准化处理。
+
 ## GUILD_MEMBER_ADD
+
 ### 发送时机
+
 - 新用户加入频道
+
 ### 示例
+
 ```json
 {
     "guild_id": "200000000",
@@ -25,10 +33,15 @@
     }
 }
 ```
+
 ## GUILD_MEMBER_UPDATE
+
 ### 发送时机
+
 - 用户的频道属性发生变化，如频道昵称，或者身份组
+
 ### 示例
+
 ```json
 {
   "guild_id": "200000000",
@@ -44,10 +57,15 @@
   }
 }
 ```
+
 ## GUILD_MEMBER_REMOVE
+
 ### 发送时机
+
 - 用户离开频道
+
 ### 示例
+
 ```json
 {
     "guild_id": "200000000",

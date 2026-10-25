@@ -1,23 +1,34 @@
 <!-- 来源: https://bot.q.qq.com/wiki/develop/api-v2/autogen/api/users_me.get.html · 抓取 2026-10-25 -->
 
 # 获取机器人详情
+
 获取当前用户（机器人）的详情信息。
+
 - union_openid 和 union_user_account 需特殊申请并配置后才会返回
 - 这两个字段仅在单独拉取 member 信息时提供
+
 ## 请求
+
 ### 基础信息
+
 | 字段 | 值 |
 | --- | --- |
 | HTTP URL | /users/@me |
 | HTTP Method | GET |
 | 接口频率限制 | 50 QPS |
+
 ### 请求示例
+
 **获取当前用户信息**
+
 ```text
 GET /users/@me
 ```
+
 ## 响应
+
 ### 响应体
+
 | 名称 | 类型 | 描述 |
 | --- | --- | --- |
 | id | string | 用户 ID |
@@ -26,8 +37,11 @@ GET /users/@me
 | bot | boolean | 是否为机器人 |
 | union_openid | string | 跨应用统一用户 OpenID（需特殊申请） |
 | union_user_account | string | 跨应用统一用户账号（需特殊申请） |
+
 ## 响应示例
+
 **获取当前用户信息成功**
+
 ```json
 {
   "id": "5777414462219517083",

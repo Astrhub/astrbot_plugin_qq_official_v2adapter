@@ -1,27 +1,43 @@
 <!-- 来源: https://bot.q.qq.com/wiki/develop/api-v2/server-inter/channel/content/schedule/patch_schedule.html · 抓取 2026-10-25 -->
 
 # 修改日程
+
 ## 接口
+
 ```http
 PATCH /channels/{channel_id}/schedules/{schedule_id}
 ```
+
 ## 功能描述
+
 用于修改日程子频道 `channel_id` 下 `schedule_id` 指定的日程的详情。
+
 - 要求操作人具有`管理频道`的权限，如果是机器人，则需要将机器人设置为管理员。
+
 ## Content-Type
+
 ```http
 application/json
 ```
+
 ## 参数
+
 | 字段名 | 类型 | 描述 |
 | --- | --- | --- |
 | schedule | [Schedule](model.md#schedule) | 日程对象，不需要带 id |
+
 ## 返回
+
 返回 [Schedule](model.md#schedule) 对象。
+
 ## 错误码
+
 详见[错误码](../../../../openapi/error/error.md)。
+
 ## 示例
+
 请求数据包
+
 ```json
 {
   "schedule": {
@@ -33,7 +49,9 @@ application/json
   }
 }
 ```
+
 响应数据包
+
 ```json
 {
   "id": "xxxxxx",

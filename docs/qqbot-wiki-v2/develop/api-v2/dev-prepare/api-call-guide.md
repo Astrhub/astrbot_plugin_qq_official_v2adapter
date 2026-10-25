@@ -1,19 +1,29 @@
 <!-- 来源: https://bot.q.qq.com/wiki/develop/api-v2/dev-prepare/api-call-guide.html · 抓取 2026-10-25 -->
 
 # API 调用指南
+
 QQ 机器人开放平台提供了基于 HTTPS 协议的 OpenAPI 接口，开发者可以通过这些接口实现消息收发、群聊管理、频道管理等功能。
+
 ## 调用方式
+
 ### 统一请求地址
+
 ```text
 https://api.bot.qq.com
 ```
+
 ### 鉴权方式
+
 调用 API 时，需要将 access_token 放入请求 Header 中：
+
 ```text
 Authorization: QQBot {ACCESS_TOKEN}
 ```
+
 ### 请求示例
+
 以发送单聊消息为例：
+
 ```shell
 curl -X POST 'https://api.bot.qq.com/v2/users/A1B2C3D4E5F6A1B2C3D4E5F6A1B2C3D4/messages' \
 -H 'Authorization: QQBot {ACCESS_TOKEN}' \
@@ -24,19 +34,26 @@ curl -X POST 'https://api.bot.qq.com/v2/users/A1B2C3D4E5F6A1B2C3D4E5F6A1B2C3D4/m
   "msg_id": "previous_msg_id"
 }'
 ```
+
 ### 响应结构
+
 API 调用成功时，响应体直接返回业务数据；调用失败时，响应体包含 `err_code`、`message` 等错误信息：
+
 - **err_code**：错误码。成功时为 0
 - **message**：错误信息
 - **trace_id**：链路追踪 ID，用于问题排查
+
 **成功响应示例**：
+
 ```json
 {
   "id": "ROBOT1.0_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
   "timestamp": "2026-07-21T10:30:00+08:00"
 }
 ```
+
 **失败响应示例**：
+
 ```json
 {
   "err_code": 40034005,
@@ -44,24 +61,39 @@ API 调用成功时，响应体直接返回业务数据；调用失败时，响�
   "trace_id": "4a8a61565b909f199b1ec169fdd6f49e"
 }
 ```
+
 > **注意**
+>
 > 请不要依据 `message` 来判定一个请求是否失败，`message` 可能会随时调整，建议根据 `err_code` 判断请求是否失败。
+
 ## 唯一身份机制
+
 不同的 `bot(AppID)` 获取到的用户 `openid`，群 `openid`，频道 `openid` 均不相同，若跨业务有关联用户身份需求，后续提供跨 `AppID` 绑定后，使用类似 `unionid` 的机制打通身份。
+
 > **举例**
+>
 > - 不同 `bot` 在单聊场景，获取到的用户唯一识别 `openid` 不一样，称为 `user_openid`
 > - 不同 `bot` 在群聊场景，获取到的群唯一识别号 `openid` 不一样，称为 `group_openid`
 > - `bot` 在群聊场景，获取到用户在群内的唯一识别号，称为 `member_openid`
+
 ## 全链路追踪
+
 平台的链路追踪 `TraceID` 可通过两种方式获取：
+
 - **HTTP 响应头**：`X-Tps-trace-ID` 字段
 - **响应 Body**：返回体中的 `trace_id` 字段
+
 如果开发者有无法自行定位的问题，需要找平台协助时，可提取该 ID 提交给平台方，方便查询相关日志。
+
 ## OpenAPI 错误码
+
 错误码分为两部分：
+
 - HTTP 状态码
 - HTTP Body 返回的 JSON 中的 `err_code`
+
 ### HTTP 状态码
+
 | 值 | 含义 |
 | --- | --- |
 | 200 | 成功 |
@@ -73,8 +105,11 @@ API 调用成功时，响应体直接返回业务数据；调用失败时，响�
 | 429 | 频率限制 |
 | 500 | 处理失败 |
 | 504 | 处理失败 |
+
 ### 公共错误码
+
 > 以下为所有接口通用的公共错误码。各接口特有的错误码请查阅具体接口文档中的「错误码」章节。
+
 | 值 | 含义 |
 | --- | --- |
 | 10001 | UnknownAccount 账号异常 |

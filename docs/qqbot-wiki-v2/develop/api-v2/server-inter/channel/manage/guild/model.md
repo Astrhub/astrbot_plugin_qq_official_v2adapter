@@ -1,8 +1,11 @@
 <!-- 来源: https://bot.q.qq.com/wiki/develop/api-v2/server-inter/channel/manage/guild/model.html · 抓取 2026-10-25 -->
 
 # 频道对象(Guild)
+
 频道对象中所涉及的 ID 类数据，都仅在机器人场景流通，与真实的 ID 无关。请不要理解为真实的 ID
+
 ## Guild
+
 | 字段名 | 类型 | 描述 |
 | --- | --- | --- |
 | id | string | 频道ID |

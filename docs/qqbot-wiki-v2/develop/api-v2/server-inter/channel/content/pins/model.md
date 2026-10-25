@@ -1,7 +1,9 @@
 <!-- 来源: https://bot.q.qq.com/wiki/develop/api-v2/server-inter/channel/content/pins/model.html · 抓取 2026-10-25 -->
 
 # 精华消息对象(PinsMessage)
+
 ## PinsMessage
+
 | 字段名 | 类型 | 描述 |
 | --- | --- | --- |
 | guild_id | string | 频道 id |

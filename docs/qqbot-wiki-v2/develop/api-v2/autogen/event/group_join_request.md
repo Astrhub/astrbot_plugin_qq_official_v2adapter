@@ -1,14 +1,20 @@
 <!-- 来源: https://bot.q.qq.com/wiki/develop/api-v2/autogen/event/group_join_request.html · 抓取 2026-10-25 -->
 
 # 用户申请加群事件
+
 用户申请加群请求触发此事件
+
 1.只有当机器人是群管理员时才可以收到此事件。
+
 ## 事件
+
 | 字段 | 值 |
 | --- | --- |
 | 事件名 | GROUP_JOIN_REQUEST |
 | Intent | GROUP_MEMBER_EVENT (1<<24) |
+
 ### 事件体
+
 | 名称 | 类型 | 描述 |
 | --- | --- | --- |
 | group_openid | string | 群OpenID |
@@ -21,25 +27,34 @@
 | apply_source | string | 申请来源：self_apply 主动申请，invited 被邀请 |
 | invited_by | string | 邀请人 openid（apply_source=invited 时有效） |
 | bot | boolean | 是否为机器人账号 |
-| verify_info | [VerifyInfo](#schema-verifyinfo) | 用户入群验证方式 |
-| auto_approved | [AutoAppproved](#schema-autoappproved) | 自动审批通过的扩展信息, 只有在下行事件中会携带。 |
-**VerifyInfo**
+| verify_info | [VerifyInfo](#verifyinfo) | 用户入群验证方式 |
+| auto_approved | [AutoAppproved](#autoappproved) | 自动审批通过的扩展信息, 只有在下行事件中会携带。 |
+
+#### VerifyInfo
+
 | 名称 | 类型 | 描述 |
 | --- | --- | --- |
 | method | string | 入群验证方式：verify_message / admin_review_qa |
 | verify_message | string | 验证消息内容；仅 auth_type=verify_message 时可能携带 |
-| review_qa_list | [][ReviewQA](#schema-reviewqa) | 问答列表；仅 auth_type=admin_review_qa 时可能携带 |
-**ReviewQA**
+| review_qa_list | [][ReviewQA](#reviewqa) | 问答列表；仅 auth_type=admin_review_qa 时可能携带 |
+
+#### ReviewQA
+
 | 名称 | 类型 | 描述 |
 | --- | --- | --- |
 | question | string | 管理员设置的问题 |
 | answer | string | 申请人填写的答案 |
-**AutoAppproved**
+
+#### AutoAppproved
+
 | 名称 | 类型 | 描述 |
 | --- | --- | --- |
 | strategy_id | string | 自动审批通过的策略ID |
+
 ### 事件示例
+
 **用户申请入群申请**
+
 ```text
 {
   "group_openid": "30584554AA2BF4E72BD3B8F27A70339D",
@@ -54,7 +69,9 @@
   }
 }
 ```
+
 **其他用户邀请用户入群**
+
 ```text
 {
   "group_openid": "30584554AA2BF4E72BD3B8F27A70339D",
@@ -66,7 +83,9 @@
   "invited_by": "FE003FAF76C4817251FDC128A16753BB"
 }
 ```
+
 **用户入群申请自动申请通过**
+
 ```text
 {
   "group_openid": "30584554AA2BF4E72BD3B8F27A70339D",

@@ -1,25 +1,37 @@
 <!-- 来源: https://bot.q.qq.com/wiki/develop/api-v2/autogen/api/channels_channel_id.get.html · 抓取 2026-10-25 -->
 
 # 获取子频道详情
+
 获取指定子频道的基本信息。
+
 ## 请求
+
 ### 基础信息
+
 | 字段 | 值 |
 | --- | --- |
 | HTTP URL | /channels/{channel_id} |
 | HTTP Method | GET |
 | 接口频率限制 | 50 QPS |
+
 ## 路径参数
+
 | 名称 | 类型 | 必填 | 描述 |
 | --- | --- | --- | --- |
 | channel_id | string | 是 |  |
+
 ### 请求示例
+
 **示例1**
+
 ```text
 GET /channels/123456
 ```
+
 ## 响应
+
 ### 响应体
+
 | 名称 | 类型 | 描述 |
 | --- | --- | --- |
 | id | string | 子频道 ID |
@@ -34,8 +46,11 @@ GET /channels/123456
 | speak_permission | integer | 子频道发言权限: 0=无效, 1=所有人, 2=群主管理员+指定成员 |
 | application_id | string | 应用子频道标识 |
 | permissions | string | 用户拥有的子频道权限 |
+
 ## 响应示例
+
 **示例1**
+
 ```json
 {
   "id": "123456",

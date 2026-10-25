@@ -1,10 +1,15 @@
 <!-- 来源: https://bot.q.qq.com/wiki/develop/api-v2/server-inter/channel/role/audio_or_live_channel_member.html · 抓取 2026-10-25 -->
 
 # 音视频/直播子频道成员进出事件
+
 ## AUDIO_OR_LIVE_CHANNEL_MEMBER_ENTER
+
 ### 发送时机
+
 - 用户进入音视频/直播子频道时
+
 ### 示例
+
 ```json
 {
   "guild_id": "47129941624960822",
@@ -13,10 +18,15 @@
   "user_id": "144115218182563108"
 }
 ```
+
 ## AUDIO_OR_LIVE_CHANNEL_MEMBER_EXIT
+
 ### 发送时机
+
 - 用户离开音视频/直播子频道时
+
 ### 示例
+
 ```json
 {
   "guild_id": "47129941624960822",

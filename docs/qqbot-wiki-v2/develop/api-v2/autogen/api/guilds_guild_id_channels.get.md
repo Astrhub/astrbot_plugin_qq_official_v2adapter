@@ -1,29 +1,43 @@
 <!-- 来源: https://bot.q.qq.com/wiki/develop/api-v2/autogen/api/guilds_guild_id_channels.get.html · 抓取 2026-10-25 -->
 
 # 获取子频道列表
+
 获取指定频道下的子频道列表。
+
 ## 请求
+
 ### 基础信息
+
 | 字段 | 值 |
 | --- | --- |
 | HTTP URL | /guilds/{guild_id}/channels |
 | HTTP Method | GET |
 | 接口频率限制 | 50 QPS |
+
 ## 路径参数
+
 | 名称 | 类型 | 必填 | 描述 |
 | --- | --- | --- | --- |
 | guild_id | string | 是 |  |
+
 ### 请求示例
+
 **示例1**
+
 ```text
 GET /guilds/123456789012345678/channels
 ```
+
 ## 响应
+
 ### 响应体
+
 | 名称 | 类型 | 描述 |
 | --- | --- | --- |
-| channels | [][Channel](#schema-channel) |  |
-**Channel**
+| channels | [][Channel](#channel) |  |
+
+#### Channel
+
 | 名称 | 类型 | 描述 |
 | --- | --- | --- |
 | id | string | 子频道 ID |
@@ -38,8 +52,11 @@ GET /guilds/123456789012345678/channels
 | speak_permission | integer | 子频道发言权限: 0=无效, 1=所有人, 2=群主管理员+指定成员 |
 | application_id | string | 应用子频道标识 |
 | permissions | string | 用户拥有的子频道权限 |
+
 ## 响应示例
+
 **示例1**
+
 ```json
 [
   {

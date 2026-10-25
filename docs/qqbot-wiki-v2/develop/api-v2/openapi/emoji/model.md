@@ -1,18 +1,25 @@
 <!-- 来源: https://bot.q.qq.com/wiki/develop/api-v2/openapi/emoji/model.html · 抓取 2026-10-25 -->
 
 # 表情对象
+
 ### Emoji
+
 | 字段名 | 类型 | 描述 |
 | --- | --- | --- |
 | id | string | 表情ID，系统表情使用数字为ID，emoji使用emoji本身为id，参考 Emoji 列表 |
 | type | uint32 | 表情类型 EmojiType |
+
 ### EmojiType
+
 | 值 | 描述 |
 | --- | --- |
 | 1 | 系统表情 |
 | 2 | emoji表情 |
+
 ### Emoji列表
+
 本处列表仅包含部分表情，随着时间推移，可能会与线上情况相比有所增减。建议开发者如果要基于表情表态来做逻辑，优先针对已知的QQ系统表情类型（EmojiType=1）来处理。
+
 | 表情类型 | 表情ID | 表情含义 |
 | --- | --- | --- |
 | 1 | 4 | 得意 |

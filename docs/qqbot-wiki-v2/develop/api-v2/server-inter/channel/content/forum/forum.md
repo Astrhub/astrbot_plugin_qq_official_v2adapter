@@ -1,15 +1,23 @@
 <!-- 来源: https://bot.q.qq.com/wiki/develop/api-v2/server-inter/channel/content/forum/forum.html · 抓取 2026-10-25 -->
 
 # 论坛事件对象(ForumEvent)
+
 ## FORUM_EVENT（intents FORUM_EVENT）
+
 ## 发送时机
+
 - 用户在话题子频道内发帖、评论、回复评论时产生该事件
+
 ## 主题事件
+
 - FORUM_THREAD_CREATE
 - FORUM_THREAD_UPDATE
 - FORUM_THREAD_DELETE
-事件内容为 [Thread](model.md#Thread) 对象
+
+事件内容为 [Thread](model.md#thread) 对象
+
 ## 示例
+
 ```json
 {
   "guild_id": 47129941624960822,
@@ -55,11 +63,16 @@
   }
 }
 ```
+
 ## 帖子事件
+
 - FORUM_POST_CREATE
 - FORUM_POST_DELETE
-事件内容为 [Post](model.md#Post) 对象
+
+事件内容为 [Post](model.md#post) 对象
+
 ## 示例
+
 ```json
 {
   "guild_id": "47129941624960822",
@@ -95,11 +108,16 @@
   }
 }
 ```
+
 ## 回复事件
+
 - FORUM_REPLY_CREATE
 - FORUM_REPLY_DELETE
-事件内容为 [Reply](model.md#Reply) 对象
+
+事件内容为 [Reply](model.md#reply) 对象
+
 ## 示例
+
 ```json
 {
   "guild_id": 47129941624960822,
@@ -119,9 +137,13 @@
   }
 }
 ```
+
 ## 帖子审核事件
+
 - FORUM_PUBLISH_AUDIT_RESULT
-事件内容为 [AuditResult](model.md#AuditResult) 对象
+
+事件内容为 [AuditResult](model.md#auditresult) 对象
+
 ```json
 {
   "guild_id": 47129941624960822,

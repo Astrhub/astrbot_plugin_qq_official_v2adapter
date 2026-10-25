@@ -1,26 +1,41 @@
 <!-- 来源: https://bot.q.qq.com/wiki/develop/api-v2/server-inter/channel/content/schedule/get_schedule.html · 抓取 2026-10-25 -->
 
 # 获取日程详情
+
 ## 接口
+
 ```http
 GET /channels/{channel_id}/schedules/{schedule_id}
 ```
+
 ## 功能描述
+
 获取日程子频道 `channel_id` 下 `schedule_id` 指定的的日程的详情。
+
 ## Content-Type
+
 ```http
 application/json
 ```
+
 ## 返回
+
 返回 [Schedule](model.md#schedule) 对象。
+
 ## 错误码
+
 详见[错误码](../../../../openapi/error/error.md)。
+
 ## 示例
+
 请求数据包
+
 ```shell
 GET /channels/123455/schedules/112233
 ```
+
 响应数据包
+
 ```json
 {
   "id": "112233",

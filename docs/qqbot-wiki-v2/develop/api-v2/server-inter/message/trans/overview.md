@@ -1,21 +1,32 @@
 <!-- 来源: https://bot.q.qq.com/wiki/develop/api-v2/server-inter/message/trans/overview.html · 抓取 2026-10-25 -->
 
 # 消息交互概述
+
 > **说明**
+>
 > 在各种消息场景内，开发者可在消息体上实现自定义一些与用户的交互方式。
+
 | 消息按钮 | 文字链 |
 | --- | --- |
 | ![消息按钮](https://qq-ai.cdn-go.cn/web/bot-docs/-/v1.42.0/assets/img/message-btn.94002609.jpg) | ![文字链](https://qq-ai.cdn-go.cn/web/bot-docs/-/v1.42.0/assets/img/text-chain.b2f9b0fb.jpg) |
+
 ## 消息按钮互动流程
+
 消息按钮互动的整体流程如下：
+
 1. **发送带按钮的消息**：机器人下发包含 `keyboard` 字段的消息，用户端看到消息底部挂载的按钮
 2. **用户点击按钮**：平台推送 [`INTERACTION_CREATE`](../../../autogen/event/interaction_create.md) 事件给机器人
 3. **机器人响应互动**：机器人调用 [PUT /interactions/{interaction_id}](../../../autogen/api/interactions_interaction_id.put.md) 回复用户
+
 ### 发送消息时携带 keyboard
+
 在消息的 `keyboard` 字段中传入按钮配置，支持模板按钮和自定义按钮两种模式。
-- 发送单聊消息：[keyboard 字段参考](../../../autogen/api/v2_users_user_openid_messages.post.md#schema-keyboard)
-- 发送群聊消息：[keyboard 字段参考](../../../autogen/api/v2_groups_group_openid_messages.post.md#schema-keyboard)
+
+- 发送单聊消息：[keyboard 字段参考](../../../autogen/api/v2_users_user_openid_messages.post.md#keyboard)
+- 发送群聊消息：[keyboard 字段参考](../../../autogen/api/v2_groups_group_openid_messages.post.md#keyboard)
+
 **按钮数据示例**（一处配置缓存一批按钮，动态提取生成行为按钮）：
+
 ```json
 {
   "keyboard": {
@@ -52,6 +63,9 @@
   }
 }
 ```
+
 ### 响应互动
+
 收到 `INTERACTION_CREATE` 事件后，需要在规定时间内调用 [PUT /interactions/{interaction_id}](../../../autogen/api/interactions_interaction_id.put.md) 响应，否则会超时。
+
 **响应超时时间**：指令回调类场景为 3 秒。建议收到事件后尽快响应，避免因超时导致用户侧无反馈。

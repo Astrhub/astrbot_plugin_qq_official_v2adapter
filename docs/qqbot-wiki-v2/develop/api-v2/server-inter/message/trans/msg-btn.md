@@ -1,10 +1,15 @@
 <!-- 来源: https://bot.q.qq.com/wiki/develop/api-v2/server-inter/message/trans/msg-btn.html · 抓取 2026-10-25 -->
 
 # 消息按钮
+
 > **说明**
+>
 > 在 markdown 消息的基础上，支持消息最底部挂载按钮。
+
 ## 发送方式
+
 【申请使用】按钮模版，按钮模版暂时不支持使用变量填充。
+
 ```json
 {
     "keyboard": {
@@ -12,7 +17,9 @@
     }
 }
 ```
+
 【内邀开通】自定义按钮
+
 ```json
 {
     "keyboard": {
@@ -28,9 +35,13 @@
     }
 }
 ```
+
 ## 数据结构与协议
+
 消息发送接口 keyboard 字段值是一个 Json Object {}，rows 数组的每个元素表示每一行按钮
+
 每个 button 是一个 Json Object，具体字段如下：
+
 | **属性** | **类型** | **必填** | **说明** |
 | --- | --- | --- | --- |
 | id | string | 否 | 按钮ID：在一个keyboard消息内设置唯一 |
@@ -48,7 +59,9 @@
 | action.click_limit | int | 否 | 【已弃用】可操作点击的次数，默认不限 |
 | action.at_bot_show_channel_list | bool | 否 | 【已弃用】指令按钮可用，弹出子频道选择器，默认 false |
 | action.unsupport_tips | string | 是 | 客户端不支持本action的时候，弹出的toast文案 |
+
 示例
+
 ```json
 {
   "rows": [
@@ -129,7 +142,10 @@
   ]
 }
 ```
+
 ## 相关事件与接口
+
 用户点击回调按钮会触发 `INTERACTION_CREATE` 事件，机器人收到事件后需调用 `PUT /interactions/{interaction_id}` 进行回应，否则客户端会一直处于 loading 状态直到超时。
+
 - 事件详情：[INTERACTION_CREATE](../../../autogen/event/interaction_create.md)
 - 回应接口：[PUT /interactions/{interaction_id}](../../../autogen/api/interactions_interaction_id.put.md)

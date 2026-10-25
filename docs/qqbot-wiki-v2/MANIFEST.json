@@ -21,9 +21,9 @@
       "page_last_updated": "7/22/2026, 6:23:09 PM",
       "raw_bytes": 19397,
       "raw_sha256": "56b4caf39868660abd4c1ebb1325b7dffd387387ad99802e7cb10c0f428e3c50",
-      "markdown_bytes": 719,
-      "markdown_sha256": "18f752bdc9ff9e797bf14c91330c7b8edea0d8afe85d29a86a36094458bb4028",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 734,
+      "markdown_sha256": "778e5d98ffb7060d69dacccdd0cb917de779c7de44af654272369b1f442bfccd",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/autogen/api/channels_channel_id.get.md",
@@ -35,9 +35,9 @@
       "page_last_updated": "7/22/2026, 6:23:09 PM",
       "raw_bytes": 23002,
       "raw_sha256": "bdbf3b86089bb60661b94e2324d09485caf09a4c60d5e8d10c74e097bd754eb1",
-      "markdown_bytes": 1688,
-      "markdown_sha256": "313c766955a23dfcbe6b7b409c276061598fe47b281d6c52d5b9baf8c6be3241",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 1703,
+      "markdown_sha256": "27b0c3618db8021d7fce1a760c4d526ffc5ac6ec4378109dd7bc34d96e5bd1b5",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/autogen/api/channels_channel_id.patch.md",
@@ -49,9 +49,9 @@
       "page_last_updated": "7/22/2026, 6:23:09 PM",
       "raw_bytes": 23839,
       "raw_sha256": "0cc0009f593c883acf23aae7c4eefc1fd249fd389bf68ed771e9f4f9b1142b5a",
-      "markdown_bytes": 2202,
-      "markdown_sha256": "af79ed0c37b5d258b9e55048cc38f0f7066bce88c088e932ee602f1d0db9a7f0",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 2220,
+      "markdown_sha256": "fca151f4a2624763cd6b2f7a9845de57b3cbf007a6048a89097944f8ccd848b7",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/autogen/api/gateway.get.md",
@@ -63,9 +63,9 @@
       "page_last_updated": "7/22/2026, 6:23:09 PM",
       "raw_bytes": 17434,
       "raw_sha256": "3753d3bec48fdbc5c60dd7c45f742e21b3750f0a9a04ee4574e48739dd063ab5",
-      "markdown_bytes": 661,
-      "markdown_sha256": "6cd0004c7a4725718734fe0b19e77c1b69f2d34aa1abbd54df1ac50f7816ec02",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 674,
+      "markdown_sha256": "3e46267752adda69474a32626fa4a5d65d75d6b181cbd4a793a53f16ffe70c6e",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/autogen/api/guilds_guild_id.get.md",
@@ -77,9 +77,9 @@
       "page_last_updated": "7/22/2026, 6:23:09 PM",
       "raw_bytes": 22135,
       "raw_sha256": "155c38782ebf34c9745ba9630f9d8aa28962a8d5cfb12920f40ab6adfb6d361e",
-      "markdown_bytes": 1301,
-      "markdown_sha256": "af4157960cf379bb2d5664b9b59c25f6046cd9a53dc2ad508f6f04abb589618f",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 1316,
+      "markdown_sha256": "d096d3bad6a28cb3f85883a798e907995249cfca1aaaba92cfbd9af3cfcbaf44",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/autogen/api/guilds_guild_id_channels.get.md",
@@ -91,9 +91,9 @@
       "page_last_updated": "7/22/2026, 6:23:09 PM",
       "raw_bytes": 25636,
       "raw_sha256": "c4070b3a694a59a1ba775e3f0a705aa90e6844fa8a1c3fdf55747da907ee66c3",
-      "markdown_bytes": 2092,
-      "markdown_sha256": "ea427e13eaf03d871ee0c0c9714220bd4cec909503e2feccb280352d617e10a6",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 2103,
+      "markdown_sha256": "963391a46816bbf00f7a44c798f2c0ea61e6c703d3aa21f9d71abfe8dd70a371",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/autogen/api/guilds_guild_id_channels.post.md",
@@ -105,9 +105,9 @@
       "page_last_updated": "7/22/2026, 6:23:09 PM",
       "raw_bytes": 25162,
       "raw_sha256": "0428b448def4af8ed3b2df87fa2cd7ebb191868baa5af1581358076d8735b853",
-      "markdown_bytes": 2669,
-      "markdown_sha256": "628688240e56602b485afcff858295222b9e5101419a52c0b5f934d2096dfd9b",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 2689,
+      "markdown_sha256": "ccb002707fd5ea4f8ee11b353f7b197c6f2df425eabdac8f68f01460b7f6e8e8",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/autogen/api/interactions_interaction_id.put.md",
@@ -119,9 +119,9 @@
       "page_last_updated": "8/12/2026, 8:53:07 PM",
       "raw_bytes": 20419,
       "raw_sha256": "910644998c15db43528b8ff7220ecb9388b16eca47d63d6b50fa656b7d5bf221",
-      "markdown_bytes": 2093,
-      "markdown_sha256": "307ace0ee1a8bb685c97c96d0f59098743495f4fe7bc2759fccb909182f13d86",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 2112,
+      "markdown_sha256": "90fec1193f6c4a061ef6ac3dddb2934a41bda827f733c49c5160c99fd3296743",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/autogen/api/users_me.get.md",
@@ -133,9 +133,9 @@
       "page_last_updated": "7/22/2026, 6:23:09 PM",
       "raw_bytes": 19922,
       "raw_sha256": "40448dbbf09d62062a22b032894157dfff6d87519987eb2e653bb06a22c442e5",
-      "markdown_bytes": 1392,
-      "markdown_sha256": "f485c98947cb47ae577739ec3208ff9e17cedb020036cdf29cb17230bd4d871c",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 1406,
+      "markdown_sha256": "ba7268fa3e587313e8572b6a59268ba1305493a6006b87f79bd31fc8ab8b92d8",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/autogen/api/users_me_guilds.get.md",
@@ -147,9 +147,9 @@
       "page_last_updated": "9/16/2026, 8:01:05 PM",
       "raw_bytes": 25918,
       "raw_sha256": "b718f0178a6f6ee9ee7b62bf222b682ca12bb0fd0d50e09ffbd6abbc9fedcb03",
-      "markdown_bytes": 2689,
-      "markdown_sha256": "40b6746985c3273191d3df912967b34e2fe4a5bed8ed35ed0ab97733e9699905",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 2701,
+      "markdown_sha256": "e0dd062686be74608abf8f2554c6b9b254715f81a41943444a1126b3d87e251c",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/autogen/api/v2_generate_url_link.post.md",
@@ -161,9 +161,9 @@
       "page_last_updated": "9/16/2026, 8:01:05 PM",
       "raw_bytes": 19503,
       "raw_sha256": "905d0e3fefcb6a2973b31a502d9532e5b6a7a92392d1b5d9dd47415c7fa1fff5",
-      "markdown_bytes": 1652,
-      "markdown_sha256": "76be5897340ca07cd7a275eda78cbe4a8fcccbe6d56142c978ccf33d3f727476",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 1666,
+      "markdown_sha256": "d9a279f5ec81d8b993a6b8c82aae267491782fdba901a01477a03a8bf02fda38",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/autogen/api/v2_groups_group_id_upload_part_finish.post.md",
@@ -175,9 +175,9 @@
       "page_last_updated": "7/22/2026, 6:23:09 PM",
       "raw_bytes": 21695,
       "raw_sha256": "138e599bb6ec526101a90ce5b4ff232ba54e450cd32807639f9d2b9b74cd86f6",
-      "markdown_bytes": 2198,
-      "markdown_sha256": "69e52d9d909490927fd0f1cc33a1a6bd014c216638dd54fc2e732075b00900a3",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 2217,
+      "markdown_sha256": "9f66f3497bd83c77ad0c376a0a7733f2a82cbe9a8f3fee4ef5fc3c729a304942",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/autogen/api/v2_groups_group_id_upload_prepare.post.md",
@@ -189,9 +189,9 @@
       "page_last_updated": "8/10/2026, 12:16:46 PM",
       "raw_bytes": 28061,
       "raw_sha256": "4ea160cd501737f98737626c3c45fc07a284da1f9359cc6d5b9b72210b685a62",
-      "markdown_bytes": 4013,
-      "markdown_sha256": "0e2639e9cf5516a9ca59d386f8183f33bd33589b9a0a814bf579c6dfa92b447b",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 4025,
+      "markdown_sha256": "6f86e15cfe49652ffd8b415df189c828213c412c2de0fac489c2abc89bbe03f7",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/autogen/api/v2_groups_group_openid_approval_join_request_member_openid.post.md",
@@ -203,9 +203,9 @@
       "page_last_updated": "8/11/2026, 12:53:33 PM",
       "raw_bytes": 20433,
       "raw_sha256": "1dda8adf3434d243ef257c4c6d3ce020aa757dfa4e1e2fdb6ad0ac4154cfc534",
-      "markdown_bytes": 1870,
-      "markdown_sha256": "cea9a2b2e382758961ef0cc01774ad771131c6deab915df7d58592b367dff58f",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 1888,
+      "markdown_sha256": "f89bb10a6753b3c2fc7bee2c1bb43edbb1c1bacc85b7018c7088e932e6d58294",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/autogen/api/v2_groups_group_openid_batch_remove_members.post.md",
@@ -217,9 +217,9 @@
       "page_last_updated": "9/3/2026, 5:58:28 PM",
       "raw_bytes": 21091,
       "raw_sha256": "ea61ee12c9cd9081ea8f06684c099a27c78b212c44a541a5c10257a29693b4c0",
-      "markdown_bytes": 1560,
-      "markdown_sha256": "a00889fa30ac693abe675668120cabf6ddc90b401f0419848d13377d3ef324b8",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 1578,
+      "markdown_sha256": "25c0622edcf37422e4c0bf5d5437a7af6aa8746df433694a6cb0b5e39450791b",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/autogen/api/v2_groups_group_openid_bot_state.get.md",
@@ -231,9 +231,9 @@
       "page_last_updated": "8/10/2026, 12:16:46 PM",
       "raw_bytes": 20571,
       "raw_sha256": "bbb798c844658be0f3d7e5f6fea96b68d44326102c538e312c566f3bb32643cd",
-      "markdown_bytes": 1557,
-      "markdown_sha256": "c0c413f1d447942c28b081cbeb34aeb5b24784255b3c0e3bac8caba0ea59573b",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 1574,
+      "markdown_sha256": "12985eea5768cd154d7396bf8a6009bc2e6365810d29eac75beb37b74675ff59",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/autogen/api/v2_groups_group_openid_files.post.md",
@@ -245,8 +245,8 @@
       "page_last_updated": "10/9/2026, 6:37:20 PM",
       "raw_bytes": 27327,
       "raw_sha256": "56294f6b335f1d3f0122eec3226fcade258ec8c9684162b27b5e9cfd94511273",
-      "markdown_bytes": 5359,
-      "markdown_sha256": "e3c5d2c7fb03fc1be17a8802fe6936624dc99129686ee23d9fbd9147aa5e9f11",
+      "markdown_bytes": 5390,
+      "markdown_sha256": "4f9c7cf23c142078012076e93f6fe737af265146a29041281d2d9a41c714dbf3",
       "comparison_with_20260919": "changed"
     },
     {
@@ -259,9 +259,9 @@
       "page_last_updated": "8/10/2026, 12:16:46 PM",
       "raw_bytes": 21050,
       "raw_sha256": "11190179824ff12dced7f09fb3a5e54afbcab3d29fefd2bd057f0f72a9d2bdd7",
-      "markdown_bytes": 1398,
-      "markdown_sha256": "9225536db8367805fba781b2f56d3c308f291648300e12a7b5a3ff37be0c66e6",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 1415,
+      "markdown_sha256": "fbe4be052851bc2d91ba2ed75402adcbd741bda16647fc3e6c29891e0f0d3a1d",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/autogen/api/v2_groups_group_openid_join_request_list.get.md",
@@ -273,9 +273,9 @@
       "page_last_updated": "9/3/2026, 5:58:32 PM",
       "raw_bytes": 25157,
       "raw_sha256": "4ec41a8c5ee4040fedb4b9bb4ff15d92cb8b0bcf8479a4872fab0305c212d39e",
-      "markdown_bytes": 3109,
-      "markdown_sha256": "cc677ee8f8af72d5079d49f989e69546df54ea1833adaa696a95ec38ded45101",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 3113,
+      "markdown_sha256": "f0a052f3ad9b193bd9e841fbe7b19ce2c407dd6e392a93ce2298c088b7325136",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/autogen/api/v2_groups_group_openid_member_blacklist.get.md",
@@ -287,9 +287,9 @@
       "page_last_updated": "9/3/2026, 5:58:29 PM",
       "raw_bytes": 22744,
       "raw_sha256": "40e68c4ea516592bdab5aae47570b79cc55d838a245cac7d976328e7a4c65844",
-      "markdown_bytes": 1964,
-      "markdown_sha256": "75e57bde0626ac57a704529cbdca0054521a79c3b531e6386b43a4add38a949e",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 1980,
+      "markdown_sha256": "cecdcc5e2ba38ae9be4a2e013047cde63f7760624f8126039664b7e52f3e6281",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/autogen/api/v2_groups_group_openid_member_blacklist.post.md",
@@ -301,9 +301,9 @@
       "page_last_updated": "9/3/2026, 5:58:30 PM",
       "raw_bytes": 21522,
       "raw_sha256": "bda33ea27032a47294fab4178a6632e933771aa1e315fbf4894d1274783cb812",
-      "markdown_bytes": 1710,
-      "markdown_sha256": "157c69f1b936625771b8a4cdef27b274320120da5b9585fd44317779e85d9456",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 1732,
+      "markdown_sha256": "21ee7f8722bcd5bdbf3904db4de49f30f85fce37bbaa50ddb89e2ab6e40768a3",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/autogen/api/v2_groups_group_openid_members.get.md",
@@ -315,9 +315,9 @@
       "page_last_updated": "9/3/2026, 5:57:51 PM",
       "raw_bytes": 24801,
       "raw_sha256": "18043c4ba6256470eeecd044acc66aba55451b9cda5a7cb4862e904d7c7dda97",
-      "markdown_bytes": 2392,
-      "markdown_sha256": "a8df105c6e166fdb6935d9c1f5361a3e6968f464b529e2b233fb1e3bd365afc3",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 2406,
+      "markdown_sha256": "5ff660273f1ada375bf44e713f5e0315cf70ea4e18864b7a523a2da7f3a7c335",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/autogen/api/v2_groups_group_openid_members_member_openid.get.md",
@@ -329,9 +329,9 @@
       "page_last_updated": "9/3/2026, 5:58:30 PM",
       "raw_bytes": 21723,
       "raw_sha256": "0f48679abe9c995c27cc53ccbbd0c90942c8144a09a6151a60692ec4ae231a47",
-      "markdown_bytes": 1644,
-      "markdown_sha256": "9dcecc4a62394767ab456025ab870e906b68799799fe87edcd11d083895cffb3",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 1662,
+      "markdown_sha256": "352417b1897ff66ed367c8b77f84a85187a856df7466454f26e76bd849857921",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/autogen/api/v2_groups_group_openid_messages.post.md",
@@ -343,8 +343,8 @@
       "page_last_updated": "9/3/2026, 5:58:33 PM",
       "raw_bytes": 38022,
       "raw_sha256": "59cd7461e4b26d08c3df0118500ce34ebcfbf85a29d25d315d54814b56256d3a",
-      "markdown_bytes": 11860,
-      "markdown_sha256": "2fa062ec0a114050b4d8246bfebd33c2390ecd080aea07b779be9314db6f3a48",
+      "markdown_bytes": 11825,
+      "markdown_sha256": "88c1e04300c84dc2a828af3f6cc90cbc059352370a7de0e4ff7b2bde7fdd0a2f",
       "comparison_with_20260919": "changed"
     },
     {
@@ -357,9 +357,9 @@
       "page_last_updated": "8/12/2026, 8:40:14 PM",
       "raw_bytes": 19506,
       "raw_sha256": "79b7e1445d39e305cb78500d3d06644d45b66015b05ffb4a86c810623c132e0b",
-      "markdown_bytes": 1711,
-      "markdown_sha256": "826af6168771c9122860725c9d11529518f7c2f6a31665eae415d8c7084311d7",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 1728,
+      "markdown_sha256": "de516b160bb71fa549395c22787ae931b47f3627f409a3aeb30d47d430476504",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/autogen/api/v2_groups_group_openid_restrict_chat_setting.get.md",
@@ -371,9 +371,9 @@
       "page_last_updated": "8/10/2026, 7:29:39 PM",
       "raw_bytes": 28433,
       "raw_sha256": "24e9f726334e55f93df1247b18a97e962a26af9be1a9a8859e9dc386ae8744c1",
-      "markdown_bytes": 3592,
-      "markdown_sha256": "f31d8a7e43333cde31e26b1f10ffdba4aa7881b14977eff8af4c59768fe73fa9",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 3591,
+      "markdown_sha256": "2e7db09f0b4b4075fdc71e223fc9bccf48f798a74f4e57af1a905ce4599c4860",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/autogen/api/v2_groups_group_openid_restrict_chat_setting.post.md",
@@ -385,9 +385,9 @@
       "page_last_updated": "9/3/2026, 5:58:33 PM",
       "raw_bytes": 20142,
       "raw_sha256": "cadac25dde885c8efd22c19c081314cd205f5bdb9057730ad364af87acc4e6d1",
-      "markdown_bytes": 1654,
-      "markdown_sha256": "a76e64a0a7472ff720ae737601af2fd7bfc74f221c4e04168ffe9c90f187790a",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 1665,
+      "markdown_sha256": "8a77d7715583e7414616a2c1ebfba9132c888ad22eb24cbb9857ad4735eb7408",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/autogen/api/v2_groups_join_approval_strategy.get.md",
@@ -399,9 +399,9 @@
       "page_last_updated": "9/3/2026, 5:58:34 PM",
       "raw_bytes": 28401,
       "raw_sha256": "e361e846cc7e3ee485934640a3da06476250424d6615d793b63f14fc59c95923",
-      "markdown_bytes": 2699,
-      "markdown_sha256": "2c25ccccd2dcfd457b2e5e65b92235f339ace97c025f1c8c442bd4c53b31122c",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 2708,
+      "markdown_sha256": "64827bc5f96599ca44ba0709513b2f44dd6939765247a075a4c3d90bfe304a09",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/autogen/api/v2_groups_join_approval_strategy.post.md",
@@ -413,9 +413,9 @@
       "page_last_updated": "8/10/2026, 7:29:39 PM",
       "raw_bytes": 21513,
       "raw_sha256": "0536e034a89c3f6810052b4e06be042eb7f4d84cb0191a5c157a1b194296fa02",
-      "markdown_bytes": 1711,
-      "markdown_sha256": "10f64d893ca14bfce06ebc8fde5309a43f5b348b3f634d5446ef8e5a370275cd",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 1725,
+      "markdown_sha256": "02c63e07729602684806451a52b99d40356a2863ebb9c263888d5d72933f5e72",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/autogen/api/v2_groups_join_approval_strategy_strategy_id.delete.md",
@@ -427,9 +427,9 @@
       "page_last_updated": "8/3/2026, 2:40:34 PM",
       "raw_bytes": 19426,
       "raw_sha256": "2c0329862aa6919097fe26e504bcdaaf3146f0036fd149dc694f34c188274eed",
-      "markdown_bytes": 659,
-      "markdown_sha256": "22de70fa0552f0de4cd5922725a12a73d9ee13fe8e195cdfd07ee508429e6a97",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 671,
+      "markdown_sha256": "801aeff33cf09a399afa9ca883cfd4b14d6bd055ba1c4c743e0dadd821bebdec",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/autogen/api/v2_groups_join_approval_strategy_strategy_id.patch.md",
@@ -441,9 +441,9 @@
       "page_last_updated": "8/3/2026, 2:40:34 PM",
       "raw_bytes": 21946,
       "raw_sha256": "a03dbc0d6dbb655f1be7a559ce0a23cdaca636ee24ffd9e743730c403f1463dc",
-      "markdown_bytes": 1828,
-      "markdown_sha256": "33bbc6b6bd9c22bd924eb7f294437e7f2f9a1aad6cf9ddb667e3b26f454924f5",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 1842,
+      "markdown_sha256": "79c83ce146673de4685b3f1e2369f6f8ba399cc7ded119a5f17ae25260568b9f",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/autogen/api/v2_groups_join_approval_strategy_strategy_id_execute.post.md",
@@ -455,9 +455,9 @@
       "page_last_updated": "8/3/2026, 2:40:34 PM",
       "raw_bytes": 19526,
       "raw_sha256": "7ae906e43aee7b0681f3d3ed6675c9de81481d9e87eedafa1ddad0f55d17428e",
-      "markdown_bytes": 776,
-      "markdown_sha256": "196acca4206220ea14362ad2e0b6057cbb512a0e408c7458aed01d4cdd8b2de4",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 788,
+      "markdown_sha256": "31b4c4be13a6784f9001992418070ef0bf53800fb406d22d07de192254e944eb",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/autogen/api/v2_groups_join_approval_strategy_strategy_id_whitelist_users.post.md",
@@ -469,9 +469,9 @@
       "page_last_updated": "8/10/2026, 12:16:46 PM",
       "raw_bytes": 21330,
       "raw_sha256": "ba59babe71152883e16597df97aeca2c6a73188a0e76ed851d25ccf67d81b3b8",
-      "markdown_bytes": 1485,
-      "markdown_sha256": "32c07f7d9b00ec0a8967a18256fa4a491df378ba57040f02fecb27adc031c60e",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 1501,
+      "markdown_sha256": "d2ddd7e5f4a5e7097330c3ac2f4fa91f3aeab96a427330479c28ed0c7fc6b357",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/autogen/api/v2_menu.get.md",
@@ -483,9 +483,9 @@
       "page_last_updated": "10/9/2026, 6:46:49 PM",
       "raw_bytes": 22903,
       "raw_sha256": "012df66197207d4914c99a3671bb99ae588ebbc1aed6481532b8818e67f76817",
-      "markdown_bytes": 2820,
-      "markdown_sha256": "e3da97be1a84a0eb203ca7c39fbacfd27f1c8942579ca919b0f5ac771d56b3a0",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 2817,
+      "markdown_sha256": "1c4fb51cf9fc4438206c4c55fd0127e0edc18d993ebe434bca3e3678ca0e57f5",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/autogen/api/v2_menu.put.md",
@@ -497,9 +497,9 @@
       "page_last_updated": "10/9/2026, 6:46:49 PM",
       "raw_bytes": 24630,
       "raw_sha256": "70601920d6cb13e2b37dfb625dc534b21b8b5b3776c05b998a86ff0038b9be94",
-      "markdown_bytes": 4048,
-      "markdown_sha256": "695ee941ee794932011e417c89170d1970a2dd84516c2351bba36e04018fb23d",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 4045,
+      "markdown_sha256": "e7128000396d271fb597eef39d830fbb575b621b4ef9d1738b7b32d4242998c8",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/autogen/api/v2_panels.get.md",
@@ -511,9 +511,9 @@
       "page_last_updated": "8/13/2026, 1:20:14 PM",
       "raw_bytes": 25607,
       "raw_sha256": "b22328652386c1c018caf7e6de245ed85238695920852d2cebe754bc4df8ab78",
-      "markdown_bytes": 3732,
-      "markdown_sha256": "37c54c0459c404773ebcf4b8fc19145d09d7a8a4bdb68f16f0cf1781fbf14a90",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 3737,
+      "markdown_sha256": "0ea3be7d49618366989bbb7ac538d507bddb69b462e8471ef62774d1e43e30e0",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/autogen/api/v2_panels.post.md",
@@ -525,9 +525,9 @@
       "page_last_updated": "8/13/2026, 1:20:14 PM",
       "raw_bytes": 25953,
       "raw_sha256": "630cd1a4e166fd72944229db65c8085f8450d65bfd860ef8a48bdc029dccb5d7",
-      "markdown_bytes": 4925,
-      "markdown_sha256": "8f94336b524ee6a3b42bf38b7b9751f2f552f5fa5e3020e6553053b5d71113bc",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 4935,
+      "markdown_sha256": "2bb43aa75ee2e2ed00a222ced8ae4b3e1d8f1bb10089c8b2ae34b5bd7cbf80a2",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/autogen/api/v2_panels_panel_id.delete.md",
@@ -539,9 +539,9 @@
       "page_last_updated": "8/13/2026, 1:20:14 PM",
       "raw_bytes": 18752,
       "raw_sha256": "f28b506c0e6a5cd17b9bccabeb00d78d113065440b6f1c0d54cf280b35867f6d",
-      "markdown_bytes": 773,
-      "markdown_sha256": "970ffc4190d68eaa8d265cb97491536b7b69a5952e71fb03a9ca555c9040694e",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 789,
+      "markdown_sha256": "742dd3ad70054cd3980a9715d15ea969527cbe99d6284fb2104b98ffc06e5eac",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/autogen/api/v2_panels_panel_id.get.md",
@@ -553,9 +553,9 @@
       "page_last_updated": "8/13/2026, 1:20:14 PM",
       "raw_bytes": 24611,
       "raw_sha256": "b064ace1fc73c7f6a4d8aa562c56060e5c325f868c2238437a73b43f09ebf60a",
-      "markdown_bytes": 3183,
-      "markdown_sha256": "6673cb84076e85d7466d33af8f477964b503f06095514759aa435960325f8769",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 3192,
+      "markdown_sha256": "00684343ca953226a2ea15fb2e63d9105a124bef2ab3f11d52eb76e63fbbba0e",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/autogen/api/v2_panels_panel_id.put.md",
@@ -567,9 +567,9 @@
       "page_last_updated": "8/13/2026, 1:20:14 PM",
       "raw_bytes": 22967,
       "raw_sha256": "85f8b7eba0a60865e73c2c26f965b0cc81ece81fef2cc0ff20235b61ac60add5",
-      "markdown_bytes": 3289,
-      "markdown_sha256": "c17d76001a5018862deccec51e1ada15690424edd589a01fa8495ead2a2b88aa",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 3298,
+      "markdown_sha256": "f13df8b4feabc2f0cc7d834e44fb34ee64c6b69a8894ba82d6956b229542f3cf",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/autogen/api/v2_panels_panel_id_target.put.md",
@@ -581,9 +581,9 @@
       "page_last_updated": "8/13/2026, 1:20:14 PM",
       "raw_bytes": 20646,
       "raw_sha256": "45b5ca3ad5f36d28f8b51984d1326e121c6c31bab7ed2bf5a40d6f923a86110d",
-      "markdown_bytes": 1747,
-      "markdown_sha256": "01f7a63edac35d6a940105c8daeb0fc6453adea9c5201a36556d749e1b27634a",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 1767,
+      "markdown_sha256": "20abcb82981cac040a2ea3e58ca4fba166db6e88c9fb8557b61f628998ea56bd",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/autogen/api/v2_users_user_id_upload_part_finish.post.md",
@@ -595,9 +595,9 @@
       "page_last_updated": "7/22/2026, 6:23:09 PM",
       "raw_bytes": 21592,
       "raw_sha256": "0a0bc187700ad60282bd83debb640be55cf1b81445c84037a85a5c84104c0a48",
-      "markdown_bytes": 2080,
-      "markdown_sha256": "a714ba596a1c06c63f5e927f21dde69543a8d0250e77cbf8a525ddc09fd720c1",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 2099,
+      "markdown_sha256": "5f68d390c8ad92b41d1fc8b1bb20b5d387db5e324c88a793e5e009f03c116cef",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/autogen/api/v2_users_user_id_upload_prepare.post.md",
@@ -609,9 +609,9 @@
       "page_last_updated": "8/10/2026, 12:16:46 PM",
       "raw_bytes": 27888,
       "raw_sha256": "19257ddc1cd99edcd7205aabcba74618c2b30c5cf92dc71e2ccd08c40c89218e",
-      "markdown_bytes": 3840,
-      "markdown_sha256": "7e7ada4eb858e1301e3f076a07e09c62df1c4fa965e634996fad264a571d484d",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 3852,
+      "markdown_sha256": "65cce25ef0e2165d0bcef9cdcf266bcddd719e57059c3b40e3694fa3165d8089",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/autogen/api/v2_users_user_openid_files.post.md",
@@ -623,8 +623,8 @@
       "page_last_updated": "10/9/2026, 6:37:20 PM",
       "raw_bytes": 27231,
       "raw_sha256": "4dc7ffc2b732cdcc1a0476a8e270e4970ffeda01b926bf970627dec3ce92fd11",
-      "markdown_bytes": 5247,
-      "markdown_sha256": "b4fd5d817793004dd1cda0f4d961ff4544e59d2e02425a9d3ad5e1f522b62a4d",
+      "markdown_bytes": 5278,
+      "markdown_sha256": "0bb5bcb0cefd4582146ccbe8ee477e10f075ea15baefe0340912dc86b498c42d",
       "comparison_with_20260919": "changed"
     },
     {
@@ -637,8 +637,8 @@
       "page_last_updated": "9/3/2026, 5:58:35 PM",
       "raw_bytes": 39323,
       "raw_sha256": "d0ef0695966f9ee35cc2dbe37d820032a8f8308caac9f46f86c5302d2c93348f",
-      "markdown_bytes": 12597,
-      "markdown_sha256": "25fa6ce49cec85ede5725f8e2f3d8bf4d8a511f00a27e8a0e15b91a79e11edfb",
+      "markdown_bytes": 12561,
+      "markdown_sha256": "b89a85d67e568814688239588962796e57c7aa57bdec2ab1cb9616fcac7c57f5",
       "comparison_with_20260919": "changed"
     },
     {
@@ -651,9 +651,9 @@
       "page_last_updated": "7/22/2026, 6:23:09 PM",
       "raw_bytes": 19173,
       "raw_sha256": "74a8f25022ab4f3329250750f523c2705f6ef4a115314bf219880c3a87e41a7a",
-      "markdown_bytes": 1279,
-      "markdown_sha256": "0f2bc600d491ec8213bcba79f609e21b7c02b0acd3aced12f353a6f9bfb837df",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 1296,
+      "markdown_sha256": "bde33c03c183c72732154b606392d4664436c69207980b2f501fa1fd0e2cd407",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/autogen/api/v2_users_user_openid_stream_messages.post.md",
@@ -665,9 +665,9 @@
       "page_last_updated": "7/22/2026, 6:23:09 PM",
       "raw_bytes": 26659,
       "raw_sha256": "ed351023b14c4be084282b50b3d7bfd44481c3e49ea0146d071377b5160730d1",
-      "markdown_bytes": 4184,
-      "markdown_sha256": "420bcf1eb819e1eb73109d7f1c182079a820c1cd5b5576555e7c593e0bacdc20",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 4205,
+      "markdown_sha256": "93e93761f1218da9ffbb5ca4be8ecbda0d12c439faa69c37a5f8f6ab8545b350",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/autogen/event/c2c_message_create.md",
@@ -679,8 +679,8 @@
       "page_last_updated": "9/16/2026, 8:01:05 PM",
       "raw_bytes": 30252,
       "raw_sha256": "166a0b86f71af67fbf845f283c050cffb6fea94fa11b4a788d9c10e167b3c630",
-      "markdown_bytes": 7031,
-      "markdown_sha256": "4cba5361f0149bbee6cccceeaae6f00792814ac42506db05860d67ddb20b773f",
+      "markdown_bytes": 6996,
+      "markdown_sha256": "fc981126f45d3e9d95480a5ae0448dec9b6e646989ff7ff9dffaa07c1f6af5e4",
       "comparison_with_20260919": "changed"
     },
     {
@@ -693,9 +693,9 @@
       "page_last_updated": "7/21/2026, 4:27:59 PM",
       "raw_bytes": 17691,
       "raw_sha256": "125ebc2e329b238a6018c4ea25f3fac8013b91a368f7e5b8493db68693aa4aa7",
-      "markdown_bytes": 752,
-      "markdown_sha256": "46ed6a57de84f22d6be7b90e4508ad8327043885eaa676c4a2015c222d7fbdf0",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 761,
+      "markdown_sha256": "2eb476539eb91ef3ad4ff082ab84e0e678f99c3ca3d1845a097f110561fe4bce",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/autogen/event/c2c_msg_reject.md",
@@ -707,9 +707,9 @@
       "page_last_updated": "7/21/2026, 4:27:59 PM",
       "raw_bytes": 17704,
       "raw_sha256": "59aa9fa236044d28641f8f671905e6e69a313f1fb615cba1ce993170562d11ae",
-      "markdown_bytes": 741,
-      "markdown_sha256": "afaf3836c980930dbf6ab67bb8cd22c72ce10d2df1a595d0c11ecd68d6b286fa",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 750,
+      "markdown_sha256": "494329dd6940511bb9ea316a1732a426d79786207f5e7578c54310da246bb72c",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/autogen/event/channel_create.md",
@@ -721,9 +721,9 @@
       "page_last_updated": "7/21/2026, 3:25:45 AM",
       "raw_bytes": 19494,
       "raw_sha256": "ef8011e2f41534bba2c3fb49a9c4bd177d92b7244732d7ec3622babdb3fee365",
-      "markdown_bytes": 869,
-      "markdown_sha256": "a42806c9c33c21184118a8903b7f9a0f78128447945471a691f1748483f75ad1",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 877,
+      "markdown_sha256": "9ce1939ff0e20e130b25dd0797b599449ecb45f947ab262db9a8aa0e4999dfbe",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/autogen/event/channel_delete.md",
@@ -735,9 +735,9 @@
       "page_last_updated": "7/21/2026, 3:25:45 AM",
       "raw_bytes": 19514,
       "raw_sha256": "2d57731bf971539e694f957df90561b643ae9daac3c8200da76c3ddc44c16ed4",
-      "markdown_bytes": 878,
-      "markdown_sha256": "d19fd8bd5e57104a1398575242b137ff6d2f79d8153e24f22979a7acaa5edd93",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 886,
+      "markdown_sha256": "4bccf06b02ac47f08b6ac34ab51da38e659d4c2582f58a73ae3e49276d84cc8d",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/autogen/event/channel_update.md",
@@ -749,9 +749,9 @@
       "page_last_updated": "7/21/2026, 3:25:45 AM",
       "raw_bytes": 19511,
       "raw_sha256": "968118c09ae7a219648b4602d8091e6710c5e897ae9af3a20be046e2e3b5d054",
-      "markdown_bytes": 881,
-      "markdown_sha256": "4754746c3f982ea3abbd7c2dc608633172a21548d85745512dc0a923277486c4",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 889,
+      "markdown_sha256": "2125c9d1ef91efe28689d7608f97a115b56489b568696d9a2075c1656533cf9f",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/autogen/event/friend_add.md",
@@ -763,9 +763,9 @@
       "page_last_updated": "8/13/2026, 12:37:16 PM",
       "raw_bytes": 19716,
       "raw_sha256": "d7878f162d149ba770140178c47c57fe96e953a467d8fd1d4022518beb89efdd",
-      "markdown_bytes": 1706,
-      "markdown_sha256": "3dc0768b6354aace45fc6847b0c1acb7ada53514ec163e7bda594649f8d0925a",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 1712,
+      "markdown_sha256": "256673aa8e1cebfa222a5d3ff8e88ca2bffffd53f321146ddc3dd75e724a94c5",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/autogen/event/friend_del.md",
@@ -777,9 +777,9 @@
       "page_last_updated": "7/21/2026, 4:27:59 PM",
       "raw_bytes": 17848,
       "raw_sha256": "96773efb43dc641810cf2d3995735d25eb79c00a0f6a80d04208993ab72c674a",
-      "markdown_bytes": 765,
-      "markdown_sha256": "b47067566ae6d74f60429e9e09bd209c514b331971c1264565a74b6c0114a618",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 769,
+      "markdown_sha256": "14a381149ff2331d77631404522063c9fb966f8ac2cfe2282ff96661b6129a1b",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/autogen/event/group_add_robot.md",
@@ -791,9 +791,9 @@
       "page_last_updated": "7/21/2026, 3:25:45 AM",
       "raw_bytes": 17680,
       "raw_sha256": "2c52d25425b8d8376bb612e787f9018dcadbf9af563efcd0c83961f995d04713",
-      "markdown_bytes": 727,
-      "markdown_sha256": "df5b960234a46ae06105e09e956b4b4133f8fa4198043f03255e7d96407533a3",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 735,
+      "markdown_sha256": "01584adac1677ddca4d353085e0337daaf403961d754e715f8471c466479d980",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/autogen/event/group_at_message_create.md",
@@ -805,8 +805,8 @@
       "page_last_updated": "9/16/2026, 8:01:05 PM",
       "raw_bytes": 30110,
       "raw_sha256": "b84d50a896663a608cd07bb3618eaf4b080e2b452594a40da5f572351d4d36f7",
-      "markdown_bytes": 6854,
-      "markdown_sha256": "dfbc5fd8658f98fd0ccd0fc1a51f91f6676b098dd9855559fd712813934650b5",
+      "markdown_bytes": 6811,
+      "markdown_sha256": "d9afddffff29ab5fe546c9fa8004ea77d28885c1cafbdf5bb6b05570491e2d6a",
       "comparison_with_20260919": "changed"
     },
     {
@@ -819,9 +819,9 @@
       "page_last_updated": "7/21/2026, 3:25:45 AM",
       "raw_bytes": 17658,
       "raw_sha256": "7c56ccea7b40856dd33ddec11a9d5198e5747d1f009a487b9f9862c5b5523cf6",
-      "markdown_bytes": 724,
-      "markdown_sha256": "e7a463e46e19ac85d307f41d060022eab4365d656496facc19e3705a0e8cf47c",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 732,
+      "markdown_sha256": "597ade5e82626f9ea5003a965bdcc2dc535cb289ffea85c96f1f2fb76c17470c",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/autogen/event/group_join_request.md",
@@ -833,9 +833,9 @@
       "page_last_updated": "9/3/2026, 5:58:35 PM",
       "raw_bytes": 23260,
       "raw_sha256": "1e5db9d5e9b8a2e53d2210aebe9abebf0c3ddfefa8ea29b1a0388a11c30448db",
-      "markdown_bytes": 3636,
-      "markdown_sha256": "6c0c4b6e56bf0321fdd55642c7bb551c4bf7d73400769f326d5e75f267ce5b40",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 3637,
+      "markdown_sha256": "a09e3b582ce48083531ccb393d7f3f83bcf9dd085b27f372caa2f309bd0280f3",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/autogen/event/group_member_add.md",
@@ -847,8 +847,8 @@
       "page_last_updated": "10/9/2026, 6:37:20 PM",
       "raw_bytes": 17590,
       "raw_sha256": "17bb6e3dc501a41b0aefd198d203eecf631bf135eae3bde4621a470e4e5266b3",
-      "markdown_bytes": 678,
-      "markdown_sha256": "13674870c288ada93b49109348256c97b2ecd5c7fdd655534ef2794ecd0b1ad0",
+      "markdown_bytes": 686,
+      "markdown_sha256": "ca10a0a8505e30160840a374cc42f81d3348bdb467eafc732763dc0d6b6ed4ad",
       "comparison_with_20260919": "changed"
     },
     {
@@ -861,9 +861,9 @@
       "page_last_updated": "8/11/2026, 12:53:33 PM",
       "raw_bytes": 17812,
       "raw_sha256": "2546b66d0521c8f0cdf0a5bd1a1ef742dc15f9717a11ccd546497599836195a1",
-      "markdown_bytes": 817,
-      "markdown_sha256": "0fcb89d995c26057e80b2f81f890889ab6ad7c58fd1533158c3c2b3c6d701f0d",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 825,
+      "markdown_sha256": "de99be6e011a7794fcb290fd6d3af6f00ccc22d6947b9e04a64a88778931fb0b",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/autogen/event/group_message_create.md",
@@ -875,8 +875,8 @@
       "page_last_updated": "10/21/2026, 6:27:26 PM",
       "raw_bytes": 30298,
       "raw_sha256": "b58d5735eb6b1a053bad5e56fb23bab4dc4e968f486fff00a8742b9d3077deb9",
-      "markdown_bytes": 6932,
-      "markdown_sha256": "3c28382d76db81b44eac2ab65686a37d88ec894775196727fd737c861e4e6ecc",
+      "markdown_bytes": 6889,
+      "markdown_sha256": "d5889bb03298e59f64b2848ae814f94df2c151f1be75aff99fc1c29885ae8760",
       "comparison_with_20260919": "changed"
     },
     {
@@ -889,9 +889,9 @@
       "page_last_updated": "7/21/2026, 4:27:59 PM",
       "raw_bytes": 17674,
       "raw_sha256": "8c12c2e57029973601293022a2c77fa0303454252f23af01f0342e476191a65e",
-      "markdown_bytes": 734,
-      "markdown_sha256": "3012e068e601d1a7e9c8c4f97fbbe3bf5f94da5f703177a377120d4a9259a549",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 742,
+      "markdown_sha256": "76a1c1bc65c14e2a51f9b42fdf35b7164a144f5c53de3012a2acfca7a06abd60",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/autogen/event/group_msg_reject.md",
@@ -903,9 +903,9 @@
       "page_last_updated": "7/21/2026, 4:27:59 PM",
       "raw_bytes": 17669,
       "raw_sha256": "220c6546f56f5e39a9df5fbe006c9c604cfd53e2513adc107e74db6de56c56a1",
-      "markdown_bytes": 732,
-      "markdown_sha256": "9b4dfa6845115bb98de028563c298a4374b05aadef9306c0b35809c70c6f52e9",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 740,
+      "markdown_sha256": "649fec351c56a302e0d49ee092570607f7fa37458c60c795f136036fa44c13b6",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/autogen/event/guild_create.md",
@@ -917,9 +917,9 @@
       "page_last_updated": "7/21/2026, 3:25:45 AM",
       "raw_bytes": 19885,
       "raw_sha256": "099628808be900e0d9000a0ae3b478d3ce2d532dc6456f1850a047d8cd584cd4",
-      "markdown_bytes": 1070,
-      "markdown_sha256": "8b4dbe649ba2e3b4096f63bffdede64ef79ab21ec88a012dca11d62da3a8889a",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 1078,
+      "markdown_sha256": "0f3480e6e52b58e8d0f8f3a95f2627d3f93db2e85664f49768c6f70c555ffdd5",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/autogen/event/guild_delete.md",
@@ -931,9 +931,9 @@
       "page_last_updated": "7/21/2026, 3:25:45 AM",
       "raw_bytes": 19677,
       "raw_sha256": "ee788f695b62d9023be132581d3cfb35343db0ab1cfba0e9ba9366eccf4b3bf6",
-      "markdown_bytes": 993,
-      "markdown_sha256": "126cf89851b2485dfbbc564a0788d0541baf0603661e76a3708918c3b31bc3de",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 1001,
+      "markdown_sha256": "f77ccf5e850861aad126b92e41cc2d7461c99b19ab61b81d5efa34b6dee61f44",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/autogen/event/guild_update.md",
@@ -945,9 +945,9 @@
       "page_last_updated": "7/21/2026, 3:25:45 AM",
       "raw_bytes": 19666,
       "raw_sha256": "f09918d6eacd6e14149aecac1397952057b11b28186f2583032d9fcde6c14f42",
-      "markdown_bytes": 987,
-      "markdown_sha256": "5616285e624c8f4b19c9d1e8512c53a9ef751ac4c1b66e7d381ad904bb2e5a72",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 995,
+      "markdown_sha256": "a16149de8973cb19a8dcadb6c9106577bdef8c0321a04afb2dbaccefc600181b",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/autogen/event/interaction_create.md",
@@ -959,9 +959,9 @@
       "page_last_updated": "7/23/2026, 4:23:02 PM",
       "raw_bytes": 26799,
       "raw_sha256": "d3d7b892a17984f3cc5dc43c12d04291a0f47581c0d39e45df48d83bebaddb60",
-      "markdown_bytes": 5545,
-      "markdown_sha256": "5b32b930248531f889c30617751daaa0e045fd60c02cbfa5a1ab45838be3d839",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 5542,
+      "markdown_sha256": "5a6fadc1880a1b92b64d063ca307d89ec5ee62890bf5a66684b107bd16add08c",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/autogen/event/subscribe_message_status.md",
@@ -973,9 +973,9 @@
       "page_last_updated": "7/21/2026, 4:27:59 PM",
       "raw_bytes": 19132,
       "raw_sha256": "15dd9eea51921c095d3773e627d8fa62c7f557dea72810aaed4eabbcf9761d2f",
-      "markdown_bytes": 1737,
-      "markdown_sha256": "e556ba848c588e1b6a1567119800585f2934a93d9826f40d4cab914fe1751b0a",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 1741,
+      "markdown_sha256": "dc98d6c57bec9d2e9e13dda0ecd2f535adf26b63cbfaac7af45778188229169e",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/autogen/index.md",
@@ -987,8 +987,8 @@
       "page_last_updated": "10/21/2026, 6:27:26 PM",
       "raw_bytes": 29009,
       "raw_sha256": "37503bdb70f16b45ac019e4d97ded4985691eb202a3eb84aef18e7c0be99354a",
-      "markdown_bytes": 7593,
-      "markdown_sha256": "736c6e28eaadb801eafc1ef5601d2bbf3a7a1bdc7ca9668e919d593146eb5e05",
+      "markdown_bytes": 7645,
+      "markdown_sha256": "30fcb4a8bb540881e55a84b72a4790fd774b95ca5ffdb09269c0a028c59c0bbc",
       "comparison_with_20260919": "changed"
     },
     {
@@ -1001,8 +1001,8 @@
       "page_last_updated": "10/21/2026, 7:35:14 PM",
       "raw_bytes": 18777,
       "raw_sha256": "1966385da8ad392fed1db04e1453077b3a0660b88af6824239dc69ebdd2fca7b",
-      "markdown_bytes": 1695,
-      "markdown_sha256": "9583a44fb6201fbb5d76c2c849d9f58df32a656727d16a63389e7b62d8a98a0c",
+      "markdown_bytes": 1714,
+      "markdown_sha256": "ebd09c9373d4d87333546dd619c0d3ff0d023d6045e2e2347b048ef084cdb2e3",
       "comparison_with_20260919": "changed"
     },
     {
@@ -1015,8 +1015,8 @@
       "page_last_updated": "9/16/2026, 8:01:05 PM",
       "raw_bytes": 24720,
       "raw_sha256": "9c0cc90d9b51439084e62fe586588cd579224c0b1ee19627a52a4716fe38eef5",
-      "markdown_bytes": 3684,
-      "markdown_sha256": "c431cdd3795ea0e8b020d6a41fffbee607b5321d0992981449f201c1826dfef6",
+      "markdown_bytes": 3721,
+      "markdown_sha256": "48353e4faeddb3204d36529a25b50645f3c8df86b1c92b48f7b160793c6d88cc",
       "comparison_with_20260919": "changed"
     },
     {
@@ -1029,9 +1029,9 @@
       "page_last_updated": "9/17/2026, 11:37:24 AM",
       "raw_bytes": 41117,
       "raw_sha256": "109d9f577d7ab58d74ef55599a156e4a42314b9920c1409b23133ab6d883e9ba",
-      "markdown_bytes": 14992,
-      "markdown_sha256": "f323aaafd18b10715084cadee185b236e222d1d98cc6bbdc7dcb57ff6724ab9e",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 15029,
+      "markdown_sha256": "4200f1bb4348d0c2da962ef63f6c941a284e1bfbd50400fe598fa38ece91c0e6",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/dev-prepare/error-trace/index.md",
@@ -1043,9 +1043,9 @@
       "page_last_updated": "12/20/2023, 4:46:30 PM",
       "raw_bytes": 16071,
       "raw_sha256": "01a744814a81ebf822e4a4c6fa7d5384de5a9e64a1ac3034e25e424aadaa5ac9",
-      "markdown_bytes": 430,
-      "markdown_sha256": "aa388e9a428c8976eab9c18879013081d07b41155d99392ab337c1de7f166c26",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 434,
+      "markdown_sha256": "1bd9244ec90482f8061c5fd5bf813a78734836512eb46e82e6f6dd6f9ce94d6a",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/dev-prepare/error-trace/websocket.md",
@@ -1057,9 +1057,9 @@
       "page_last_updated": "7/21/2026, 9:50:42 PM",
       "raw_bytes": 19359,
       "raw_sha256": "b5323e4717cfe6bedd019fe18831f35abb5ae61251da559ac096eff250bbd926",
-      "markdown_bytes": 1392,
-      "markdown_sha256": "0496714fe9102c6217cb700215ebb8eee6c106e5d0d9872d52aebffac23d5e8f",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 1396,
+      "markdown_sha256": "57e76c9b0d8f8ab4ccefed1b1d3cf9ba4efc29d61d2c619c0fbe3cd13c830ca0",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/dev-prepare/event-emit/payload.md",
@@ -1071,9 +1071,9 @@
       "page_last_updated": "7/21/2026, 9:50:42 PM",
       "raw_bytes": 28309,
       "raw_sha256": "9eed6fb30ff0061c2475dfd3394d3797f215895842e08e810dc64a1f100a0c7d",
-      "markdown_bytes": 6745,
-      "markdown_sha256": "e3bdebe8a92b8327a96f5d1b447af06a1952c953bdb50e24a317ba80ced9b8dc",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 6764,
+      "markdown_sha256": "6d04221efb2a5ac99052df0a85690b8180dbcdbb6473d7d76a82076876957a21",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/dev-prepare/event-emit/webhook.md",
@@ -1085,8 +1085,8 @@
       "page_last_updated": "9/11/2026, 7:11:03 PM",
       "raw_bytes": 30459,
       "raw_sha256": "329d9d9131f0ba7bc2ba5320f2f95111f1fc1fda66678d5b7521b9e12a0e023e",
-      "markdown_bytes": 3136,
-      "markdown_sha256": "82b83e1ec1dda80661b896e62668ea069506a9b979fc65e4fc01f53d8594bdd1",
+      "markdown_bytes": 3156,
+      "markdown_sha256": "982171e44000c6d7277b68f50b828dff72f30e1a27e3d04f23b0d0a1e68c65f2",
       "comparison_with_20260919": "changed"
     },
     {
@@ -1099,9 +1099,9 @@
       "page_last_updated": "7/30/2026, 10:21:27 PM",
       "raw_bytes": 35868,
       "raw_sha256": "a0e6041c6451aaf3db56fb99aadcafe5a6a6e041887c2dc83d8c9e6778d4819d",
-      "markdown_bytes": 6081,
-      "markdown_sha256": "517bb1e7ab7dd7736c7e21f1dba2f2622e1031c4b5bd2cbec9a05986f14442db",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 6144,
+      "markdown_sha256": "1198ab9816d7c7342723aeef95da7a8edf312be922b1227df509a8f524134a4a",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/dev-prepare/getting-started.md",
@@ -1113,8 +1113,8 @@
       "page_last_updated": "7/21/2026, 10:16:06 PM",
       "raw_bytes": 25244,
       "raw_sha256": "8194392fc0099a9eb979da35d3074c76adc039d7118aa89455c7f9f5302cfabf",
-      "markdown_bytes": 6412,
-      "markdown_sha256": "5289b2e29bed43ab443a4e59c35575db4eb0f25c586a08acd32b24e3955b63dd",
+      "markdown_bytes": 1253,
+      "markdown_sha256": "3971d888326c48e08ef8dac12c0373f3492c26fafb84f13fce369cffdc1408bf",
       "comparison_with_20260919": "changed"
     },
     {
@@ -1127,8 +1127,8 @@
       "page_last_updated": "7/30/2026, 10:21:27 PM",
       "raw_bytes": 21140,
       "raw_sha256": "7c93bb5d0d744d7b68ce780de5b82693c85bb6326ee8abdbabfcdc0d5d6b37f2",
-      "markdown_bytes": 2146,
-      "markdown_sha256": "77160edba3a9e6785ba89ae904bbeb6d082be7f7012572add26c123efce81631",
+      "markdown_bytes": 2173,
+      "markdown_sha256": "316984f33e5f3c4d5b660490c748b73e8a04478ba24e9b46a69cea722e8d958a",
       "comparison_with_20260919": "changed"
     },
     {
@@ -1141,8 +1141,8 @@
       "page_last_updated": "9/11/2026, 6:09:37 PM",
       "raw_bytes": 60145,
       "raw_sha256": "6a3645037b4513e102dfc148a07f7d3eadb00bc1c7e6f99cbedb2647f88acc48",
-      "markdown_bytes": 14826,
-      "markdown_sha256": "9f17a81c0535c6ed46aa7b1326c5bb4c9687ed6eefb98d1529209ce5e9d4b1e9",
+      "markdown_bytes": 14908,
+      "markdown_sha256": "e2b2ca768bb00893a5048a57262521ecda919e87671dc57db0e9b54045c09804",
       "comparison_with_20260919": "changed"
     },
     {
@@ -1155,8 +1155,8 @@
       "page_last_updated": "5/20/2026, 8:38:10 PM",
       "raw_bytes": 15913,
       "raw_sha256": "58e3f5feed01f3fdb6bfc3d0363b925995603c470a72d544603d5713f0ccc1f2",
-      "markdown_bytes": 408,
-      "markdown_sha256": "e091c0d04e9e84d80483f0c08faa7a135564282d67a274c4f24d9e07e13a3cc9",
+      "markdown_bytes": 410,
+      "markdown_sha256": "ff2f1287d1f67422350542195208ad463bd18b87d821ff3c87f98b286ac95688",
       "comparison_with_20260919": "changed"
     },
     {
@@ -1169,8 +1169,8 @@
       "page_last_updated": "9/12/2024, 9:12:52 PM",
       "raw_bytes": 17160,
       "raw_sha256": "6225a70b8bb1e757d761964c1fcf3ea0d0cfe2d95d6d32811bc3d6ac0803da5d",
-      "markdown_bytes": 1249,
-      "markdown_sha256": "07613e91874e0d9f60c1c0eee3988303d9269b27cb2666e73e0a64344a98b09c",
+      "markdown_bytes": 1253,
+      "markdown_sha256": "2a87bbf6ff5f8290a6183c7f7550211f996a5e1a9fea160777bb3677f825ee24",
       "comparison_with_20260919": "changed"
     },
     {
@@ -1183,9 +1183,9 @@
       "page_last_updated": "7/30/2026, 10:21:27 PM",
       "raw_bytes": 31000,
       "raw_sha256": "65f2724f4510c5fedd814a179040783fde0b93c8993cd7ba0dee10ad3ba85d26",
-      "markdown_bytes": 3828,
-      "markdown_sha256": "2cc85017b2a50d0488fd783df79bfacd5e6216782e4a192d1eb8e5e73a9fb65b",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 3907,
+      "markdown_sha256": "4d77d54388e6516f3eecc352996a0de8d87d6f5da702a805fbea85081aaf529a",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/dev-prepare/interface-framework/sign.md",
@@ -1197,8 +1197,8 @@
       "page_last_updated": "9/12/2024, 9:12:52 PM",
       "raw_bytes": 27089,
       "raw_sha256": "91b3b6feb4d6bc2b84fa85f72b37e8e38fd3ecb8290e0d67f8155163af34574e",
-      "markdown_bytes": 3212,
-      "markdown_sha256": "b6ac503c5859a2e04bbdfa6c3fd3633e0c3cfd4cf62f757aa6ccd48d88f596d1",
+      "markdown_bytes": 3232,
+      "markdown_sha256": "5acbb93361ada7dfbf0bbd739b7c12e0b8ab793828a1143fe9d031716e4667b3",
       "comparison_with_20260919": "changed"
     },
     {
@@ -1225,9 +1225,9 @@
       "page_last_updated": "11/22/2023, 4:19:57 PM",
       "raw_bytes": 19358,
       "raw_sha256": "fdb89993919ac60602e398d1f6dc8f7f6fffd7cb7a83635b7b8d6a083cba1861",
-      "markdown_bytes": 1375,
-      "markdown_sha256": "bd2def637ace43b452ec7e8a3a1e6474c2adeac07862f48ea64111b2e878eb58",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 1379,
+      "markdown_sha256": "4d01a43c046771a029cc3e1bbe152fcf36d7f02cf66b55064f092a6e2d4be0b0",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/index.md",
@@ -1239,8 +1239,8 @@
       "page_last_updated": "7/21/2026, 10:16:06 PM",
       "raw_bytes": 24780,
       "raw_sha256": "4c18cce84c3b98d4f34b86a76d49e8097fde0a36c543680c7ac158d96924a375",
-      "markdown_bytes": 6495,
-      "markdown_sha256": "5906e1efb8a07e5b566ef2a3dd51b3dc7df262dc79f683b3a9f3b94a68683bb1",
+      "markdown_bytes": 1333,
+      "markdown_sha256": "deee787bf283171612444b86c742babbeeae75ba98d80cb5f40acbd6ebd7984b",
       "comparison_with_20260919": "changed"
     },
     {
@@ -1253,9 +1253,9 @@
       "page_last_updated": "11/22/2023, 4:19:57 PM",
       "raw_bytes": 25218,
       "raw_sha256": "235a2201138c9c675428035b1a0ece58cd84a34f3a44eeb84c24fa982b115594",
-      "markdown_bytes": 4609,
-      "markdown_sha256": "6b1c1a44bccfdeae3560e34756e8203652bace9a26fa094c4e2c7608f86004f5",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 4616,
+      "markdown_sha256": "40fec83882fdb6c019a9def4b54d3e91a13846ff716516d33e67965e7064b0b1",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/openapi/error/data/model.md",
@@ -1267,9 +1267,9 @@
       "page_last_updated": "11/22/2023, 4:19:57 PM",
       "raw_bytes": 16091,
       "raw_sha256": "0816957b66a168cb96ff0459508cfdadc364d4baf199f8ad65bccaca2c4d1303",
-      "markdown_bytes": 384,
-      "markdown_sha256": "048c3fb93031e93f025bd729c5c11645f96f6a419fe559b23f83f5dffe717aef",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 386,
+      "markdown_sha256": "a07d456dd9da1556f63387eb5ba4e64d5c092b16451b6b236091555eec62b5ea",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/openapi/error/error.md",
@@ -1281,8 +1281,8 @@
       "page_last_updated": "7/21/2026, 9:50:42 PM",
       "raw_bytes": 51493,
       "raw_sha256": "01434bdf51b0d2b64034d560c1dff655896a1737ad8be8db1f3c6e828306e9e4",
-      "markdown_bytes": 14310,
-      "markdown_sha256": "0fca891d2041bd8f0f7528d2efe18c3a1c7a9c3b8b26e2195e9c555e403113e1",
+      "markdown_bytes": 14328,
+      "markdown_sha256": "9e98e56decc14289bf5be332fc13676ab81049e094f74ef2ca07358b869680bf",
       "comparison_with_20260919": "changed"
     },
     {
@@ -1295,9 +1295,9 @@
       "page_last_updated": "11/22/2023, 4:19:57 PM",
       "raw_bytes": 18895,
       "raw_sha256": "0db7884eca9d014ba1f6a339f7f9d6b171a80ad78c836e75986a1a2d142bc45c",
-      "markdown_bytes": 1464,
-      "markdown_sha256": "735fffd0ac54d7d43889ef54a01dba8196680d3efc8624103849a1285ff4655e",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 1484,
+      "markdown_sha256": "2e9e9859e20797f517df68c491c4e2d5c79c88e083d455ce38fbba268cce0c1b",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/openapi/member/get_member.md",
@@ -1309,9 +1309,9 @@
       "page_last_updated": "11/22/2023, 4:19:57 PM",
       "raw_bytes": 19850,
       "raw_sha256": "e015bc1916cae8c9dd3db7fb42051d01ba538d6d4a8489657aeaa7266d8e8a43",
-      "markdown_bytes": 863,
-      "markdown_sha256": "0fcffc6fa3bd9f03357e8fb82d4b23726ea37e92405c952ab5cccb7e04162457",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 878,
+      "markdown_sha256": "713a96394081e93e331fbc1d255f76315bded50fec5b18205f08d9105f844a02",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/openapi/member/get_members.md",
@@ -1323,9 +1323,9 @@
       "page_last_updated": "11/22/2023, 4:19:57 PM",
       "raw_bytes": 26210,
       "raw_sha256": "a12ce183a869b255d6c757ff2dfaa3b05507aafef822600f164b8c3ef22ac8ce",
-      "markdown_bytes": 2219,
-      "markdown_sha256": "df4f4fe8f3eea761eb771d9befb951535317bd3fcd6b9b99028d79d3218dd6f8",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 2241,
+      "markdown_sha256": "399267b73097d855780353af7f2764ee4f66c56e8cc2c789d614bad24713eae9",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/openapi/member/model.md",
@@ -1351,9 +1351,9 @@
       "page_last_updated": "11/22/2023, 4:19:57 PM",
       "raw_bytes": 16916,
       "raw_sha256": "86942f356dbf1e8ca5c59995983024456c3c369c09f6527f7dd34b6faaa685df",
-      "markdown_bytes": 710,
-      "markdown_sha256": "1a2f6cdd96ce7bebb4f560fcbba616f032eed0e29fea3dae2db14bbd506ccc33",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 716,
+      "markdown_sha256": "e49c517b20506b82a47858caefb795cb7ec19dd1da3fd4634c33a3630c1d3954",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/openapi/user/guilds.md",
@@ -1365,9 +1365,9 @@
       "page_last_updated": "11/22/2023, 4:19:57 PM",
       "raw_bytes": 20104,
       "raw_sha256": "1e19f2baaf852b03be299fce58e5eca038ef5d21d92c55ad0ad580833c098253",
-      "markdown_bytes": 1536,
-      "markdown_sha256": "315e0356911f17a2a9888b8f0cc39cd27cb3540092b28ba8a68e7c2bf54af038",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 1566,
+      "markdown_sha256": "151d79210cccc9bf7d95f67338ba1dc6a036a747f3a72892deeb8756d51738bc",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/openapi/user/me.md",
@@ -1379,9 +1379,9 @@
       "page_last_updated": "11/22/2023, 4:19:57 PM",
       "raw_bytes": 18260,
       "raw_sha256": "10c0bd347d5e79f4c7821731f513c33d8bfb0bcae03d027e63560c53e2fd4840",
-      "markdown_bytes": 652,
-      "markdown_sha256": "d2d78a8332b28eafe1ee75e6674371ef893fc59790a0fafcf89c9857ffc7a40f",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 665,
+      "markdown_sha256": "4e27f5598ba66da7d2e6f768fdc469ca68e8394e4ef75c43a4460dac06a54943",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/openapi/user/model.md",
@@ -1393,9 +1393,9 @@
       "page_last_updated": "11/22/2023, 4:19:57 PM",
       "raw_bytes": 16835,
       "raw_sha256": "2223f174b5aa5fa528a44c725d6897b5adeaba4e3259b3d117c57f71600f8a04",
-      "markdown_bytes": 972,
-      "markdown_sha256": "6d77f32175ab1a657a97109148176824ff7d7bb28e9aeb802868d70025c73bf3",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 977,
+      "markdown_sha256": "4e34e8885d0e0ba5f4d5692ebe6fb3ed7cd6c8952f42018493c0dea44414f25b",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/openapi/wss/shard_url_get.md",
@@ -1407,9 +1407,9 @@
       "page_last_updated": "7/30/2026, 10:21:27 PM",
       "raw_bytes": 19526,
       "raw_sha256": "5ea30dc5cad21ad33eea4d5fc66bc06fd1fdcbef8911177095669abc31085a59",
-      "markdown_bytes": 1228,
-      "markdown_sha256": "d591afb3841faf3c90ff090fed399f4a0e07564b176fa742b7deb27ab7be7dc6",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 1243,
+      "markdown_sha256": "5b7a1a1e36b7536bcb5960ba1bec08bf6f9442200f2eca700480718f442b0ece",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/openapi/wss/url_get.md",
@@ -1421,9 +1421,9 @@
       "page_last_updated": "7/30/2026, 10:21:27 PM",
       "raw_bytes": 17295,
       "raw_sha256": "eb404ae56862ad420218fa56a83b7e66eeb85b37f7f4457e8deee7532ab32d8a",
-      "markdown_bytes": 516,
-      "markdown_sha256": "5182ed02cf77014e4bbf845b5927b02a8a1892b0e2ddc3b40b2e3c5077b1cbee",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 529,
+      "markdown_sha256": "d8c84e3b6e205ec0d5ee3b77cdcaf15debf5e319fec749da227725d4f8b0e550",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/server-inter/channel/api_permissions/get_guild_api_permission.md",
@@ -1435,9 +1435,9 @@
       "page_last_updated": "11/22/2023, 4:19:57 PM",
       "raw_bytes": 21685,
       "raw_sha256": "b9d511586f46ef551cf83d7578b87c0d4a48eec23eb31dcc3d102a3709d5cef7",
-      "markdown_bytes": 969,
-      "markdown_sha256": "59522f3332e751fa5abb798d58148d39fb03f0fd3c25433b58b0a656ffc33017",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 1037,
+      "markdown_sha256": "1e37d1db823bb14500ea2908a183748a38391ece9c63caf4ac06b27cd5935ddb",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/server-inter/channel/api_permissions/index.md",
@@ -1449,9 +1449,9 @@
       "page_last_updated": "11/22/2023, 4:19:57 PM",
       "raw_bytes": 16986,
       "raw_sha256": "e61a9d44ea63bb147ae61ac54c861266661e385cd1ebbb6467ebc722a39b2c96",
-      "markdown_bytes": 143,
-      "markdown_sha256": "2bc6708e4554725bb74eb64d746b012c2430b54717f4142d83f84f3b73a0d187",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 404,
+      "markdown_sha256": "81cdce4c4a4cb671169410f2a2da62a80913d58a8835a3cf26cffd896e44fb37",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/server-inter/channel/api_permissions/model.md",
@@ -1463,9 +1463,9 @@
       "page_last_updated": "11/22/2023, 4:19:57 PM",
       "raw_bytes": 17607,
       "raw_sha256": "88a5a4e69634bc90cb6f3c5e7ca8bde3d9198946fcd9d1e80942b0952732a363",
-      "markdown_bytes": 1243,
-      "markdown_sha256": "9c8d1b89ef23e68638b57cdac3cf073d5eef24298ddb079e1a71a29894c0304b",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 1339,
+      "markdown_sha256": "208dbda44892e01695303d4bfa5fba1069ba78d59abe23cb36b246f12820ba1a",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/server-inter/channel/api_permissions/post_api_permission_demand.md",
@@ -1477,8 +1477,8 @@
       "page_last_updated": "5/20/2026, 8:38:10 PM",
       "raw_bytes": 23236,
       "raw_sha256": "7913fa96619f1be7a3de8bba8105714a66812ba1cd3e2d6325be0e45205a4c01",
-      "markdown_bytes": 1624,
-      "markdown_sha256": "7269f5b66ba762ad4c9f9b789ab788f81f1dbe4cf8155e6f06625df69e103c0f",
+      "markdown_bytes": 1806,
+      "markdown_sha256": "501433d5747540881727b273cf9bfbbf01e3f84f126e99b1089ac6d336d8cb1e",
       "comparison_with_20260919": "changed"
     },
     {
@@ -1491,9 +1491,9 @@
       "page_last_updated": "11/22/2023, 4:19:57 PM",
       "raw_bytes": 17614,
       "raw_sha256": "1f2d8463d7ea828ee63407401617bbdd763ead9baf96600e5e81de6c84ffb2ac",
-      "markdown_bytes": 929,
-      "markdown_sha256": "d826605d709947cb325fac15573a8f1c2125f2b512ca5215fd09ec38e3eec64c",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 943,
+      "markdown_sha256": "96ad5e3a0cb6823b796658280d5a9ac8109c832fd4e98bdc567301f3c659111e",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/server-inter/channel/content/announces/delete_guild_announces.md",
@@ -1505,9 +1505,9 @@
       "page_last_updated": "11/22/2023, 4:19:57 PM",
       "raw_bytes": 21247,
       "raw_sha256": "bdd821ed78e986554f095b0fe3e8a43f51ca1322d3b36297b4416baa4102bbd1",
-      "markdown_bytes": 701,
-      "markdown_sha256": "9d4a2972089eebd754bdad02a6cd3627dfa3924292015e123fa59d2f66ce8375",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 715,
+      "markdown_sha256": "51429433405c70ef7381c23908e1f71a8c5659c2bea06d262e73222d82db97f9",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/server-inter/channel/content/announces/model.md",
@@ -1519,8 +1519,8 @@
       "page_last_updated": "11/22/2023, 4:19:57 PM",
       "raw_bytes": 16857,
       "raw_sha256": "5e68293545c71991f5b1ab829332ee72e701f7ed938e6b3c0a9750fcc23ddce6",
-      "markdown_bytes": 712,
-      "markdown_sha256": "b7736ad1724b7a206367a9ff0a7dbffd41ddf9a806c0453be13c2c9bc409c975",
+      "markdown_bytes": 717,
+      "markdown_sha256": "ef1b5969224680165fb9d02a21e423e827382b2ef9ffb698947722ba9952f14a",
       "comparison_with_20260919": "changed"
     },
     {
@@ -1533,9 +1533,9 @@
       "page_last_updated": "11/22/2023, 4:19:57 PM",
       "raw_bytes": 18928,
       "raw_sha256": "4451dd7f7dfe7517a36de1bc43ccd00fdbc641a41b67208e832ca21b546b72ed",
-      "markdown_bytes": 970,
-      "markdown_sha256": "451653ac0f57c22f48e2729ff06179ce87547c2c723390d050e464eee1302f48",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 988,
+      "markdown_sha256": "385ce8352d1d7334447e9becb9ff965929bea67f02899b8cec243866486e71bb",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/server-inter/channel/content/announces/post_guild_announces.md",
@@ -1547,8 +1547,8 @@
       "page_last_updated": "11/22/2023, 4:19:57 PM",
       "raw_bytes": 29474,
       "raw_sha256": "952d3bf8b0f28b67678b2484aa6f9a9a48f90053ee6cf27b2ce4b53fcb9686ea",
-      "markdown_bytes": 2623,
-      "markdown_sha256": "469db8e523a52da6cc6d362c26d8d2039f5347a1c02d792f4f682147adf3f00f",
+      "markdown_bytes": 2645,
+      "markdown_sha256": "a5ebaff4268b291c43be8419ce3dd703d5dbd4f770c5651ae706d26c110f2972",
       "comparison_with_20260919": "changed"
     },
     {
@@ -1561,9 +1561,9 @@
       "page_last_updated": "11/22/2023, 4:19:57 PM",
       "raw_bytes": 22560,
       "raw_sha256": "6b3131c2b224ea709a16017ad4e5fa643e81314d2fed819a527dfe46499d377b",
-      "markdown_bytes": 799,
-      "markdown_sha256": "04459b1d2bfa8262da37363f0d1191d82c10c8194445172e6e40a7054d4f1231",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 818,
+      "markdown_sha256": "2b1fb7dc5b12697b11676946f817b68865d8d071dd0cd979323025bf9907427e",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/server-inter/channel/content/audio/delete_mic.md",
@@ -1575,9 +1575,9 @@
       "page_last_updated": "11/22/2023, 4:19:57 PM",
       "raw_bytes": 21799,
       "raw_sha256": "83d98498907d601e068885e31a00263cbb6989d82e188256a3a9b18519530ef8",
-      "markdown_bytes": 711,
-      "markdown_sha256": "d8674f093412a10476d5f0c28396663e6955eaa76b1b8a1a53704e0d09ac015a",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 730,
+      "markdown_sha256": "c8df901f97354a637af46fb3a33398241e10f48d6fa35246f8bc267ac3b7a08d",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/server-inter/channel/content/audio/model.md",
@@ -1589,9 +1589,9 @@
       "page_last_updated": "11/22/2023, 4:19:57 PM",
       "raw_bytes": 17078,
       "raw_sha256": "305cb6e4f6fe78fe650ddd8734410430bd3ae7cb618d7a27c97e86f80c99bb64",
-      "markdown_bytes": 951,
-      "markdown_sha256": "0655f0865a266962905814662b4d201c97c8b7b0ab5587eccf651efb03dcda31",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 957,
+      "markdown_sha256": "78cea10004f250e685e2ba862425bea71f5ffcf5367ffb5f0aa91c183e43e581",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/server-inter/channel/content/audio/put_mic.md",
@@ -1603,9 +1603,9 @@
       "page_last_updated": "11/22/2023, 4:19:57 PM",
       "raw_bytes": 21790,
       "raw_sha256": "1db0875270368aba668247fac96e6ba7f00d22953d6e8ff3632815fb84078103",
-      "markdown_bytes": 705,
-      "markdown_sha256": "cffdd951d976262bc69a2bd8b14520bd577a477ca35a63206470ecae5d541426",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 724,
+      "markdown_sha256": "d30d9b86d61fa4d99f8d1f9ea688dad01f34743d06ab2f75893187daed12f96f",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/server-inter/channel/content/forum/delete_thread.md",
@@ -1617,9 +1617,9 @@
       "page_last_updated": "11/22/2023, 4:19:57 PM",
       "raw_bytes": 21061,
       "raw_sha256": "0485987c3cf5bcea8dbb1a5bd78f93d4b50efb975664c56395bd947ffdca2387",
-      "markdown_bytes": 660,
-      "markdown_sha256": "b7669652873c7e708137c4b0717a31d2982f3cec32e80efd3490e53f4f782cd7",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 673,
+      "markdown_sha256": "54365a54c57275df436153791f360ca0fb141a49cfbf80f9f6417bd400044842",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/server-inter/channel/content/forum/forum.md",
@@ -1631,9 +1631,9 @@
       "page_last_updated": "11/22/2023, 4:19:57 PM",
       "raw_bytes": 40619,
       "raw_sha256": "a733a4ff06cb8503749d99c2e29a19732dabef5291af48ba9d3ae5621d2bd848",
-      "markdown_bytes": 3047,
-      "markdown_sha256": "6f274cd04732576359fdd09f7114b82d83ea76992eeed878bc697c767795ca29",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 3069,
+      "markdown_sha256": "6d784355379befc2e63c3e57cf1aa8cf55654eb11248ca9dd3b488e929df9154",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/server-inter/channel/content/forum/get_thread.md",
@@ -1645,9 +1645,9 @@
       "page_last_updated": "11/22/2023, 4:19:57 PM",
       "raw_bytes": 24383,
       "raw_sha256": "b390d2bc67f69b07c2070dda124aaa1f0d22ef755a0560b719d53b3453f7c6c6",
-      "markdown_bytes": 1428,
-      "markdown_sha256": "1dcac01e0c521ba8434d9bfbacdbc67ea4e4cac86edeb3684e54ed45cc421a39",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 1443,
+      "markdown_sha256": "fd5f1a7045aa26643754fa500b9a00303db571fe19122c453a252bbd9643110f",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/server-inter/channel/content/forum/get_threads_list.md",
@@ -1659,9 +1659,9 @@
       "page_last_updated": "11/22/2023, 4:19:57 PM",
       "raw_bytes": 27333,
       "raw_sha256": "f790d132e35ac48e7cb9b4a9d4c6bb5d78c079aae2080f3799a04d5752e194c5",
-      "markdown_bytes": 2096,
-      "markdown_sha256": "90bc01d3821ecd403748bbefdad9b3e11897ed806cad14051347b8ae3b90e146",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 2111,
+      "markdown_sha256": "337c0219a33b7ea0929fc77c85cb88db213e5d36a17646980f090f9094d1956e",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/server-inter/channel/content/forum/model.md",
@@ -1673,9 +1673,9 @@
       "page_last_updated": "11/22/2023, 4:19:57 PM",
       "raw_bytes": 30892,
       "raw_sha256": "67dfcb9ebab6d9e5d69a4f6a90d2379661a9c25ce390b02bc5029af5d1bf2499",
-      "markdown_bytes": 7714,
-      "markdown_sha256": "b77c0ef3a70c13329a75d6da58d1e2e5778a68dff16418089d770b8aff0d6718",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 7810,
+      "markdown_sha256": "a2565d5f97a9dd50a2d7673d372165d43fc7d670fdadedf3ab5fc7b8a7826cfd",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/server-inter/channel/content/forum/open_forum.md",
@@ -1687,9 +1687,9 @@
       "page_last_updated": "11/22/2023, 4:19:57 PM",
       "raw_bytes": 23815,
       "raw_sha256": "9085975332d6d07c33bd7c3e91d2d316556f8610c3a868c8e648f896aede5414",
-      "markdown_bytes": 928,
-      "markdown_sha256": "9b6503b93dcafab907471af90b8a1aa093058eb4b225a60429b97802bbbd5413",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 943,
+      "markdown_sha256": "7ebda23eb3cc361d0dec60b3e8cce47345ee0e6f6e3fa3e0c4f5f8a77d05ca69",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/server-inter/channel/content/forum/put_thread.md",
@@ -1701,9 +1701,9 @@
       "page_last_updated": "11/22/2023, 4:19:57 PM",
       "raw_bytes": 24390,
       "raw_sha256": "0ee8baf670886d776db6267c2ef379fc8a558ef0efe1b80102d41d941ff59028",
-      "markdown_bytes": 1706,
-      "markdown_sha256": "e9297e028ad88ed1b7facee4ebc1e8561b3d02e1a7b5344eeba068617431f450",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 1729,
+      "markdown_sha256": "ad7a155a2a2661b6aace9f74bfc1a142058c39a35e6b6c8ab9a731561cb0ce99",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/server-inter/channel/content/index.md",
@@ -1715,9 +1715,9 @@
       "page_last_updated": "11/22/2023, 4:19:57 PM",
       "raw_bytes": 19255,
       "raw_sha256": "48d3653414e82e5b04a0d61d4d44e3fa58c0880574bde5dfa00c4ac60fccf9a1",
-      "markdown_bytes": 135,
-      "markdown_sha256": "bb037c15549645d923305c17686984db4985f1df84c40165b62ea6adba229ae1",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 1526,
+      "markdown_sha256": "d34ce86f1ccf5c0f22e025e3f241210180980ffddbd1c7a81e144eb7a84e2a9e",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/server-inter/channel/content/pins/delete_pins_message.md",
@@ -1729,9 +1729,9 @@
       "page_last_updated": "11/22/2023, 4:19:57 PM",
       "raw_bytes": 21151,
       "raw_sha256": "6591ad3d3b3e5ac9a1ee821e60263f4f1d8a0c1019ffbcc42d556f64cd1213eb",
-      "markdown_bytes": 639,
-      "markdown_sha256": "38471dea00a60b3fe0abf5b6571d289508aa74fa4ed89ae818598fab7b54e2ff",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 653,
+      "markdown_sha256": "ae9000331e46fdf18afa4270f1e9c92a63808165d48105c6470d3627aa39fc33",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/server-inter/channel/content/pins/get_pins_message.md",
@@ -1743,9 +1743,9 @@
       "page_last_updated": "11/22/2023, 4:19:57 PM",
       "raw_bytes": 21878,
       "raw_sha256": "92a235318e0cdd25c1b022dfcddf14d39a4a52fb23f82be4d344816eca8505c8",
-      "markdown_bytes": 581,
-      "markdown_sha256": "cf33fd76b488369568c8e03aabff73b330832d3c2a17d871e5a9545a15b62bea",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 594,
+      "markdown_sha256": "83692422c4ecb7ec8e2ae315e5b1e310797c286ebd2429b4dabdac2b3bf9df9f",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/server-inter/channel/content/pins/model.md",
@@ -1757,9 +1757,9 @@
       "page_last_updated": "11/22/2023, 4:19:57 PM",
       "raw_bytes": 16081,
       "raw_sha256": "2fb8be3f8752d1536a6f471bc93d8e284c8aaca1b06a6f89ca3035bba4b8c813",
-      "markdown_bytes": 368,
-      "markdown_sha256": "0abb2d034302190bfdf034f3af613047f6384a0f4fb483ccd48ec0dce405d9c8",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 370,
+      "markdown_sha256": "06ae0040f9704e46815196f4dd74127abf71d15e5ff43e579bb426269527743b",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/server-inter/channel/content/pins/put_pins_message.md",
@@ -1771,9 +1771,9 @@
       "page_last_updated": "11/22/2023, 4:19:57 PM",
       "raw_bytes": 22423,
       "raw_sha256": "e5a104ec2c42bc3a4898218d337699492f92672cb7cafd9b97590088b41c60b8",
-      "markdown_bytes": 888,
-      "markdown_sha256": "2f28520628d627f514ad4cb8923692369da33a5e06261f3a8e03fac00bd092a2",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 904,
+      "markdown_sha256": "7843072c9ee65bc4583abb57eefe4f68d78cc84cb03eeb58f69b1591871d9e3e",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/server-inter/channel/content/schedule/delete_schedule.md",
@@ -1785,9 +1785,9 @@
       "page_last_updated": "11/22/2023, 4:19:57 PM",
       "raw_bytes": 21151,
       "raw_sha256": "c67416f75afdf735304d221928d355f52bb80a128ce55b414834c66856a87973",
-      "markdown_bytes": 679,
-      "markdown_sha256": "9af1e101aab5da42c6f2dfd0aa02e0375d6a766e90e9c4561a8c8fd54a8c3227",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 693,
+      "markdown_sha256": "6c36c4e6e98eba30147e0a8801dea285ff736b1e2bc538a9776d7ef7b3578a43",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/server-inter/channel/content/schedule/get_schedule.md",
@@ -1799,9 +1799,9 @@
       "page_last_updated": "11/22/2023, 4:19:57 PM",
       "raw_bytes": 24436,
       "raw_sha256": "6c0629f50c8e9f54140475c15cc543f3bc2c8b7495e3eb4349458956f7a799a7",
-      "markdown_bytes": 943,
-      "markdown_sha256": "4cb64f5255a1632301cfaf5fe813f45d5ab0359da55433260a7ba45c72dc8a0d",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 958,
+      "markdown_sha256": "a53a2a42c4ba6e5f9ee69b40d79d4aff81e67768c97e04e7c5739e3fa7fc6f07",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/server-inter/channel/content/schedule/get_schedules.md",
@@ -1813,9 +1813,9 @@
       "page_last_updated": "11/22/2023, 4:19:57 PM",
       "raw_bytes": 25343,
       "raw_sha256": "b3622326218ab92f1f3351930adf1aba36aeff953ba0dd5b0eebb77501019d08",
-      "markdown_bytes": 1214,
-      "markdown_sha256": "903657adea4dfff7ccd20ad0ebd181b55237f20cb75575a5acd2a16f10870f32",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 1232,
+      "markdown_sha256": "f5218c12b5c886e8c9fb321a0cc5e93c9c971fdaf7aa08c04155cf403a289a84",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/server-inter/channel/content/schedule/model.md",
@@ -1827,9 +1827,9 @@
       "page_last_updated": "11/22/2023, 4:19:57 PM",
       "raw_bytes": 17053,
       "raw_sha256": "c16af7b672151b1f66f86e49e689328d8208d85a33f3bbc24c4e4f5a35d59fe6",
-      "markdown_bytes": 920,
-      "markdown_sha256": "a7d7b467126be67e64423bff619f200c00fb844f7eaea29e49f08522a4a8959e",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 925,
+      "markdown_sha256": "bd22dbca4e41f31d577d699882bddf72e71c91a5edf081f01212a719c78d101d",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/server-inter/channel/content/schedule/patch_schedule.md",
@@ -1841,9 +1841,9 @@
       "page_last_updated": "11/22/2023, 4:19:57 PM",
       "raw_bytes": 26394,
       "raw_sha256": "0dc8991ec10b7f12c14cf844c80b36c708fde2ebe238298beba5c411471ae232",
-      "markdown_bytes": 1360,
-      "markdown_sha256": "adb18d7e79fe8593702591173a66f2479ccdbb26b232545db048990154de9b45",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 1378,
+      "markdown_sha256": "e51eeb189b42f849aa227bb0481b99b12df071a1d0e185d67bdbf94f3058f46c",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/server-inter/channel/content/schedule/post_schedule.md",
@@ -1855,9 +1855,9 @@
       "page_last_updated": "11/22/2023, 4:19:57 PM",
       "raw_bytes": 26570,
       "raw_sha256": "f44d899db7854821ec3967af09894d4c9b71848e98406ea6504776b6fa37e2bd",
-      "markdown_bytes": 1465,
-      "markdown_sha256": "9a70e3eecd4f246c5fe3c7e1f619a3d9be6ef3ecbe6519eb45b9a5d07c557ac7",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 1483,
+      "markdown_sha256": "49439e759296516a2461b4ebb6f4de107bb86ebf58177bc1772928c0cea9d805",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/server-inter/channel/index.md",
@@ -1869,9 +1869,9 @@
       "page_last_updated": "11/22/2023, 4:19:57 PM",
       "raw_bytes": 15587,
       "raw_sha256": "efdb52b8cfaaac926ecac343c710d460522f98a437f2457df081dee8ce0bd4ee",
-      "markdown_bytes": 127,
-      "markdown_sha256": "ae5729e7f2b7100efbbbcb611b326c72b9539cee7608cb1a1d8a3dbb9cdad7d3",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 4135,
+      "markdown_sha256": "1ed4687cb3be68c59d983aeb4a49f74eb097dae3a411a043384a420c20886da3",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/server-inter/channel/manage/channel/model.md",
@@ -1883,9 +1883,9 @@
       "page_last_updated": "11/22/2023, 4:19:57 PM",
       "raw_bytes": 21319,
       "raw_sha256": "149039a78a84cb8e6955353330403620d83b4844de99dc955433f658cc9bb64f",
-      "markdown_bytes": 3686,
-      "markdown_sha256": "5bdf79d419cacf363836419b140f245fa72f39dea7db3c6a1b5d33614241e266",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 3825,
+      "markdown_sha256": "a96761632e155371e527c66b3bb3c9dd2b80634cf6f0b136962283b7c648ac5a",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/server-inter/channel/manage/guild/model.md",
@@ -1897,9 +1897,9 @@
       "page_last_updated": "11/22/2023, 4:19:57 PM",
       "raw_bytes": 16515,
       "raw_sha256": "e6f5c23eb7e5d2a8fa0eeb80fa5e24458c6db13746f4f7cfbac6da628358f9bc",
-      "markdown_bytes": 675,
-      "markdown_sha256": "4d76d2555b00190c8d50df33e2890a391690b042d9ca899b0138ce36349218c2",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 678,
+      "markdown_sha256": "74264e808693f081953153cb39d0e22abbf6d44268face42ab9c9b6b3b78aea5",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/server-inter/channel/manage/index.md",
@@ -1911,9 +1911,9 @@
       "page_last_updated": "11/22/2023, 4:19:57 PM",
       "raw_bytes": 17380,
       "raw_sha256": "6902f88af518c1ad7d7f9a64c31eb24c558ac7258e3748e5566785cb52ff010e",
-      "markdown_bytes": 134,
-      "markdown_sha256": "b59ebbaca62900ef8928ea6d61b6c35f83a909ff6291be612548d1402d069d4e",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 324,
+      "markdown_sha256": "b38bafc793c444292409de98347f0dc754df959e36036b1ed251886a1d6e4480",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/server-inter/channel/manage/user/model.md",
@@ -1925,9 +1925,9 @@
       "page_last_updated": "11/22/2023, 4:19:57 PM",
       "raw_bytes": 16835,
       "raw_sha256": "67fb21c6d1c40a29135df18a9091e7e8bf49fbec9c17cea78bad8ad9c607a564",
-      "markdown_bytes": 990,
-      "markdown_sha256": "eec7bf2d72df7ecbf8577077f47e8e8eafaf5ce303eb828483306e0c041b0d1a",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 995,
+      "markdown_sha256": "2e967f9b12da0fdcd4a69c4c905ae1149fa9eed1c7429f80685dd52396d70272",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/server-inter/channel/message/dms.md",
@@ -1939,9 +1939,9 @@
       "page_last_updated": "7/21/2026, 3:25:45 AM",
       "raw_bytes": 25271,
       "raw_sha256": "a8c95599ac78449f3424ab8dfe1108306dc42d79d50fdb588e8b8d1f5e05da51",
-      "markdown_bytes": 3032,
-      "markdown_sha256": "c418fa33c86c4daef69a8a10405eb81fbc710e42d899bf8e2f1a7a7db640a462",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 3131,
+      "markdown_sha256": "fe1ce2d208591d5138d7165b71d2a6916c1e666d85933728dfa5a7e0b59618be",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/server-inter/channel/message/event.md",
@@ -1953,9 +1953,9 @@
       "page_last_updated": "7/21/2026, 3:25:45 AM",
       "raw_bytes": 33294,
       "raw_sha256": "afa3b5732faf5b5e44f3c9d8152375bc44e128b8d11d945afd34e7199f52a4ad",
-      "markdown_bytes": 3377,
-      "markdown_sha256": "449e11230767c485a7b03ebfc12e013b8335b17167315305929350b5a09b93aa",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 3411,
+      "markdown_sha256": "226fc21cde62be37999aba8648b2cc2f03817b4ea302faf60d05275d3a30adfa",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/server-inter/channel/message/format.md",
@@ -1967,9 +1967,9 @@
       "page_last_updated": "7/21/2026, 3:25:45 AM",
       "raw_bytes": 23986,
       "raw_sha256": "d3ca05ef8c2125d80ed586c9ee79ab86e4fc1e7d573b85a1a700d7c82b650e57",
-      "markdown_bytes": 1872,
-      "markdown_sha256": "e2e48625831537d4d559b4e43008f3df3a273ba99ba9a72c34ae9737eb4a1bbd",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 1909,
+      "markdown_sha256": "f81f19a13f1e8f437a75051771b2ee4c2980d71a0ab7ddf18d82db8aa307313f",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/server-inter/channel/message/recall.md",
@@ -1981,9 +1981,9 @@
       "page_last_updated": "7/21/2026, 3:25:45 AM",
       "raw_bytes": 19008,
       "raw_sha256": "203b987108b237dae26f7415673af253bb046bad48ed78723ce9fb7c34c65629",
-      "markdown_bytes": 1036,
-      "markdown_sha256": "91698692fd0c1cb031d9cd1a20ec01cb702513e1fe53aa8f0a4b9f1daac76578",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 1055,
+      "markdown_sha256": "344c97d2a048be91d55b55ab46b27ad502efbfed65859564abf4c554688e79c0",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/server-inter/channel/message/send.md",
@@ -1995,8 +1995,8 @@
       "page_last_updated": "7/21/2026, 3:25:45 AM",
       "raw_bytes": 33407,
       "raw_sha256": "faa0906320915dede4a3f405b5d7e6c2ad2253e301ee115f8d2559557c9b0f61",
-      "markdown_bytes": 5302,
-      "markdown_sha256": "128e168792cbf0d6f62a3f79eedbe08d9f08f2eac6b2f1ebd05aaf3928045f97",
+      "markdown_bytes": 5374,
+      "markdown_sha256": "c930ea054cd9c6573f3ed26867d29467241607fda62b005c4a85f0fc3fd0bdbc",
       "comparison_with_20260919": "changed"
     },
     {
@@ -2009,9 +2009,9 @@
       "page_last_updated": "11/22/2023, 4:19:57 PM",
       "raw_bytes": 16895,
       "raw_sha256": "ee6f28b5497453305f472842200330cb37a52016e8d56973a03ae7e4dd41896b",
-      "markdown_bytes": 135,
-      "markdown_sha256": "ac7599c8ca4fcf386d5cbfa5ca54ae0462ea7cbb9fe325405849d7f0dbd3b1ff",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 288,
+      "markdown_sha256": "5f40a4bf4ccef797dfb2bebeae8c8ab0eb316c0e1d1692461c75da62fdd36a15",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/server-inter/channel/miniapp/interface.md",
@@ -2023,9 +2023,9 @@
       "page_last_updated": "11/22/2023, 4:19:57 PM",
       "raw_bytes": 22994,
       "raw_sha256": "542429808f0b8286dfa08e673b49073ff751536a99b9697a6797466c6d200ec8",
-      "markdown_bytes": 3138,
-      "markdown_sha256": "7d2dadcdcaba9452af3faacfcb66b4dc12210e9a6d5f9ecd3092356d28dc7522",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 3161,
+      "markdown_sha256": "3e78a88ee8f97cbec85d59b525d5579338a82395d9743b271ed01a3f8df59b37",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/server-inter/channel/miniapp/opendata.md",
@@ -2037,9 +2037,9 @@
       "page_last_updated": "11/22/2023, 4:19:57 PM",
       "raw_bytes": 17946,
       "raw_sha256": "56774220081906df0d7c5d57f3f42fd8a28fdb369f5f1987c080bcf3088a783e",
-      "markdown_bytes": 588,
-      "markdown_sha256": "03759953b6276a696ff53ae285cdd6ab91179618e1ed2dedcc6c7025b4acf667",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 592,
+      "markdown_sha256": "a1abe7c96f039c58ad3e13cdb7705c6eaa6433cfbb6344c2847e1161f1c13477",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/server-inter/channel/role-group/channel_permissions/get_channel_permissions.md",
@@ -2051,9 +2051,9 @@
       "page_last_updated": "11/22/2023, 4:19:57 PM",
       "raw_bytes": 21318,
       "raw_sha256": "02352626a29c74bad7d76b58bed5acaf6c68186d590859bd25cc9b957c733ad9",
-      "markdown_bytes": 882,
-      "markdown_sha256": "b895a3da07891efc78365b678d62df531bc73a507fbc0ea198f8219c63a91ddd",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 898,
+      "markdown_sha256": "da68c93d458a8b090f8876c0d8273a507b985a98e03495dc2e7d01dd0f686d27",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/server-inter/channel/role-group/channel_permissions/get_channel_roles_permissions.md",
@@ -2065,9 +2065,9 @@
       "page_last_updated": "11/22/2023, 4:19:57 PM",
       "raw_bytes": 21317,
       "raw_sha256": "57d9628e0c452c8b03e6f6a46636fb3e800d813a7929c441f249b58b12f68905",
-      "markdown_bytes": 857,
-      "markdown_sha256": "a2eaefa76f4529c6a7aff69ed6d7ebdd71b522563d4f9bc5d3ae86ab35eba068",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 873,
+      "markdown_sha256": "c3e797534064b8345d24edab3eba5b84ce74ae34848e2dd4d7dcd0a41c3a7967",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/server-inter/channel/role-group/channel_permissions/model.md",
@@ -2079,9 +2079,9 @@
       "page_last_updated": "11/22/2023, 4:19:57 PM",
       "raw_bytes": 17336,
       "raw_sha256": "f9fc962469391bcdf8a4c8e10d54adefa2ef0a33f86f4fd0378d16e87d2b16e8",
-      "markdown_bytes": 1241,
-      "markdown_sha256": "a8e427bcbdb5114f555c4f8312d93e54cefd46ad7bc3f9fdb613e08eda956c90",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 1247,
+      "markdown_sha256": "f83e0cb40419e05d804e4d030c5171fa52f91dfcc580db98677f148ac76b55b7",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/server-inter/channel/role-group/channel_permissions/put_channel_permissions.md",
@@ -2093,9 +2093,9 @@
       "page_last_updated": "11/22/2023, 4:19:57 PM",
       "raw_bytes": 21699,
       "raw_sha256": "b09765aafb33130d2778616b034d9f58e8ea3ab44023bffab631d35220eba17a",
-      "markdown_bytes": 1267,
-      "markdown_sha256": "f294a04d8ff2961e374202a23dd71be1a9ab9a2d2bee12367e90b88cecd6ab63",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 1285,
+      "markdown_sha256": "3fe84ad648794c7bafd9696f5469fc6968f74fbfd7c6c2921349f6bf6e585d89",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/server-inter/channel/role-group/channel_permissions/put_channel_roles_permissions.md",
@@ -2107,9 +2107,9 @@
       "page_last_updated": "11/22/2023, 4:19:57 PM",
       "raw_bytes": 21693,
       "raw_sha256": "58f2e2eb0114d4ea73d5fb003cbe3331f21c47fb99f4ab2d92c84b433490bdd8",
-      "markdown_bytes": 1279,
-      "markdown_sha256": "254830a34a1f1ee3c2ba43abc2589776fce9eb687dc4a4b215c64682c46765a7",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 1297,
+      "markdown_sha256": "105b0fa311604a49a6f3940cd161978e383806a95164450ed59b630509add2ab",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/server-inter/channel/role-group/delete_guild_member_role.md",
@@ -2121,9 +2121,9 @@
       "page_last_updated": "11/22/2023, 4:19:57 PM",
       "raw_bytes": 20807,
       "raw_sha256": "9c05b1a700a4e0804184ceb49d53ee9ff3e56060b04626c2c292e31a43e4a8c6",
-      "markdown_bytes": 1043,
-      "markdown_sha256": "4e0365f0a4b744c5ea7c0b422e6a078572ad75aa116f1e2c16bdc9455f5a903c",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 1059,
+      "markdown_sha256": "9977267a3c21b66d3ad3ac3a47fc7b11b1a66edfd091154b912125379b9658a3",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/server-inter/channel/role-group/delete_guild_role.md",
@@ -2135,9 +2135,9 @@
       "page_last_updated": "11/22/2023, 4:19:57 PM",
       "raw_bytes": 20142,
       "raw_sha256": "75c2803f5c423c9ef31bfcd453880664d82e3509c4bdbc9918061b61e45b5176",
-      "markdown_bytes": 659,
-      "markdown_sha256": "c56ad147574a3be4f6da13e2c3b68da392b622e1277e354c8bebd65287abed26",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 673,
+      "markdown_sha256": "2273a71879fe689b7f410c7d7f98630aee53da673b403249b1eaeeb3b6ad759e",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/server-inter/channel/role-group/get_guild_roles.md",
@@ -2149,9 +2149,9 @@
       "page_last_updated": "11/22/2023, 4:19:57 PM",
       "raw_bytes": 24319,
       "raw_sha256": "94a3046c338221a8e924f90846e8104d078e3b8faacc7bac410b5f32d9a922db",
-      "markdown_bytes": 1100,
-      "markdown_sha256": "d45846d723eea066708a1dd040f3f92bd6cbcecfc52b116386bf91a80154c74e",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 1115,
+      "markdown_sha256": "17c4e813818b62420e897d946fc7905e29bac26b00bff4445018ee88e31da8e1",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/server-inter/channel/role-group/index.md",
@@ -2163,9 +2163,9 @@
       "page_last_updated": "11/22/2023, 4:19:57 PM",
       "raw_bytes": 18207,
       "raw_sha256": "5a573b261ab557e5194b33a00b9f85b387ee31b6610bacbe7adad72f20e5b13c",
-      "markdown_bytes": 138,
-      "markdown_sha256": "310751317a437423f52e87b6840888cc54c4c379523d26005e2a0a171177e4c7",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 929,
+      "markdown_sha256": "908050befd89182f4e55704e6c681598ae63deaa959e55bab9d2548e4a308104",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/server-inter/channel/role-group/patch_guild_role.md",
@@ -2177,9 +2177,9 @@
       "page_last_updated": "11/22/2023, 4:19:57 PM",
       "raw_bytes": 24056,
       "raw_sha256": "4ea54bc44b83eb6c22a7dfcf52467146fc3bcd9f0099176dfb6ca4edefea3913",
-      "markdown_bytes": 1458,
-      "markdown_sha256": "478ede5602f7091ab110bdee1bc0563cd64807f435eab97c1d83487997abddf8",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 1476,
+      "markdown_sha256": "1726ed64388a749eb8b4eefd28ce7b8791be26f15b54e91846d35af7d2b170de",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/server-inter/channel/role-group/post_guild_role.md",
@@ -2191,9 +2191,9 @@
       "page_last_updated": "11/22/2023, 4:19:57 PM",
       "raw_bytes": 23724,
       "raw_sha256": "469c2afa81e449542ef43cb18e8c952ed374ca1248d297bb3b71abe8a20d80db",
-      "markdown_bytes": 1352,
-      "markdown_sha256": "2769e05394dde9b884fd8180190d6a2b6dc1ec7cf6125a8d01b7cda6baa6c511",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 1370,
+      "markdown_sha256": "092922d94f9fda4402799c363780ce485153ad4372b5094a28bc8869933e2c36",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/server-inter/channel/role-group/put_guild_member_role.md",
@@ -2205,9 +2205,9 @@
       "page_last_updated": "11/22/2023, 4:19:57 PM",
       "raw_bytes": 21287,
       "raw_sha256": "066923fcfdd15ee3d82313bfbdc9f449061ba5d9b30f16086dcde7b8ff92e370",
-      "markdown_bytes": 1023,
-      "markdown_sha256": "08e2f70384dcf6c557813895759d32e778e61dd421fb50919666a0ed880409d1",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 1039,
+      "markdown_sha256": "3b4edd39dcf36338208edd8d1318be5d799d704f1e4bd8fd40c3e257316c744c",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/server-inter/channel/role/audio_or_live_channel_member.md",
@@ -2219,9 +2219,9 @@
       "page_last_updated": "11/22/2023, 4:19:57 PM",
       "raw_bytes": 21390,
       "raw_sha256": "1ca4fdc475c32dff003609c06b81cbcd621c35993c66d763156b008682ce4465",
-      "markdown_bytes": 753,
-      "markdown_sha256": "4b22875b4249a8293bef91828944d0704b2a07b95e629cb40ead321676025f77",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 763,
+      "markdown_sha256": "c37f95dc75780f599b568874a6df4bb31577847593b1515beec5b9d9dc1b1ed5",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/server-inter/channel/role/get_online_nums.md",
@@ -2233,9 +2233,9 @@
       "page_last_updated": "11/22/2023, 4:19:57 PM",
       "raw_bytes": 20351,
       "raw_sha256": "3116aa00330cdf819d91332a1e5cbe9c018f6f504dc291a1780d52742bb16c3e",
-      "markdown_bytes": 614,
-      "markdown_sha256": "43e4b023d6dda597d442f645e68fc7ca2b7f8772e88e13e6a2962272d61a9d25",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 630,
+      "markdown_sha256": "f7cb14bf8bd0c02bf1d592a6fbecd0fcb52c5f75c6e1e4801fc7e5fcaaf1af7a",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/server-inter/channel/role/guild_member.md",
@@ -2247,9 +2247,9 @@
       "page_last_updated": "7/22/2024, 10:40:23 AM",
       "raw_bytes": 27949,
       "raw_sha256": "8f3eeec23967c91eb379d0345f546f38b016fbfb4c1c82f9e929e0498ada430f",
-      "markdown_bytes": 1814,
-      "markdown_sha256": "754ec72c673f482807e383546a2e8afb4352a88a82235fbf5d28a92dedc26bfd",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 1832,
+      "markdown_sha256": "84b9c90985ec769e8fb2895de912d1d531f2db834745c7f63b0acb6ba77b02b5",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/server-inter/channel/role/index.md",
@@ -2261,9 +2261,9 @@
       "page_last_updated": "11/22/2023, 4:19:57 PM",
       "raw_bytes": 17629,
       "raw_sha256": "33b4ada0d090b83db8406b4ceb76b0bae33819a8d35926c305b7a60d2ce3c83a",
-      "markdown_bytes": 132,
-      "markdown_sha256": "d9fc75d725f55390f9665afe63a5cfaad3085edaaa3dc3144bf4847837f2a4b7",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 686,
+      "markdown_sha256": "0a360f933901f41e22ae548f033dd5a280016124b907f77153fcc11b1d240c7a",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/server-inter/channel/role/member/delete_member.md",
@@ -2275,9 +2275,9 @@
       "page_last_updated": "11/22/2023, 4:19:57 PM",
       "raw_bytes": 21289,
       "raw_sha256": "bdfcc8fa8b4ccf74db570036bb195996a05010f610529739e399f5ffce83406a",
-      "markdown_bytes": 1492,
-      "markdown_sha256": "7cf26c66dd678fd10fa519573c83835e4b0d5d5cc4c9cd59411cbe83dba62d50",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 1512,
+      "markdown_sha256": "eecf79f2b984e13c09795479d51743a9462b2c0eafbcf6f87202195c80f4a58e",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/server-inter/channel/role/member/get_member.md",
@@ -2289,9 +2289,9 @@
       "page_last_updated": "11/22/2023, 4:19:57 PM",
       "raw_bytes": 22309,
       "raw_sha256": "9c1b2fd896fe0f266c1669e4b59baf53a4d2344e42dd4e360114abf47d76d093",
-      "markdown_bytes": 904,
-      "markdown_sha256": "5ab42ad37d1776a732570341b9994b9b4222b0ce12ab5972831a83884ea71d64",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 919,
+      "markdown_sha256": "c218f55224cb945c1c2fae53201fa675cb41469f0568a20479655657cd47188b",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/server-inter/channel/role/member/get_members.md",
@@ -2303,9 +2303,9 @@
       "page_last_updated": "11/22/2023, 4:19:57 PM",
       "raw_bytes": 28652,
       "raw_sha256": "3275e268649f3145b84299203d4f074ae64b215d60e9399144b1521eedbed93c",
-      "markdown_bytes": 2246,
-      "markdown_sha256": "dbded2b35c7e214ff4414b1127457e23d1704fe524bc72e940a8774265eadfc4",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 2268,
+      "markdown_sha256": "2810003427eb476a35083af65b52a92235ffb4ce19e8d40aa37629284000e406",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/server-inter/channel/role/member/get_role_members.md",
@@ -2317,9 +2317,9 @@
       "page_last_updated": "11/22/2023, 4:19:57 PM",
       "raw_bytes": 23538,
       "raw_sha256": "fe8255b510fa618c8fe862394347618914d429adb66c4873cd2cfb88b83be10e",
-      "markdown_bytes": 1686,
-      "markdown_sha256": "92a3fc39297c24507eafc0ba4e4e63cf47cfbefd7fec8f3a49d942947681e378",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 1708,
+      "markdown_sha256": "598fe506b015b3e475c6fcd011a2bbcb1749b53d9cbcba56f4b62705b00eb89f",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/server-inter/channel/role/member/model.md",
@@ -2345,9 +2345,9 @@
       "page_last_updated": "11/22/2023, 4:19:57 PM",
       "raw_bytes": 16747,
       "raw_sha256": "05e15944a7e341e000dacd9338da96b420bfe54d1405fa97fe52fa9935e73690",
-      "markdown_bytes": 692,
-      "markdown_sha256": "4ef96db40ab1282175e56f193a91c7637b4462ff44c160e6a21fd5f62c7be27c",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 696,
+      "markdown_sha256": "0061394dc080f4ad24b4336b74eb280b61bef7b272fbeeff3de3ae2c50bbd12d",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/server-inter/channel/speak/index.md",
@@ -2359,9 +2359,9 @@
       "page_last_updated": "11/22/2023, 4:19:57 PM",
       "raw_bytes": 17215,
       "raw_sha256": "c0c8b1ea554ab63a1cb80d3eae2f19dfae8db624b45e0741e38a2fa52b1bb099",
-      "markdown_bytes": 133,
-      "markdown_sha256": "9df72e8351f7b9720553ff1560cfe71b9a9c621e445afd2a4b0a81a1b31002cd",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 504,
+      "markdown_sha256": "bacf05eb9f0fa4f347a8a6d6bb2cf8bf917c8d95c005c71ddd3a4acaf29712f9",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/server-inter/channel/speak/patch_guild_member_mute.md",
@@ -2373,9 +2373,9 @@
       "page_last_updated": "11/22/2023, 4:19:57 PM",
       "raw_bytes": 20570,
       "raw_sha256": "9e73adc6967325d2c98a82d19350148138dc2ec7a1d654b81732070c9f25a9d2",
-      "markdown_bytes": 1278,
-      "markdown_sha256": "69b4d06acbd48d7128be21aedf413da41baa61f72db7b67bbb7da9400e78fcf8",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 1297,
+      "markdown_sha256": "61d3512f20c668e577bd252f2557886619df1d790a5ced0d60c3d6cce29e0d78",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/server-inter/channel/speak/patch_guild_mute.md",
@@ -2387,9 +2387,9 @@
       "page_last_updated": "11/22/2023, 4:19:57 PM",
       "raw_bytes": 20518,
       "raw_sha256": "a11108921b229b0d653790e36df19559d4841d7889dea2b702b66b8da8a5ea50",
-      "markdown_bytes": 1237,
-      "markdown_sha256": "ec6d76beb1aa9fef790c1adb56dfa97021b49e3e2442e2796ef7a5e3472a172d",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 1256,
+      "markdown_sha256": "a6c6962d18bb075ecadc64ab90359d759ea63ea367635cb709753ad114648df8",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/server-inter/channel/speak/patch_guild_mute_multi_member.md",
@@ -2401,9 +2401,9 @@
       "page_last_updated": "11/22/2023, 4:19:57 PM",
       "raw_bytes": 21912,
       "raw_sha256": "6b6f690cb982d98e3925fca66a4bb80467176d9aba7fcb4b5279618907e51d42",
-      "markdown_bytes": 1647,
-      "markdown_sha256": "d58304607ebf29cb0b1aef33293b23cfa0fea5fa9e08636f6e79f0b9992c9a70",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 1668,
+      "markdown_sha256": "2e4a35e9638662a058e591b5374c5b32a7ef7ba9491af4b03d5b7806a1e3248a",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/server-inter/channel/speak/setting/message_setting.md",
@@ -2415,9 +2415,9 @@
       "page_last_updated": "11/22/2023, 4:19:57 PM",
       "raw_bytes": 20549,
       "raw_sha256": "436d55411ed3d1340688e16e952190197b63c6c945778a25b921869110b215e6",
-      "markdown_bytes": 705,
-      "markdown_sha256": "e63899630ece1cff2d47ddc2b87e9731251bb038dac8c83c91b638279b912398",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 718,
+      "markdown_sha256": "953c9108775d7e683b43cb446a52cbc1032ccae618f10f35b943c5ce4b407c12",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/server-inter/channel/speak/setting/model.md",
@@ -2429,9 +2429,9 @@
       "page_last_updated": "11/22/2023, 4:19:57 PM",
       "raw_bytes": 16304,
       "raw_sha256": "ecfdac88b1bd3d55cb1949489b9aef8a6c8e03159d44bdb574a134887b2e8a42",
-      "markdown_bytes": 512,
-      "markdown_sha256": "e0c2fbd7dab1ea9692bc0b4b4467d3b981ff3dedb6e05cef06d0b4ef07950d0a",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 514,
+      "markdown_sha256": "9952e9b0841e24d8fdb29b4d722493bdf996317e690d7e38287cc85a7d855aca",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/server-inter/group/index.md",
@@ -2443,9 +2443,9 @@
       "page_last_updated": "11/22/2023, 4:19:57 PM",
       "raw_bytes": 15763,
       "raw_sha256": "eb58ab8a5c8748be70531821fbb1da03efd9b992037735b701a0ac0f4ffa35db",
-      "markdown_bytes": 218,
-      "markdown_sha256": "167805cc82a3b54f2cb7ec890dc965d179bdbdd55fb8929282c86a060ea0d0e7",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 223,
+      "markdown_sha256": "d4dc617036db34c33605030e76ef91ed663114cb7ef19aae0c32a8e37b3608ad",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/server-inter/group/manage/index.md",
@@ -2457,9 +2457,9 @@
       "page_last_updated": "11/22/2023, 4:19:57 PM",
       "raw_bytes": 15575,
       "raw_sha256": "478a14ff8c908007331504ef1392588cfcc0cdd68558f00854127c90106808e6",
-      "markdown_bytes": 129,
-      "markdown_sha256": "2d4366c9fb42ded0eca30feac04ad79da7983b0ea61fee560b65b10d0b6b9f9c",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 215,
+      "markdown_sha256": "e80bb33eee8af6770f4961fa8ba42255991a6e489ea285d8b09a2851b4a14c54",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/server-inter/menu-panel/index.md",
@@ -2471,8 +2471,8 @@
       "page_last_updated": "8/13/2026, 12:04:31 PM",
       "raw_bytes": 18635,
       "raw_sha256": "8f36f94550c3b3a67a7b8600551eed659335fbb210514622cce11bf6deb190f1",
-      "markdown_bytes": 1605,
-      "markdown_sha256": "10e2948f3ff2a4414b59b2cc8a6180134e525aba63f28053cf29ed962212a806",
+      "markdown_bytes": 1615,
+      "markdown_sha256": "86aa1b9bc1d27b7d87189fb0cc870e220ff6f3374fdca8cc7cbe23861c7d50ea",
       "comparison_with_20260919": "changed"
     },
     {
@@ -2485,9 +2485,9 @@
       "page_last_updated": "11/22/2023, 4:19:57 PM",
       "raw_bytes": 15587,
       "raw_sha256": "f543704ce6e7b72ba6b1ed47feeb93443546ebf93503f2ee1c0873af46f12617",
-      "markdown_bytes": 127,
-      "markdown_sha256": "9ac10ab0da0e42a65dd25ea56a4e27134d35224471bdb32fcd649012a0774093",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 647,
+      "markdown_sha256": "7065908b957a7a390a7c9c3613d5ffe4eea81e7a19e96bba80d39dfb066246ab",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/server-inter/message/material-management.md",
@@ -2499,8 +2499,8 @@
       "page_last_updated": "10/21/2026, 7:35:14 PM",
       "raw_bytes": 35490,
       "raw_sha256": "fb55b8247595a702dc3818f474ac95a144fab82d30344403c03ecab0bcd2a8c7",
-      "markdown_bytes": 8000,
-      "markdown_sha256": "e3001f27c1f82e7e5d22e26f92af04192eeb747ecf7c609c2b4f6f386d730a2c",
+      "markdown_bytes": 8052,
+      "markdown_sha256": "db56faefaa9b4070553496c0d0617e083f1dd18ed308ac5b8e625f6ac33943a4",
       "comparison_with_20260919": "added"
     },
     {
@@ -2513,8 +2513,8 @@
       "page_last_updated": "7/21/2026, 11:01:44 PM",
       "raw_bytes": 25669,
       "raw_sha256": "38f2b940401d2cea09fd1cdb5ccd226bff312de9a62b297d5db733ce05c970a7",
-      "markdown_bytes": 6264,
-      "markdown_sha256": "d704039a20ab7ee449183f8fac8c3fe7dce133004bdaf5dfd203e8f90c2df938",
+      "markdown_bytes": 6382,
+      "markdown_sha256": "5756bf31ebf52dd65b6c140c87639b3ae8e9c58730a2dc374016d706cef260f7",
       "comparison_with_20260919": "changed"
     },
     {
@@ -2527,8 +2527,8 @@
       "page_last_updated": "7/21/2026, 9:50:42 PM",
       "raw_bytes": 26020,
       "raw_sha256": "66a45f0ba80096b3f2455e4c04c15b9c0e71e23bc0eee1d0b7a8ba9718f6af68",
-      "markdown_bytes": 4460,
-      "markdown_sha256": "b5cb2be64a2a254820a264fcbd69a8e80d9c21acdfd4adf86bc7b197f805be8b",
+      "markdown_bytes": 4487,
+      "markdown_sha256": "d63aead2454d77475633099d870047aaa7610abe2f1f79527ab4811ae0a17c48",
       "comparison_with_20260919": "changed"
     },
     {
@@ -2541,8 +2541,8 @@
       "page_last_updated": "11/22/2023, 4:19:57 PM",
       "raw_bytes": 25146,
       "raw_sha256": "c10e80422f3b9407c0a669b500cf186a151a014f153001f737556639e21e12c3",
-      "markdown_bytes": 4442,
-      "markdown_sha256": "9de7d8e0985655910a3b7b2a4f6208af39172206a3173607c9b91c22b47ccc28",
+      "markdown_bytes": 4474,
+      "markdown_sha256": "540e94a5b77b319cace4dbc211c3a2eae07af1e2804888078a15b8d2838e4005",
       "comparison_with_20260919": "changed"
     },
     {
@@ -2555,9 +2555,9 @@
       "page_last_updated": "11/22/2023, 4:19:57 PM",
       "raw_bytes": 28918,
       "raw_sha256": "5ed4cf25524bd18ea25507412c0aa006a28f8182a08b8b264f7e6349f3194c99",
-      "markdown_bytes": 3923,
-      "markdown_sha256": "790c0a6aa28e977f40e644b256f700e55e27dd13f561b39743c6c4b5e2d08b59",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 4008,
+      "markdown_sha256": "292ea177cb04801fae1ddb7c2b2912aecaf8e526d6666621c9da35e090065dbe",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/server-inter/message/trans/msg-btn.md",
@@ -2569,9 +2569,9 @@
       "page_last_updated": "7/21/2026, 3:25:45 AM",
       "raw_bytes": 38999,
       "raw_sha256": "062b761311b94c4d545c7dd67ed353f973630cc2ebafa8290da66c4672c5b5bf",
-      "markdown_bytes": 5326,
-      "markdown_sha256": "f1fd7695d7506680b2e054eb54bfd152827b6047a1fc8c0d02122f1a98451426",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 5343,
+      "markdown_sha256": "b8fcd3c0f4139ac2ca0d0e992fb6a3ef014fee7fba37641861b63c0ebdb90dd4",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/server-inter/message/trans/overview.md",
@@ -2583,8 +2583,8 @@
       "page_last_updated": "7/21/2026, 9:50:42 PM",
       "raw_bytes": 24811,
       "raw_sha256": "4755d4e2e1f7fc8b680ad338f0d13641aad97075ec9d206b04a2ed59ab4ff1f2",
-      "markdown_bytes": 2622,
-      "markdown_sha256": "d3ac96aad9c47f34bdf5ea7aff7ee1d1256d3b4bbb299687d4baa971ea6f8bf7",
+      "markdown_bytes": 2623,
+      "markdown_sha256": "5bbc340857641fa5e24d7c55669c2e7e7f2b24a3fe89e03bf04c8ba27a1d9203",
       "comparison_with_20260919": "changed"
     },
     {
@@ -2597,8 +2597,8 @@
       "page_last_updated": "6/7/2024, 3:21:22 PM",
       "raw_bytes": 20003,
       "raw_sha256": "5e3854adec542d5735806600e91ddfce71e79a156c9e80308bc7d48efa1463a4",
-      "markdown_bytes": 2501,
-      "markdown_sha256": "cba742d0458acba247ab13b4e54c3088b27a469f704a5f19b68f37997df11b13",
+      "markdown_bytes": 2545,
+      "markdown_sha256": "5d7c31d7342e5221038d63b625e4798e81aaa2aa522e0ea46e9154fd6b66b44d",
       "comparison_with_20260919": "changed"
     },
     {
@@ -2611,8 +2611,8 @@
       "page_last_updated": "7/22/2026, 8:51:48 PM",
       "raw_bytes": 55567,
       "raw_sha256": "25281d68d197ab107ce811e510b110e91b7678d19b2fd7d8838b379e1466bfb0",
-      "markdown_bytes": 6154,
-      "markdown_sha256": "f05000868f48d8a0193c68bcfb3dc06ea46b34c956d4bbefd2df108f900f086b",
+      "markdown_bytes": 6195,
+      "markdown_sha256": "34ed31a119ad5c7055ae0d83512d93f137153ed5def090731a3375a321d66511",
       "comparison_with_20260919": "changed"
     },
     {
@@ -2625,8 +2625,8 @@
       "page_last_updated": "5/20/2026, 8:38:10 PM",
       "raw_bytes": 26985,
       "raw_sha256": "162e6a39115aec307f8dc57b013e0e5adefb19dfa8059715351e6d3d9565f145",
-      "markdown_bytes": 1934,
-      "markdown_sha256": "7a1a58a86cbe3987d6254297a8151eaa40dc019b01fbcaa58566b5508462f01b",
+      "markdown_bytes": 1952,
+      "markdown_sha256": "b60614b10a4cf697e74920585fc220eb1ee4d68fb7bd5226b5a6651069044b50",
       "comparison_with_20260919": "changed"
     },
     {
@@ -2639,8 +2639,8 @@
       "page_last_updated": "10/21/2026, 7:35:14 PM",
       "raw_bytes": 27710,
       "raw_sha256": "8ded0d119dab8dfb30992baeff17977064492d2541e8cbc6cab72a86f3e21b50",
-      "markdown_bytes": 3781,
-      "markdown_sha256": "82f159e44461522d314dc0ae92032af21a28508ec5ad67e80e35ff607ee5cf8a",
+      "markdown_bytes": 3817,
+      "markdown_sha256": "9a6425cb6923e7d0789ca5d3ff1b9220d341c3662ff2ae526c5d3b9eafc705ab",
       "comparison_with_20260919": "changed"
     },
     {
@@ -2653,9 +2653,9 @@
       "page_last_updated": "7/23/2026, 4:32:35 PM",
       "raw_bytes": 19914,
       "raw_sha256": "f8c57c5ddb63af6a5102ac9474cce1ea276806227b0e4138d4a713f2442327f1",
-      "markdown_bytes": 1982,
-      "markdown_sha256": "8aff1d1e50cd301cdaf26b88641942469a05ebcaf90f0076913acdde5cf363db",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 1993,
+      "markdown_sha256": "aea236acfda412e61b3cd1cbee1343abead99234ff3a6a0d5829edf3b6adee61",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/server-inter/user/index.md",
@@ -2667,9 +2667,9 @@
       "page_last_updated": "1/12/2026, 12:07:20 PM",
       "raw_bytes": 15849,
       "raw_sha256": "2582b210b63abe946b24d2e57fbac65ca652be31679499e1a4fa62efd89c806f",
-      "markdown_bytes": 297,
-      "markdown_sha256": "b66d3a2eab88e97ba296ffba11fcab6a69580621e53033a97b586c26a87e6a1d",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 302,
+      "markdown_sha256": "ce73e23d3ddcce562b0d6ac313a6ccd6c9c16d5b4da858887038fd0cb001bddb",
+      "comparison_with_20260919": "changed"
     },
     {
       "path": "develop/api-v2/server-inter/user/manage/event.md",
@@ -2681,8 +2681,8 @@
       "page_last_updated": "1/15/2026, 4:08:29 PM",
       "raw_bytes": 23384,
       "raw_sha256": "a9bd7516453264a04dd4d1ae31f33a7969899c783b7f8a2d1f3d132c6479a4ca",
-      "markdown_bytes": 2745,
-      "markdown_sha256": "cb533f1131984d879af976bd486829ca55c1e38accbd23d62f3ca33c89a81574",
+      "markdown_bytes": 2775,
+      "markdown_sha256": "1e7e410932140e8e8dbf924533604124e6ddebd1d429b02c1f382c2f68bd04ad",
       "comparison_with_20260919": "changed"
     },
     {
@@ -2695,9 +2695,9 @@
       "page_last_updated": "11/22/2023, 4:19:57 PM",
       "raw_bytes": 15588,
       "raw_sha256": "db5c4ce0f789aefe439dc186b6ac973555ac872d086378df28a4b80e9a27891a",
-      "markdown_bytes": 131,
-      "markdown_sha256": "cf69558b764e250aa8e8cc73adf608e428c7e4afb9ec246baea1db01b7a872e1",
-      "comparison_with_20260919": "unchanged"
+      "markdown_bytes": 217,
+      "markdown_sha256": "84e6ecb7b8bb095807903516a395a2755c3b60a34393a5b1b270c28109e5640a",
+      "comparison_with_20260919": "changed"
     }
   ],
   "comparison": {
@@ -2707,42 +2707,6 @@
     ],
     "removed": [],
     "changed": [
-      "develop/api-v2/autogen/api/v2_groups_group_openid_files.post.md",
-      "develop/api-v2/autogen/api/v2_groups_group_openid_messages.post.md",
-      "develop/api-v2/autogen/api/v2_users_user_openid_files.post.md",
-      "develop/api-v2/autogen/api/v2_users_user_openid_messages.post.md",
-      "develop/api-v2/autogen/event/c2c_message_create.md",
-      "develop/api-v2/autogen/event/group_at_message_create.md",
-      "develop/api-v2/autogen/event/group_member_add.md",
-      "develop/api-v2/autogen/event/group_message_create.md",
-      "develop/api-v2/autogen/index.md",
-      "develop/api-v2/changelog.md",
-      "develop/api-v2/dev-prepare/access-token.md",
-      "develop/api-v2/dev-prepare/event-emit/webhook.md",
-      "develop/api-v2/dev-prepare/getting-started.md",
-      "develop/api-v2/dev-prepare/interface-framework/api-use.md",
-      "develop/api-v2/dev-prepare/interface-framework/event-emit.md",
-      "develop/api-v2/dev-prepare/interface-framework/index.md",
-      "develop/api-v2/dev-prepare/interface-framework/opcode.md",
-      "develop/api-v2/dev-prepare/interface-framework/sign.md",
-      "develop/api-v2/index.md",
-      "develop/api-v2/openapi/error/error.md",
-      "develop/api-v2/server-inter/channel/api_permissions/post_api_permission_demand.md",
-      "develop/api-v2/server-inter/channel/content/announces/model.md",
-      "develop/api-v2/server-inter/channel/content/announces/post_guild_announces.md",
-      "develop/api-v2/server-inter/channel/message/send.md",
-      "develop/api-v2/server-inter/menu-panel/index.md",
-      "develop/api-v2/server-inter/message/overview.md",
-      "develop/api-v2/server-inter/message/rich-media.md",
-      "develop/api-v2/server-inter/message/template/model.md",
-      "develop/api-v2/server-inter/message/trans/overview.md",
-      "develop/api-v2/server-inter/message/trans/text-chain.md",
-      "develop/api-v2/server-inter/message/type/ark.md",
-      "develop/api-v2/server-inter/message/type/embed.md",
-      "develop/api-v2/server-inter/message/type/markdown.md",
-      "develop/api-v2/server-inter/user/manage/event.md"
-    ],
-    "unchanged": [
       "develop/api-v2/autogen/api/channels_channel_id.delete.md",
       "develop/api-v2/autogen/api/channels_channel_id.get.md",
       "develop/api-v2/autogen/api/channels_channel_id.patch.md",
@@ -2759,12 +2723,14 @@
       "develop/api-v2/autogen/api/v2_groups_group_openid_approval_join_request_member_openid.post.md",
       "develop/api-v2/autogen/api/v2_groups_group_openid_batch_remove_members.post.md",
       "develop/api-v2/autogen/api/v2_groups_group_openid_bot_state.get.md",
+      "develop/api-v2/autogen/api/v2_groups_group_openid_files.post.md",
       "develop/api-v2/autogen/api/v2_groups_group_openid_info.get.md",
       "develop/api-v2/autogen/api/v2_groups_group_openid_join_request_list.get.md",
       "develop/api-v2/autogen/api/v2_groups_group_openid_member_blacklist.get.md",
       "develop/api-v2/autogen/api/v2_groups_group_openid_member_blacklist.post.md",
       "develop/api-v2/autogen/api/v2_groups_group_openid_members.get.md",
       "develop/api-v2/autogen/api/v2_groups_group_openid_members_member_openid.get.md",
+      "develop/api-v2/autogen/api/v2_groups_group_openid_messages.post.md",
       "develop/api-v2/autogen/api/v2_groups_group_openid_messages_message_id.delete.md",
       "develop/api-v2/autogen/api/v2_groups_group_openid_restrict_chat_setting.get.md",
       "develop/api-v2/autogen/api/v2_groups_group_openid_restrict_chat_setting.post.md",
@@ -2784,8 +2750,11 @@
       "develop/api-v2/autogen/api/v2_panels_panel_id_target.put.md",
       "develop/api-v2/autogen/api/v2_users_user_id_upload_part_finish.post.md",
       "develop/api-v2/autogen/api/v2_users_user_id_upload_prepare.post.md",
+      "develop/api-v2/autogen/api/v2_users_user_openid_files.post.md",
+      "develop/api-v2/autogen/api/v2_users_user_openid_messages.post.md",
       "develop/api-v2/autogen/api/v2_users_user_openid_messages_message_id.delete.md",
       "develop/api-v2/autogen/api/v2_users_user_openid_stream_messages.post.md",
+      "develop/api-v2/autogen/event/c2c_message_create.md",
       "develop/api-v2/autogen/event/c2c_msg_receive.md",
       "develop/api-v2/autogen/event/c2c_msg_reject.md",
       "develop/api-v2/autogen/event/channel_create.md",
@@ -2794,9 +2763,12 @@
       "develop/api-v2/autogen/event/friend_add.md",
       "develop/api-v2/autogen/event/friend_del.md",
       "develop/api-v2/autogen/event/group_add_robot.md",
+      "develop/api-v2/autogen/event/group_at_message_create.md",
       "develop/api-v2/autogen/event/group_del_robot.md",
       "develop/api-v2/autogen/event/group_join_request.md",
+      "develop/api-v2/autogen/event/group_member_add.md",
       "develop/api-v2/autogen/event/group_member_remove.md",
+      "develop/api-v2/autogen/event/group_message_create.md",
       "develop/api-v2/autogen/event/group_msg_receive.md",
       "develop/api-v2/autogen/event/group_msg_reject.md",
       "develop/api-v2/autogen/event/guild_create.md",
@@ -2804,20 +2776,30 @@
       "develop/api-v2/autogen/event/guild_update.md",
       "develop/api-v2/autogen/event/interaction_create.md",
       "develop/api-v2/autogen/event/subscribe_message_status.md",
+      "develop/api-v2/autogen/index.md",
+      "develop/api-v2/changelog.md",
+      "develop/api-v2/dev-prepare/access-token.md",
       "develop/api-v2/dev-prepare/api-call-guide.md",
       "develop/api-v2/dev-prepare/error-trace/index.md",
       "develop/api-v2/dev-prepare/error-trace/websocket.md",
       "develop/api-v2/dev-prepare/event-emit/payload.md",
+      "develop/api-v2/dev-prepare/event-emit/webhook.md",
       "develop/api-v2/dev-prepare/event-emit/websocket.md",
+      "develop/api-v2/dev-prepare/getting-started.md",
+      "develop/api-v2/dev-prepare/interface-framework/api-use.md",
+      "develop/api-v2/dev-prepare/interface-framework/event-emit.md",
+      "develop/api-v2/dev-prepare/interface-framework/index.md",
+      "develop/api-v2/dev-prepare/interface-framework/opcode.md",
       "develop/api-v2/dev-prepare/interface-framework/reference.md",
-      "develop/api-v2/gateway/error/data/model.md",
+      "develop/api-v2/dev-prepare/interface-framework/sign.md",
       "develop/api-v2/gateway/error/error.md",
+      "develop/api-v2/index.md",
       "develop/api-v2/openapi/emoji/model.md",
       "develop/api-v2/openapi/error/data/model.md",
+      "develop/api-v2/openapi/error/error.md",
       "develop/api-v2/openapi/member/delete_member.md",
       "develop/api-v2/openapi/member/get_member.md",
       "develop/api-v2/openapi/member/get_members.md",
-      "develop/api-v2/openapi/member/model.md",
       "develop/api-v2/openapi/reaction/model.md",
       "develop/api-v2/openapi/user/guilds.md",
       "develop/api-v2/openapi/user/me.md",
@@ -2827,9 +2809,12 @@
       "develop/api-v2/server-inter/channel/api_permissions/get_guild_api_permission.md",
       "develop/api-v2/server-inter/channel/api_permissions/index.md",
       "develop/api-v2/server-inter/channel/api_permissions/model.md",
+      "develop/api-v2/server-inter/channel/api_permissions/post_api_permission_demand.md",
       "develop/api-v2/server-inter/channel/content/announces/delete_channel_announces.md",
       "develop/api-v2/server-inter/channel/content/announces/delete_guild_announces.md",
+      "develop/api-v2/server-inter/channel/content/announces/model.md",
       "develop/api-v2/server-inter/channel/content/announces/post_channel_announces.md",
+      "develop/api-v2/server-inter/channel/content/announces/post_guild_announces.md",
       "develop/api-v2/server-inter/channel/content/audio/audio_control.md",
       "develop/api-v2/server-inter/channel/content/audio/delete_mic.md",
       "develop/api-v2/server-inter/channel/content/audio/model.md",
@@ -2861,6 +2846,7 @@
       "develop/api-v2/server-inter/channel/message/event.md",
       "develop/api-v2/server-inter/channel/message/format.md",
       "develop/api-v2/server-inter/channel/message/recall.md",
+      "develop/api-v2/server-inter/channel/message/send.md",
       "develop/api-v2/server-inter/channel/miniapp/index.md",
       "develop/api-v2/server-inter/channel/miniapp/interface.md",
       "develop/api-v2/server-inter/channel/miniapp/opendata.md",
@@ -2884,7 +2870,6 @@
       "develop/api-v2/server-inter/channel/role/member/get_member.md",
       "develop/api-v2/server-inter/channel/role/member/get_members.md",
       "develop/api-v2/server-inter/channel/role/member/get_role_members.md",
-      "develop/api-v2/server-inter/channel/role/member/model.md",
       "develop/api-v2/server-inter/channel/role/member/role_model.md",
       "develop/api-v2/server-inter/channel/speak/index.md",
       "develop/api-v2/server-inter/channel/speak/patch_guild_member_mute.md",
@@ -2894,20 +2879,35 @@
       "develop/api-v2/server-inter/channel/speak/setting/model.md",
       "develop/api-v2/server-inter/group/index.md",
       "develop/api-v2/server-inter/group/manage/index.md",
+      "develop/api-v2/server-inter/menu-panel/index.md",
       "develop/api-v2/server-inter/message/index.md",
+      "develop/api-v2/server-inter/message/overview.md",
+      "develop/api-v2/server-inter/message/rich-media.md",
+      "develop/api-v2/server-inter/message/template/model.md",
       "develop/api-v2/server-inter/message/trans/emoji.md",
       "develop/api-v2/server-inter/message/trans/msg-btn.md",
+      "develop/api-v2/server-inter/message/trans/overview.md",
+      "develop/api-v2/server-inter/message/trans/text-chain.md",
+      "develop/api-v2/server-inter/message/type/ark.md",
+      "develop/api-v2/server-inter/message/type/embed.md",
+      "develop/api-v2/server-inter/message/type/markdown.md",
       "develop/api-v2/server-inter/message/type/overview.md",
       "develop/api-v2/server-inter/user/index.md",
+      "develop/api-v2/server-inter/user/manage/event.md",
       "develop/api-v2/server-inter/user/manage/index.md"
+    ],
+    "unchanged": [
+      "develop/api-v2/gateway/error/data/model.md",
+      "develop/api-v2/openapi/member/model.md",
+      "develop/api-v2/server-inter/channel/role/member/model.md"
     ],
     "counts": {
       "old": 191,
       "new": 192,
       "added": 1,
       "removed": 0,
-      "changed": 34,
-      "unchanged": 157
+      "changed": 188,
+      "unchanged": 3
     }
   },
   "local_corrections": [
@@ -2917,8 +2917,8 @@
     "develop/api-v2/server-inter/channel/role/member/model.md"
   ],
   "validation": {
-    "validated_at": "2026-10-25T15:42:13+08:00",
-    "mode": "offline against saved raw HTML and local Markdown",
+    "validated_at": "2026-10-25T16:40:49+08:00",
+    "mode": "offline rendered-structure comparison against saved raw HTML; GitHub rendering spot checks",
     "stats": {
       "pages": 192,
       "raw_sha256_verified": 192,
@@ -2926,10 +2926,88 @@
       "code_blocks": 462,
       "tables": 517,
       "images": 22,
-      "local_links": 488,
-      "index_links": 201
+      "local_links": 787,
+      "index_links": 201,
+      "navigation_links": 137,
+      "schema_headings": 87,
+      "normalized_anchors": 182,
+      "embedded_assets": 1
     },
     "errors": [],
     "index_deferred": false
-  }
+  },
+  "local_navigation": [
+    {
+      "path": "develop/api-v2/server-inter/channel/api_permissions/index.md",
+      "linked_pages": 3
+    },
+    {
+      "path": "develop/api-v2/server-inter/channel/content/index.md",
+      "linked_pages": 26
+    },
+    {
+      "path": "develop/api-v2/server-inter/channel/index.md",
+      "linked_pages": 64
+    },
+    {
+      "path": "develop/api-v2/server-inter/channel/manage/index.md",
+      "linked_pages": 3
+    },
+    {
+      "path": "develop/api-v2/server-inter/channel/miniapp/index.md",
+      "linked_pages": 2
+    },
+    {
+      "path": "develop/api-v2/server-inter/channel/role/index.md",
+      "linked_pages": 9
+    },
+    {
+      "path": "develop/api-v2/server-inter/channel/role-group/index.md",
+      "linked_pages": 11
+    },
+    {
+      "path": "develop/api-v2/server-inter/channel/speak/index.md",
+      "linked_pages": 5
+    },
+    {
+      "path": "develop/api-v2/server-inter/group/manage/index.md",
+      "linked_pages": 0
+    },
+    {
+      "path": "develop/api-v2/server-inter/message/index.md",
+      "linked_pages": 12
+    },
+    {
+      "path": "develop/api-v2/server-inter/user/manage/index.md",
+      "linked_pages": 1
+    }
+  ],
+  "layout_repairs": {
+    "block_spacing_restored": true,
+    "schema_headings": 87,
+    "schema_links_normalized": 103,
+    "normalized_anchors": 182,
+    "converted_data_uri_pages": [
+      "develop/api-v2/dev-prepare/getting-started.md",
+      "develop/api-v2/index.md"
+    ]
+  },
+  "assets": [
+    {
+      "path": "assets/qq-feedback-assistant.png",
+      "mime": "image/png",
+      "bytes": 3892,
+      "sha256": "1db48af87a3d1be702188b1d98e452c4b303f64f9839cefa2d91fbf57d24a1e0",
+      "sources": [
+        {
+          "page": "develop/api-v2/dev-prepare/getting-started.md",
+          "official_url": "https://bot.q.qq.com/wiki/develop/api-v2/dev-prepare/getting-started.html"
+        },
+        {
+          "page": "develop/api-v2/index.md",
+          "official_url": "https://bot.q.qq.com/wiki/develop/api-v2/index.html"
+        }
+      ]
+    }
+  ]
 }

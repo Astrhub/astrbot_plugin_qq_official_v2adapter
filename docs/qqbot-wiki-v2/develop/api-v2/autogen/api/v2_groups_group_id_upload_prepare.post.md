@@ -1,21 +1,30 @@
 <!-- 来源: https://bot.q.qq.com/wiki/develop/api-v2/autogen/api/v2_groups_group_id_upload_prepare.post.html · 抓取 2026-10-25 -->
 
 # 群聊富媒体预上传
+
 大文件分片上传前的准备工作。返回 upload_id、分片预签名 URL 和上传配置。
 后续将文件按 block_size 分片，逐片 PUT 到预签名 URL，每片完成后调用分片完成接口。
+
 大文件分片上传第一步。传入文件大小、MD5/SHA1 校验值，服务端返回 upload_id 和各分片预签名 URL。
+
 ## 请求
+
 ### 基础信息
+
 | 字段 | 值 |
 | --- | --- |
 | HTTP URL | /v2/groups/{group_id}/upload_prepare |
 | HTTP Method | POST |
 | 接口频率限制 | 10 QPS |
+
 ## 路径参数
+
 | 名称 | 类型 | 必填 | 描述 |
 | --- | --- | --- | --- |
 | group_id | string | 是 | 群 OpenID |
+
 ## 请求体
+
 | 名称 | 类型 | 必填 | 描述 |
 | --- | --- | --- | --- |
 | file_type | integer | 是 | 业务类型。1=图片, 2=视频, 3=语音, 4=文件 图片软限制 20MB, 视频软限制 30MB, 语音软限制 20MB, 文件软限制 200MB 超过软限制降级为文件类型，超过 200MB 硬限制报错 |
@@ -24,8 +33,11 @@
 | md5 | string | 是 | 整个文件的 MD5 校验值 |
 | sha1 | string | 是 | 整个文件的 SHA1 校验值 |
 | md5_10m | string | 是 | 文件前 10002432 字节（约 10MB）的 MD5 校验值 |
+
 ### 请求示例
+
 **预上传视频文件**
+
 ```text
 POST /v2/groups/B2C3D4E5F6A1B2C3D4E5F6A1B2C3D4E5/upload_prepare
 {
@@ -37,28 +49,38 @@ POST /v2/groups/B2C3D4E5F6A1B2C3D4E5F6A1B2C3D4E5/upload_prepare
   "md5_10m": "c4d8c5f3a2b1e0f9a8b7c6d5e4f3a2b1"
 }
 ```
+
 ## 响应
+
 ### 响应体
+
 | 名称 | 类型 | 描述 |
 | --- | --- | --- |
 | upload_id | string | 上传任务 ID，后续分片上传和完成合并时需携带 |
 | block_size | string | 分块大小（字节），默认 5MB。客户端按此大小对文件分片 |
-| parts | [][UploadPart](#schema-uploadpart) | 分片列表，每个分片包含一个预签名上传 URL |
-| upload_config | [UploadConfig](#schema-uploadconfig) | 上传配置，由后台下发控制客户端上传行为 |
-**UploadPart**
+| parts | [][UploadPart](#uploadpart) | 分片列表，每个分片包含一个预签名上传 URL |
+| upload_config | [UploadConfig](#uploadconfig) | 上传配置，由后台下发控制客户端上传行为 |
+
+#### UploadPart
+
 | 名称 | 类型 | 描述 |
 | --- | --- | --- |
 | index | integer | 分片序号，从 0 开始 |
 | presigned_url | string | 预签名上传 URL，客户端通过 HTTP PUT 将分片数据上传到此 URL |
 | block_size | string | 该分块的大小（字节） |
-**UploadConfig**
+
+#### UploadConfig
+
 | 名称 | 类型 | 描述 |
 | --- | --- | --- |
 | concurrency | integer | 上传并发数，默认 1 |
 | retry_timeout | integer | 重试超时时间（秒），默认 300（5分钟） |
 | retry_delay | integer | 重试延迟（秒），默认 1 |
+
 ## 响应示例
+
 **预上传成功（3 个分片）**
+
 ```json
 {
   "upload_id": "upload_a1b2c3d4e5f6",
@@ -87,7 +109,9 @@ POST /v2/groups/B2C3D4E5F6A1B2C3D4E5F6A1B2C3D4E5/upload_prepare
   }
 }
 ```
+
 ### 错误码
+
 | 错误码 | 描述 | 排查建议 |
 | --- | --- | --- |
 | 850018 | 群被禁言或者机器人被禁言 | 请检查机器人是否被禁言 |

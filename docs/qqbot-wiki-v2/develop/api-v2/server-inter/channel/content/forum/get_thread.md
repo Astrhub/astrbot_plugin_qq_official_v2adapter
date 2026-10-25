@@ -1,26 +1,40 @@
 <!-- 来源: https://bot.q.qq.com/wiki/develop/api-v2/server-inter/channel/content/forum/get_thread.html · 抓取 2026-10-25 -->
 
 # 获取帖子详情
+
 ## 接口
+
 ```http
 GET /channels/{channel_id}/threads/{thread_id}
 ```
+
 ## 功能描述
+
 - 该接口用于获取子频道下的帖子详情。
+
 > **注意**
+>
 > - 公域机器人暂不支持申请，仅私域机器人可用，选择私域机器人后默认开通。
 > - 注意: 开通后需要先将机器人从频道移除，然后重新添加，方可生效。
+
 ## Content-Type
+
 ```http
 application/json
 ```
+
 ## 返回
+
 | 字段名 | 类型 | 描述 |
 | --- | --- | --- |
-| thread | [ThreadInfo](model.md#ThreadInfo) | 帖子详情对象（返回值里面的content字段，可参照[RichText](model.md#RichText)结构） |
+| thread | [ThreadInfo](model.md#threadinfo) | 帖子详情对象（返回值里面的content字段，可参照[RichText](model.md#richtext)结构） |
+
 ## 错误码
+
 详见[错误码](../../../../openapi/error/error.md)。
+
 ## 示例
+
 ```json
 {
   "thread":{

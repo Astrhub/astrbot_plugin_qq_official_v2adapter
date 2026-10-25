@@ -1,22 +1,35 @@
 <!-- 来源: https://bot.q.qq.com/wiki/develop/api-v2/openapi/user/me.html · 抓取 2026-10-25 -->
 
 # 获取用户详情
+
 ### 接口
+
 ```http
 GET /users/@me
 ```
+
 ### 功能描述
+
 用于获取当前用户（机器人）详情。
+
 ### Content-Type
+
 ```http
 application/json
 ```
+
 ### 返回
+
 返回 [User](model.md#user) 对象。
+
 ### 错误码
+
 详见[错误码](../error/error.md)。
+
 ### 示例
+
 响应数据包
+
 ```json
 {
   "id": "11586990140073229091",

@@ -1,29 +1,45 @@
 <!-- 来源: https://bot.q.qq.com/wiki/develop/api-v2/server-inter/message/type/embed.html · 抓取 2026-10-25 -->
 
 # Embed 消息
+
 |  | **单聊** | **群聊** | **文字子频道** | **频道私信** |
 | --- | --- | --- | --- | --- |
 | 机器人接收 | - | - | - | - |
 | 机器人发送 | 不支持 | 不支持 | 支持 | 支持 |
+
 ## 样式
+
 ![embed](https://qq-ai.cdn-go.cn/web/bot-docs/-/v1.42.0/assets/img/message-embed.18d8bc6d.jpg)
+
 ## 数据结构与协议
+
 ### Content-Type
+
 ```http
 application/json
 ```
+
 ### 参数
+
 | 字段名 | 类型 | 描述 |
 | --- | --- | --- |
 | embed | [MessageEmbed](../template/model.md#messageembed) | embed 消息详情 |
+
 - 其中 embed.thumbnail 为选填，没有缩略图的可以不填。
 - embed.fields.name 为文本。
+
 ### 返回
+
 返回[Message](../template/model.md#message)对象。
+
 ### 错误码
+
 详见[错误码](../../../openapi/error/error.md)。
+
 ### 示例
+
 请求数据包
+
 ```json
 {
   "embed": {
@@ -46,7 +62,9 @@ application/json
   }
 }
 ```
+
 返回包
+
 ```json
 {
   "id": "xxxxxx",

@@ -1,35 +1,51 @@
 <!-- 来源: https://bot.q.qq.com/wiki/develop/api-v2/autogen/api/v2_groups_group_openid_join_request_list.get.html · 抓取 2026-10-25 -->
 
 # 入群申请列表拉取
+
 拉取入群申请列表，支持分页。
+
 机器人需拥有群管理员身份。
+
 ## 请求
+
 ### 基础信息
+
 | 字段 | 值 |
 | --- | --- |
 | HTTP URL | /v2/groups/{group_openid}/join_request_list |
 | HTTP Method | GET |
 | 接口频率限制 | 30 QPM |
+
 ## 路径参数
+
 | 名称 | 类型 | 必填 | 描述 |
 | --- | --- | --- | --- |
 | group_openid | string | 是 | 群OpenID |
+
 ## 请求体
+
 | 名称 | 类型 | 必填 | 描述 |
 | --- | --- | --- | --- |
 | cursor | string | 否 | 分页游标，首次请求可不传或传空串 |
 | limit | integer | 否 | 单页数量，默认 20，最大 50 |
+
 ### 请求示例
+
 ```text
 GET /v2/groups/30584554AA2BF4E72BD3B8F27A70339D/join_request_list
 ```
+
 ## 响应
+
 ### 响应体
+
 | 名称 | 类型 | 描述 |
 | --- | --- | --- |
-| list | [][JoinRequest](#schema-joinrequest) | 入群申请列表 |
+| list | [][JoinRequest](#joinrequest) | 入群申请列表 |
 | next_cursor | string | 下一页游标，空串表示已到末页 |
-**JoinRequest**
+
+#### JoinRequest
+
 | 名称 | 类型 | 描述 |
 | --- | --- | --- |
 | join_request_id | string | 申请ID,需要在申请接口回传 |
@@ -41,19 +57,25 @@ GET /v2/groups/30584554AA2BF4E72BD3B8F27A70339D/join_request_list
 | apply_source | string | 申请来源：self_apply 主动申请，invited 被邀请 |
 | invited_by | string | 邀请人 openid（apply_source=invited 时有效） |
 | bot | boolean | 是否为机器人账号 |
-| verify_info | [VerifyInfo](#schema-verifyinfo) | 用户入群验证方式 |
-**VerifyInfo**
+| verify_info | [VerifyInfo](#verifyinfo) | 用户入群验证方式 |
+
+#### VerifyInfo
+
 | 名称 | 类型 | 描述 |
 | --- | --- | --- |
 | method | string | 入群验证方式：verify_message / admin_review_qa |
 | verify_message | string | 验证消息内容；仅 auth_type=verify_message 时可能携带 |
-| review_qa_list | [][ReviewQA](#schema-reviewqa) | 问答列表；仅 auth_type=admin_review_qa 时可能携带 |
-**ReviewQA**
+| review_qa_list | [][ReviewQA](#reviewqa) | 问答列表；仅 auth_type=admin_review_qa 时可能携带 |
+
+#### ReviewQA
+
 | 名称 | 类型 | 描述 |
 | --- | --- | --- |
 | question | string | 管理员设置的问题 |
 | answer | string | 申请人填写的答案 |
+
 ## 响应示例
+
 ```json
 {
   "list": [

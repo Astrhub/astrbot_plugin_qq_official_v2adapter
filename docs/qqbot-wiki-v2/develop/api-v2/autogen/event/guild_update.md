@@ -1,13 +1,18 @@
 <!-- 来源: https://bot.q.qq.com/wiki/develop/api-v2/autogen/event/guild_update.html · 抓取 2026-10-25 -->
 
 # 频道更新
+
 频道信息变更时触发。事件内容为变更后的数据。
+
 ## 事件
+
 | 字段 | 值 |
 | --- | --- |
 | 事件名 | GUILD_UPDATE |
 | Intent | GUILDS (1<<0) |
+
 ### 事件体
+
 | 名称 | 类型 | 描述 |
 | --- | --- | --- |
 | id | string | 频道 ID |
@@ -19,8 +24,11 @@
 | description | string | 频道简介 |
 | joined_at | string | 加入时间，ISO8601 格式 |
 | op_user_id | string | 操作人 ID |
+
 ### 事件示例
+
 **示例1**
+
 ```text
 {
   "id": "123456789012345678",

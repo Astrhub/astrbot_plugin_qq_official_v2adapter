@@ -1,27 +1,35 @@
 <!-- 来源: https://bot.q.qq.com/wiki/develop/api-v2/autogen/event/c2c_message_create.html · 抓取 2026-10-25 -->
 
 # 单聊消息事件
+
 用户给机器人发送单聊消息时触发。
 为确保消息可达，相同 msg_id 可能重复推送，开发者需结合 msg_seq 做去重。
+
 为确保消息可达，相同 msg_id 可能重复推送，需结合 message_scene.ext 中的 msg_idx 做去重。message_type 决定消息结构：0=纯文本，3=ARK卡片（ark_data 有值），103=引用消息（msg_elements 有值，message_scene.ext 含 ref_msg_idx）。
+
 ## 事件
+
 | 字段 | 值 |
 | --- | --- |
 | 事件名 | C2C_MESSAGE_CREATE |
 | Intent | GROUP_AND_C2C_EVENT (1<<25) |
+
 ### 事件体
+
 | 名称 | 类型 | 描述 |
 | --- | --- | --- |
 | id | string | 消息 ID，可用于被动回复和撤回 |
-| author | [User](#schema-user) | 发送者（user_openid 有值） |
+| author | [User](#user) | 发送者（user_openid 有值） |
 | content | string | 消息文本内容 |
 | timestamp | string | 消息发送时间，RFC3339 格式 |
 | message_type | integer | 消息内容类型: 0=普通文本, 3=结构化卡片, 101=并行消息, 102=聊天记录, 103=引用消息 |
-| message_scene | [MessageScene](#schema-messagescene) | 消息场景上下文（含消息索引、鉴权令牌等） |
-| attachments | [][MessageAttachment](#schema-messageattachment) | 消息附件（图片、文件、语音等） |
-| ark_data | [ARKData](#schema-arkdata) | 结构化卡片消息数据（message_type=3 时有值） |
-| msg_elements | [][MsgElement](#schema-msgelement) | 消息元素列表（message_type=103 引用消息时包含被引用内容） |
-**User**
+| message_scene | [MessageScene](#messagescene) | 消息场景上下文（含消息索引、鉴权令牌等） |
+| attachments | [][MessageAttachment](#messageattachment) | 消息附件（图片、文件、语音等） |
+| ark_data | [ARKData](#arkdata) | 结构化卡片消息数据（message_type=3 时有值） |
+| msg_elements | [][MsgElement](#msgelement) | 消息元素列表（message_type=103 引用消息时包含被引用内容） |
+
+#### User
+
 | 名称 | 类型 | 描述 |
 | --- | --- | --- |
 | id | string | 用户唯一标识（OpenID 格式） |
@@ -32,12 +40,16 @@
 | user_openid | string | 用户 OpenID（单聊场景使用） |
 | member_openid | string | 群成员 OpenID（群聊场景使用） |
 | member_role | string | 群内角色。member=普通成员, admin=管理员, owner=群主 |
-**MessageScene**
+
+#### MessageScene
+
 | 名称 | 类型 | 描述 |
 | --- | --- | --- |
 | source | string | 场景来源。default=默认聊天窗口 |
 | ext | []string | 扩展数据列表，key=value 格式: msg_idx=消息索引, 用于引用场景 ref_msg_idx=引用的消息索引 auth_token=鉴权令牌 |
-**MessageAttachment**
+
+#### MessageAttachment
+
 | 名称 | 类型 | 描述 |
 | --- | --- | --- |
 | url | string | 附件下载 URL |
@@ -48,25 +60,32 @@
 | content_type | string | 附件内容类型（MIME 类型）: voice=语音消息 image/jpeg=JPEG 图片 image/png=PNG 图片 image/gif=GIF 图片 video/mp4=MP4 视频 file=群文件 |
 | voice_wav_url | string | 语音消息 SILK 等转换后的 WAV 文件 URL |
 | asr_refer_text | string | 语音消息 ASR 参考结果 |
-**ARKData**
+
+#### ARKData
+
 | 名称 | 类型 | 描述 |
 | --- | --- | --- |
 | prompt | string | 卡片消息中的用户操作提示文本 |
 | ark_type | string | 卡片消息类型标识: tuwen = 图文 H5（如快手分享链接） feed = 图文卡片（群相册、频道帖子、分享卡片） miniapp = 小程序（微信小程序、QQ 小程序、哔哩哔哩等） map = 位置卡片 contact_card = 好友名片 video_share = 视频分享 music_together = 一起听歌 picture = 图片 |
 | ark_name | string | 卡片消息类型的中文名称，如"图文 H5"、"小程序"、"图文卡片" |
 | fields | object | 卡片消息字段，常见键名: tag/tags=来源标签, title=标题, desc=描述, jump_url=跳转链接, preview=预览图, source=来源名称, source_logo=来源图标, tag_icon=标签图标, nickname=昵称, avatar=头像, address=地址 |
-**MsgElement**
+
+#### MsgElement
+
 | 名称 | 类型 | 描述 |
 | --- | --- | --- |
 | msg_idx | string | 消息元素在列表中的引用消息索引 |
-| author | [User](#schema-user) | 该元素对应的消息发送者 |
+| author | [User](#user) | 该元素对应的消息发送者 |
 | message_type | integer | 消息内容类型: 0=普通文本, 3=结构化卡片, 101=并行消息, 102=聊天记录, 103=引用消息 |
 | content | string | 消息正文内容 |
-| attachments | [][MessageAttachment](#schema-messageattachment) | 该元素携带的附件 |
-| ark_data | [ARKData](#schema-arkdata) | 结构化卡片消息数据（message_type=3 时有值） |
-| msg_elements | [][MsgElement](#schema-msgelement) | 嵌套消息元素列表（递归结构） |
+| attachments | [][MessageAttachment](#messageattachment) | 该元素携带的附件 |
+| ark_data | [ARKData](#arkdata) | 结构化卡片消息数据（message_type=3 时有值） |
+| msg_elements | [][MsgElement](#msgelement) | 嵌套消息元素列表（递归结构） |
+
 ### 事件示例
+
 **示例1**
+
 ```text
 {
   "id": "ROBOT1.0_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
@@ -88,7 +107,9 @@
   "timestamp": "2026-07-21T10:00:00+08:00"
 }
 ```
+
 **示例2**
+
 ```text
 {
   "id": "ROBOT1.0_yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy",
@@ -123,7 +144,9 @@
   "timestamp": "2026-07-21T10:01:00+08:00"
 }
 ```
+
 **示例3**
+
 ```text
 {
   "id": "ROBOT1.0_zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",

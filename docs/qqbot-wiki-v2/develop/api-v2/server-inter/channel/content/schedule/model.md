@@ -1,8 +1,11 @@
 <!-- 来源: https://bot.q.qq.com/wiki/develop/api-v2/server-inter/channel/content/schedule/model.html · 抓取 2026-10-25 -->
 
 # 日程对象(Schedule)
+
 用于描述一个日程。
+
 ## Schedule
+
 | 字段名 | 类型 | 描述 |
 | --- | --- | --- |
 | id | string | 日程 id |
@@ -13,7 +16,9 @@
 | creator | [Member](../../role/member/model.md#member) | 创建者 |
 | jump_channel_id | string | 日程开始时跳转到的子频道 id |
 | remind_type | string | 日程提醒类型，取值参考[RemindType](#remindtype) |
+
 ## RemindType
+
 | 提醒类型 id | 描述 |
 | --- | --- |
 | 0 | 不提醒 |

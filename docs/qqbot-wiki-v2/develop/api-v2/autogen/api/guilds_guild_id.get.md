@@ -1,25 +1,37 @@
 <!-- 来源: https://bot.q.qq.com/wiki/develop/api-v2/autogen/api/guilds_guild_id.get.html · 抓取 2026-10-25 -->
 
 # 获取频道详情
+
 获取指定频道的基本信息。
+
 ## 请求
+
 ### 基础信息
+
 | 字段 | 值 |
 | --- | --- |
 | HTTP URL | /guilds/{guild_id} |
 | HTTP Method | GET |
 | 接口频率限制 | 50 QPS |
+
 ## 路径参数
+
 | 名称 | 类型 | 必填 | 描述 |
 | --- | --- | --- | --- |
 | guild_id | string | 是 |  |
+
 ### 请求示例
+
 **示例1**
+
 ```text
 GET /guilds/123456789012345678
 ```
+
 ## 响应
+
 ### 响应体
+
 | 名称 | 类型 | 描述 |
 | --- | --- | --- |
 | id | string | 频道 ID |
@@ -31,8 +43,11 @@ GET /guilds/123456789012345678
 | max_members | integer | 最大成员数 |
 | description | string | 频道描述 |
 | joined_at | string | 加入时间，ISO8601 格式 |
+
 ## 响应示例
+
 **示例1**
+
 ```json
 {
   "id": "123456789012345678",
