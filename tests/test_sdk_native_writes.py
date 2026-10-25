@@ -607,6 +607,7 @@ async def test_file_data_upload_validates_source_exclusivity_and_bounds(native):
     ({}, 300, 1),
     ({"retry_timeout": 0, "retry_delay": 5}, 0, 5),
     ({"retry_timeout": 90}, 90, 1),
+    ({"retry_timeout": 7200, "retry_delay": 120}, 7200, 120),
 ])
 async def test_owned_upload_handle_honors_server_retry_config(native, tmp_path, monkeypatch, config, timeout, delay):
     from v2.media.io import BlobPool

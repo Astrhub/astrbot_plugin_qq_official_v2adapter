@@ -60,14 +60,14 @@ class NativeUploadHandle:
         if not isinstance(config, dict):
             raise V2Error("invalid_upload_response", "QQ upload_config must be an object.", phase="result_unknown", status=502)
 
-        def bounded(name, default, low, high):
+        def bounded(name, default):
+            # The service path accepts any server-issued non-negative integer; mirror it exactly.
             value = config.get(name, default)
-            if type(value) is not int or not low <= value <= high:
+            if type(value) is not int or value < 0:
                 raise V2Error("invalid_upload_response", f"QQ upload_config {name} is invalid.", phase="result_unknown", status=502)
             return value
-
-        self.retry_timeout = bounded("retry_timeout", 300, 0, 3600)  # 0 disables retry waiting, as in the service path.
-        self.retry_delay = bounded("retry_delay", 1, 0, 60)
+        self.retry_timeout = bounded("retry_timeout", 300)  # 0 disables retry waiting, as in the service path.
+        self.retry_delay = bounded("retry_delay", 1)
         self.put_done, self.finish_done = set(), set()
         self.closed = False
 
