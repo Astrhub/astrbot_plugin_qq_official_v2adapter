@@ -1,5 +1,6 @@
 """Native writes use literal QQ routes, one ledger and non-replayable results."""
 
+import base64
 import json
 from types import SimpleNamespace
 
@@ -512,6 +513,8 @@ async def test_native_write_real_transport_keeps_literal_origin(native):
         ("patch_guild_message", ("c/1", "m/1"), {"markdown": {"content": "hi"}}, "PATCH", "https://api.bot.qq.com/channels/c%2F1/messages/m%2F1", {"markdown": {"content": "hi"}}),
         ("post_group_file", ("g/1", 1, "https://cdn.test/image.png"), {}, "POST", "https://api.bot.qq.com/v2/groups/g%2F1/files", {"file_type": 1, "url": "https://cdn.test/image.png", "srv_send_msg": False}),
         ("post_c2c_file", ("u/1", 1, "https://cdn.test/image.png"), {"srv_send_msg": True}, "POST", "https://api.bot.qq.com/v2/users/u%2F1/files", {"file_type": 1, "url": "https://cdn.test/image.png", "srv_send_msg": True}),
+        ("post_group_file", ("g/1", 1), {"file_data": b"PNGDATA", "file_name": "pic.png"}, "POST", "https://api.bot.qq.com/v2/groups/g%2F1/files", {"file_type": 1, "srv_send_msg": False, "file_name": "pic.png", "file_data": base64.b64encode(b"PNGDATA").decode()}),
+        ("post_c2c_file", ("u/1", 3), {"file_data": b"SILK", "file_name": "a.silk", "srv_send_msg": True}, "POST", "https://api.bot.qq.com/v2/users/u%2F1/files", {"file_type": 3, "srv_send_msg": True, "file_name": "a.silk", "file_data": base64.b64encode(b"SILK").decode()}),
         ("post_group_upload_prepare", ("g/1", 1, "2", "pic.png", "a" * 32, "b" * 40, "c" * 32), {}, "POST", "https://api.bot.qq.com/v2/groups/g%2F1/upload_prepare", {"file_type": 1, "file_size": "2", "file_name": "pic.png", "md5": "a" * 32, "sha1": "b" * 40, "md5_10m": "c" * 32}),
         ("post_c2c_upload_part_finish", ("u/1", "task", 0, "2", "d" * 32), {}, "POST", "https://api.bot.qq.com/v2/users/u%2F1/upload_part_finish", {"upload_id": "task", "part_index": 0, "block_size": "2", "md5": "d" * 32}),
     ]
@@ -577,3 +580,24 @@ async def test_native_write_real_transport_keeps_literal_origin(native):
                 assert "json" not in calls[0][2], name
     finally:
         await transport.close()
+
+
+async def test_file_data_upload_validates_source_exclusivity_and_bounds(native):
+    q = native.client.qq
+    for options, code in (
+        ({"file_data": b"x", "file_name": "a.png"}, "invalid_request"),  # url + file_data both supplied
+        ({"file_data": b"silk-bytes"}, "invalid_request"),  # url + file_data both supplied
+    ):
+        with pytest.raises(V2Error) as raised:
+            await q.post_group_file("g", 1, "https://cdn.test/a.png", **options)
+        assert raised.value.code == code
+    for options, code in (
+        ({"file_data": b"x" * (5 * 1024 * 1024 + 1), "file_name": "big.png"}, "invalid_media_input"),
+        ({"file_data": "not-bytes", "file_name": "a.png"}, "invalid_media_input"),
+        ({"file_data": b"", "file_name": "a.png"}, "invalid_media_input"),
+        ({"file_data": b"x"}, "invalid_request"),  # binary upload without file_name
+    ):
+        with pytest.raises(V2Error) as raised:
+            await q.post_group_file("g", 1, **options)
+        assert raised.value.code == code
+    assert native.calls == []

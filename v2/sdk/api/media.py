@@ -1,5 +1,6 @@
 """Explicit native files and owned multipart handles share existing media and write ledgers."""
 
+import base64
 import hashlib
 import math
 from uuid import uuid4
@@ -55,6 +56,18 @@ class NativeUploadHandle:
             media_url(part.get("presigned_url"), upload=True)
         self.parts = parts
         self.index_base = base
+        config = response.get("upload_config", {})
+        if not isinstance(config, dict):
+            raise V2Error("invalid_upload_response", "QQ upload_config must be an object.", phase="result_unknown", status=502)
+
+        def bounded(name, default, low, high):
+            value = config.get(name, default)
+            if type(value) is not int or not low <= value <= high:
+                raise V2Error("invalid_upload_response", f"QQ upload_config {name} is invalid.", phase="result_unknown", status=502)
+            return value
+
+        self.retry_timeout = bounded("retry_timeout", 300, 1, 3600)
+        self.retry_delay = bounded("retry_delay", 1, 0, 60)
         self.put_done, self.finish_done = set(), set()
         self.closed = False
 
@@ -82,7 +95,8 @@ class NativeUploadHandle:
         try:
             await self.media._put_part(self.route, self.prepared, part, index=position, block=self.block,
                 actual=actual, key=key, op=op, parent_op=self.parent_id, upload_id=self.upload_id,
-                config={"retry_timeout": 300, "retry_delay": 1}, deadline=self.media.clock() + 300, check=check)
+                config={"retry_timeout": self.retry_timeout, "retry_delay": self.retry_delay},
+                deadline=self.media.clock() + self.retry_timeout, check=check)
             self.put_done.add(index)
         except BaseException:
             self.close()
@@ -139,21 +153,30 @@ class NativeUploadHandle:
 
 class NativeMediaMixin:
     async def _native_file(self, scene, target, value, url, srv_send_msg, *, file_name=None,
-                           upload_id=None, operation_id=None):
+                           upload_id=None, file_data=None, operation_id=None):
         from ...media.io import media_url
         file_type(value)
         if type(srv_send_msg) is not bool:
             raise V2Error("invalid_request", "srv_send_msg must be a boolean.")
-        if upload_id is None and url in (None, "") or upload_id is not None and url not in (None, ""):
-            raise V2Error("invalid_request", "Supply a QQ URL or upload_id; upload merge may send an empty URL.")
+        supplied = [url not in (None, ""), upload_id is not None, file_data is not None]
+        if sum(supplied) != 1:
+            raise V2Error("invalid_request", "Supply exactly one of a QQ URL, upload_id, or file_data.")
         if url not in (None, ""):
             media_url(url)
         if upload_id is not None:
             text_id(upload_id)
+        if file_data is not None:
+            # Docs cap direct binary uploads at 5MB and require file_name; the wire field is base64 text.
+            if type(file_data) is not bytes or not 1 <= len(file_data) <= 5 * 1024 * 1024:
+                raise V2Error("invalid_media_input", "file_data must be 1..5242880 bytes.")
+            if file_name is None:
+                raise V2Error("invalid_request", "file_data uploads require file_name.")
+            file_data = base64.b64encode(file_data).decode("ascii")
         if file_name is not None:
             filename(file_name)
         path = ("/v2/groups/" if scene == "group" else "/v2/users/") + segment(target) + "/files"
-        body = fields(file_type=value, url=url, srv_send_msg=srv_send_msg, file_name=file_name, upload_id=upload_id)
+        body = fields(file_type=value, url=url, srv_send_msg=srv_send_msg, file_name=file_name,
+                      upload_id=upload_id, file_data=file_data)
         if srv_send_msg:
             self._check()
             sender = self._client._state.sender
@@ -167,17 +190,21 @@ class NativeMediaMixin:
 
     async def post_group_file(self, group_openid: str, file_type: int, url: str | None = None,
                               srv_send_msg: bool = False, *, file_name: str | None = None,
-                              upload_id: str | None = None, operation_id: str | None = None) -> dict:
-        """Upload QQ group media; srv_send_msg also uses the send ledger."""
+                              upload_id: str | None = None, file_data: bytes | None = None,
+                              operation_id: str | None = None) -> dict:
+        """Upload QQ group media by URL, upload_id, or direct base64 bytes."""
         return await self._native_file("group", group_openid, file_type, url, srv_send_msg,
-                                       file_name=file_name, upload_id=upload_id, operation_id=operation_id)
+                                       file_name=file_name, upload_id=upload_id, file_data=file_data,
+                                       operation_id=operation_id)
 
     async def post_c2c_file(self, openid: str, file_type: int, url: str | None = None,
                             srv_send_msg: bool = False, *, file_name: str | None = None,
-                            upload_id: str | None = None, operation_id: str | None = None) -> dict:
-        """Upload QQ C2C media without fetching external URLs locally."""
+                            upload_id: str | None = None, file_data: bytes | None = None,
+                            operation_id: str | None = None) -> dict:
+        """Upload QQ C2C media by URL, upload_id, or direct base64 bytes."""
         return await self._native_file("c2c", openid, file_type, url, srv_send_msg,
-                                       file_name=file_name, upload_id=upload_id, operation_id=operation_id)
+                                       file_name=file_name, upload_id=upload_id, file_data=file_data,
+                                       operation_id=operation_id)
 
     async def _native_prepare(self, scene, target, value, file_size, file_name, md5, sha1, md5_10m, *, operation_id=None):
         file_type(value)

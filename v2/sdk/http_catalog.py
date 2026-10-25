@@ -115,6 +115,10 @@ A095 GET /channels/{channel_id}/threads M4
 A096 GET /channels/{channel_id}/threads/{thread_id} M4
 A097 PUT /channels/{channel_id}/threads M6
 A098 DELETE /channels/{channel_id}/threads/{thread_id} M6
+A099 POST /v2/media-images/prepare M5
+A100 POST /v2/media-images/complete M5
+A101 GET /v2/media-images M4
+A102 DELETE /v2/media-images/{image_id}/delete M5
 """
 
 _PAGES = {"A004": "limit", "A027": "cursor", "A031": "cursor", "A033": "cursor", "A035": "cursor",

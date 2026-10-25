@@ -29,12 +29,13 @@ member = await event.bot.qq.get_group_member_info(event.route.target, "成员 Op
 
 - `reads.py`：网关、机器人资料、群/频道/成员、菜单/面板和分页读取；
 - `messages.py`：群/C2C/频道/DM 消息、撤回、修改和互动 ACK；
-- `media.py`：文件发送、上传准备、分片 PUT/finish/complete；
+- `media.py`：文件发送（URL、upload_id 或 ≤5MB 的 file_data 二进制直传）、上传准备、分片 PUT/finish/complete；
 - `group_admin.py`：群禁言、踢人、黑名单和入群申请；
 - `guild_admin.py`：频道、成员、角色、权限、公告、日程、语音和帖子；
-- `menus.py`：菜单与面板管理。
+- `menus.py`：菜单与面板管理；
+- `material.py`：平台素材图片 prepare/complete/删除与有效图片列表，`qqbot-media://` 引用可写入 Markdown。
 
-目录登记 98 个官方 HTTP target，其中 96 个已实现/可用、2 个明确 excluded；另有 64 个旧 SDK 风格具名方法。逐项目录见 [SDK 覆盖台账](../SDK_COVERAGE.md)；实现不代表账号一定有权调用。
+目录登记 102 个官方 HTTP target，其中 100 个已实现/可用、2 个明确 excluded；另有 64 个旧 SDK 风格具名方法。逐项目录见 [SDK 覆盖台账](../SDK_COVERAGE.md)；实现不代表账号一定有权调用。
 
 ## 管理写入
 

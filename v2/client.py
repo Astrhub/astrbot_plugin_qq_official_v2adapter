@@ -15,6 +15,7 @@ from .models import SessionRoute, text_id
 from .protocol import avatar_url
 from .sdk.api.group_admin import NativeGroupAdminMixin
 from .sdk.api.guild_admin import NativeGuildAdminMixin
+from .sdk.api.material import NativeMaterialMixin
 from .sdk.api.media import NativeMediaMixin
 from .sdk.api.menus import NativeMenuMixin
 from .sdk.api.messages import NativeMessageMixin
@@ -35,6 +36,7 @@ UNSUPPORTED_ACTIONS = {
 NATIVE_READ_ALIASES = frozenset(name for name in vars(NativeReadMixin) if not name.startswith("_")) - REMOTE_ACTIONS | {"iter_group_members"}
 NATIVE_WRITE_ALIASES = frozenset(name for name in vars(NativeMessageMixin) if not name.startswith("_")) - REMOTE_ACTIONS
 NATIVE_WRITE_ALIASES |= frozenset(name for name in vars(NativeMediaMixin) if not name.startswith("_"))
+NATIVE_WRITE_ALIASES |= frozenset(name for name in vars(NativeMaterialMixin) if not name.startswith("_"))
 NATIVE_WRITE_ALIASES |= frozenset(name for mixin in (NativeGroupAdminMixin, NativeGuildAdminMixin, NativeMenuMixin)
                                 for name in vars(mixin) if not name.startswith("_"))
 
@@ -133,7 +135,7 @@ class ClientState:
         self.guard()
 
 
-class NativeView(NativeMenuMixin, NativeGuildAdminMixin, NativeGroupAdminMixin, NativeMediaMixin, NativeMessageMixin, NativeReadMixin):
+class NativeView(NativeMenuMixin, NativeGuildAdminMixin, NativeGroupAdminMixin, NativeMaterialMixin, NativeMediaMixin, NativeMessageMixin, NativeReadMixin):
     def __init__(self, client, *, actor=None, options=None):
         from .sdk.types import CallOptions
         self._client = client

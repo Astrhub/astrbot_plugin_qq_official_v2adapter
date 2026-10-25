@@ -4,10 +4,10 @@
 
 ## 当前规模
 
-- 目录登记 98 个官方 HTTP target，其中 96 个已实现/可用、2 个明确 excluded；
+- 目录登记 102 个官方 HTTP target，其中 100 个已实现/可用、2 个明确 excluded；
 - 64 个旧 SDK 风格的具名方法；
 - 56 个业务事件，加上 READY/RESUMED 等连接通知（事件目录共 58 个名称）；
-- 主要实现位于 `v2/sdk/api/{reads,messages,media,group_admin,guild_admin,menus}.py`。
+- 主要实现位于 `v2/sdk/api/{reads,messages,media,material,group_admin,guild_admin,menus}.py`。
 
 ## 方法分组
 
@@ -15,9 +15,10 @@
 | --- | --- |
 | 读取 | `get_gateway`、`me`、`me_guilds`、`get_group_info`、`get_group_member_info`、`get_group_member_list`、`get_guild`、`get_channels`、`get_message`、`get_panels` |
 | 消息 | `post_group_message`、`post_c2c_message`、`post_message`、`post_dms`、`recall_*`、`patch_guild_message`、`on_interaction_result` |
-| 媒体 | `post_group_file`、`post_c2c_file`、`post_*_upload_prepare`、`post_*_upload_part_finish`、`begin_upload` |
+| 媒体 | `post_group_file`、`post_c2c_file`、`post_*_upload_prepare`、`post_*_upload_part_finish`、`begin_upload`；file_data ≤5MB 直传 |
 | 群管理 | `set_group_restrict_chat_setting`、`batch_remove_group_members`、`set_group_member_blacklist`、`approve_group_join_request`、入群策略 |
 | 频道管理 | 频道/成员/角色/权限、公告、reaction、日程、语音和帖子相关方法 |
+| 素材 | `post_media_image_prepare`、`post_media_image_complete`、`delete_media_image`、`get_media_images` |
 | 菜单面板 | `get_menu`、`put_menu`、`get_panel`、`create_panel`、`update_panel`、`delete_panel`、`set_panel_target` |
 
 `iter_*` 便利方法有 200 页、5000 项、4 MiB、120 秒上限；单页方法只请求一次。SDK 1.2.1 兼容的少数路径会在源码注释和方法 docstring 中标注，不能据此推断现行账号权限。
