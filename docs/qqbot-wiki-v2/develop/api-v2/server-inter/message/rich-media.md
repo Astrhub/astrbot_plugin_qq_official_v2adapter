@@ -51,11 +51,11 @@
 ```text
  upload_prepare         分片 PUT + part_finish        上传接口（合并）
 ┌──────────────┐    ┌─────────────────────────┐    ┌──────────────────┐
-│ 获取        │    │  for each chunk:        │    │ POST .../files   │
-│ upload_id   │───▶│  PUT → presigned_url    │───▶│ { upload_id }   │
-│ block_size  │    │  POST → part_finish     │    │ → file_info      │
-│ presigned   │    └─────────────────────────┘    └──────────────────┘
-│ URLs        │
+│ 获取         │    │  for each chunk:        │    │ POST .../files   │
+│ upload_id    │───▶│  PUT → presigned_url    │───▶│ { upload_id }    │
+│ block_size   │    │  POST → part_finish     │    │ → file_info      │
+│ presigned    │    └─────────────────────────┘    └──────────────────┘
+│ URLs         │
 └──────────────┘
 ```
 
