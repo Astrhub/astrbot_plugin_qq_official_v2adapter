@@ -66,7 +66,7 @@ class NativeUploadHandle:
                 raise V2Error("invalid_upload_response", f"QQ upload_config {name} is invalid.", phase="result_unknown", status=502)
             return value
 
-        self.retry_timeout = bounded("retry_timeout", 300, 1, 3600)
+        self.retry_timeout = bounded("retry_timeout", 300, 0, 3600)  # 0 disables retry waiting, as in the service path.
         self.retry_delay = bounded("retry_delay", 1, 0, 60)
         self.put_done, self.finish_done = set(), set()
         self.closed = False
@@ -96,7 +96,7 @@ class NativeUploadHandle:
             await self.media._put_part(self.route, self.prepared, part, index=position, block=self.block,
                 actual=actual, key=key, op=op, parent_op=self.parent_id, upload_id=self.upload_id,
                 config={"retry_timeout": self.retry_timeout, "retry_delay": self.retry_delay},
-                deadline=self.media.clock() + self.retry_timeout, check=check)
+                deadline=self.media.clock() + (self.retry_timeout or self.media.transfer.timeout), check=check)
             self.put_done.add(index)
         except BaseException:
             self.close()

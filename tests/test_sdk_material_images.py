@@ -61,7 +61,7 @@ async def material(tmp_path):
     state.http, state.sender, state.extension_state = http, sender, extension
     client = V2Client(identity, state=state)
     try:
-        yield SimpleNamespace(client=client, calls=calls, store=store, extension=extension)
+        yield SimpleNamespace(client=client, calls=calls, store=store, extension=extension, payloads=payloads)
     finally:
         store.close()
 
@@ -120,3 +120,11 @@ async def test_prepare_validates_documented_bounds(material):
     with pytest.raises(V2Error):
         await q.get_media_images("x" * 4097)
     assert material.calls == []
+
+
+async def test_complete_rejects_malformed_ttl_as_unknown(material):
+    material.payloads[("POST", "/v2/media-images/complete")] = {**COMPLETE, "ttl": "7d"}
+    with pytest.raises(V2Error) as raised:
+        await material.client.qq.post_media_image_complete("upload_1792051409302628435_772218", "e" * 32,
+                                                          operation_id="ttl-check")
+    assert raised.value.code == "invalid_upload_response" and raised.value.phase == "result_unknown"

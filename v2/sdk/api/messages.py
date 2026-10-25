@@ -90,9 +90,10 @@ class NativeMessageMixin:
                 return {"upload_id": result["upload_id"]}  # The presigned URL is transient and never persisted.
             if kind == "media_image_complete":
                 if (not isinstance(result, dict) or not isinstance(result.get("image_id"), str) or not result["image_id"]
-                        or not isinstance(result.get("url"), str) or not result["url"].startswith("qqbot-media://")):
+                        or not isinstance(result.get("url"), str) or not result["url"].startswith("qqbot-media://")
+                        or type(result.get("ttl")) is not int or result["ttl"] < 0):
                     raise V2Error("invalid_upload_response", "QQ returned no usable media image reference.", phase="result_unknown", status=502)
-                return {"image_id": result["image_id"], "url": result["url"], "ttl": result.get("ttl")}  # preview_url stays transient.
+                return {"image_id": result["image_id"], "url": result["url"], "ttl": result["ttl"]}  # preview_url stays transient.
             if kind == "upload_files":
                 if (not isinstance(result, dict) or not isinstance(result.get("file_info"), str) or not result["file_info"]
                         or type(result.get("ttl")) is not int or result["ttl"] < 0):

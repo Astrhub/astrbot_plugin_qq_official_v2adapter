@@ -601,3 +601,82 @@ async def test_file_data_upload_validates_source_exclusivity_and_bounds(native):
             await q.post_group_file("g", 1, **options)
         assert raised.value.code == code
     assert native.calls == []
+
+
+@pytest.mark.parametrize("config,timeout,delay", [
+    ({}, 300, 1),
+    ({"retry_timeout": 0, "retry_delay": 5}, 0, 5),
+    ({"retry_timeout": 90}, 90, 1),
+])
+async def test_owned_upload_handle_honors_server_retry_config(native, tmp_path, monkeypatch, config, timeout, delay):
+    from v2.media.io import BlobPool
+    from v2.media.service import MediaService
+    m = native
+    inner = m.http.request
+
+    async def inject(spec, **kwargs):
+        response = await inner(spec, **kwargs)
+        if spec.url.endswith("/upload_prepare"):
+            response.data["upload_config"] = config
+        return response
+
+    monkeypatch.setattr(m.http, "request", inject)
+    pool = BlobPool(tmp_path / "media")
+
+    class Transfer:
+        max_tasks = 1
+        timeout = 30
+
+        async def put(self, url, *, blob, offset, count, request_seconds):
+            pass
+
+        async def close(self):
+            pass
+
+    media = MediaService(m.client.identity, m.http, m.extension, pool, transfer=Transfer())
+    m.client._state.sender.media = media
+    try:
+        task = await m.client.qq.begin_upload("group", "g", b"ab", kind="image", name="picture.png",
+                                              operation_id="retry-config")
+        assert task.retry_timeout == timeout and task.retry_delay == delay
+        task.close()
+    finally:
+        await media.close()
+        pool.close()
+
+
+async def test_owned_upload_handle_rejects_invalid_server_retry_config(native, tmp_path, monkeypatch):
+    from v2.media.io import BlobPool
+    from v2.media.service import MediaService
+    m = native
+    inner = m.http.request
+
+    async def inject(spec, **kwargs):
+        response = await inner(spec, **kwargs)
+        if spec.url.endswith("/upload_prepare"):
+            response.data["upload_config"] = {"retry_timeout": -1}
+        return response
+
+    monkeypatch.setattr(m.http, "request", inject)
+    pool = BlobPool(tmp_path / "media")
+
+    class Transfer:
+        max_tasks = 1
+        timeout = 30
+
+        async def put(self, url, *, blob, offset, count, request_seconds):
+            pass
+
+        async def close(self):
+            pass
+
+    media = MediaService(m.client.identity, m.http, m.extension, pool, transfer=Transfer())
+    m.client._state.sender.media = media
+    try:
+        with pytest.raises(V2Error) as raised:
+            await m.client.qq.begin_upload("group", "g", b"ab", kind="image", name="picture.png",
+                                           operation_id="bad-retry-config")
+        assert raised.value.code == "invalid_upload_response" and raised.value.phase == "result_unknown"
+    finally:
+        await media.close()
+        pool.close()
