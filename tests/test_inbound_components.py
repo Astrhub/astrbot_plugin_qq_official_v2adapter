@@ -240,6 +240,34 @@ def test_c2c_quote_without_author_and_bot_mention_stays_unknown(config):
     assert reply.message_str == "prior text" and {o["user_id"] for o in chat.observations} == {"user-one", "bot-mentioned"}
 
 
+
+@pytest.mark.parametrize("event", ["GROUP_AT_MESSAGE_CREATE", "GROUP_MESSAGE_CREATE"])
+def test_group_mention_tags_keep_text_and_add_metadata_ats(config, event):
+    payload = chat_payload(event, text="hey <@00B2member-two> look <@all> done")
+    payload["d"]["mentions"] = [{"member_openid": "00B2member-two", "username": "second"}]
+    chat = converted(config, payload)
+    ats = [part for part in chat.message.message if isinstance(part, At)]
+    assert [str(part.qq) for part in ats] == ["00B2member-two", "all"]
+    assert chat.message.message_str == "hey <@00B2member-two> look <@all> done"
+
+def test_group_mention_without_tag_and_unknown_tag_keep_appended_at(config):
+    payload = chat_payload(text="plain <@unlisted-member> body")
+    payload["d"]["mentions"] = [{"member_openid": "0A1tagless"}]
+    chat = converted(config, payload)
+    ats = [part for part in chat.message.message if isinstance(part, At)]
+    assert [str(part.qq) for part in ats] == ["0A1tagless"]
+    assert chat.message.message_str == "plain <@unlisted-member> body"
+
+
+def test_group_self_mention_tag_strips_and_appends_bot_at(config):
+    payload = chat_payload(text="<@bot-local> hi")
+    payload["d"]["mentions"] = [{"id": "bot-local", "member_openid": "bot-local", "bot": True, "is_you": True}]
+    chat = converted(config, payload, bot_id="bot-ready")
+    ats = [part for part in chat.message.message if isinstance(part, At)]
+    assert [str(part.qq) for part in ats] == ["bot-local"]
+    assert chat.message.message_str == " hi"
+    assert chat.message.self_id == "bot-local"
+
 def test_mismatched_index_or_forwarded_author_cannot_supply_quote(config):
     payload = quote(chat_payload(text="own content"), child={"msg_idx": "REFIDX_other", "message_type": 103,
                         "author": {"member_openid": "wrong-quoted"}, "content": "not prior"})

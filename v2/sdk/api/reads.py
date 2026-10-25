@@ -41,6 +41,13 @@ class NativeReadMixin:
         self._check()
         return result.data
 
+    async def get_media_images(self, cursor: str | None = None) -> dict:
+        """List valid platform images, newest first, one page per call."""
+        params = {}
+        if cursor is not None:
+            params["cursor"] = page_cursor(cursor)
+        return await self._native_read("/v2/media-images", params=params)
+
     async def get_gateway(self) -> dict:
         """Fetch the official general gateway response."""
         return await self._native_read("/gateway")

@@ -38,8 +38,8 @@ import v2.sdk, v2.sdk.api.groups, v2.profiles
 
 
 def test_catalog_excludes_only_documented_deprecated_announces():
-    assert len(HTTP_TARGETS) == 98
-    assert sum(entry.support != "excluded" for entry in HTTP_TARGETS.values()) == 96
+    assert len(HTTP_TARGETS) == 102
+    assert sum(entry.support != "excluded" for entry in HTTP_TARGETS.values()) == 100
     assert HTTP_TARGETS["A026"].path == "/v2/groups/{group_openid}/members/{member_openid}"
     assert HTTP_TARGETS["A027"].pagination == "cursor"
     assert HTTP_TARGETS["A058"].effect == "write"

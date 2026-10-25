@@ -67,8 +67,7 @@ class GroupMember(TypedDict, total=False):
     timestamp: int
     group_openid: str
     member_openid: str
-    user_openid: str
-
+    user_openid: str  # Removed from the current GROUP_MEMBER_ADD docs; kept as a tolerated legacy optional.
 
 class GroupOperation(TypedDict, total=False):
     timestamp: int

@@ -40,6 +40,8 @@ class ReplySource:
 
     @property
     def expires(self):
+        # Group sources follow the documented 5-minute window; C2C keeps a conservative
+        # 60-minute lease and lets QQ authoritatively reject expired passive replies.
         return min(self.sent_at, self.received_at) + (3600 if self.route.scene == "c2c" else 300)
 
 
@@ -266,6 +268,9 @@ def convert_chat(identity, envelope, *, isolated=False, bot_id=""):
         if scene == "group":
             part.qq = user  # Preserve OpenID leading zeros; the host At constructor coerces numeric strings.
         parts.append(part)
+    if scene == "group" and re.search(r"<@!?all>", content):
+        # Documented @全体成员 tag; metadata only — content stays untouched and it never matches self_id.
+        parts.append(At(qq="all"))
     nodes = 0
 
     def elements(node, depth=0):
