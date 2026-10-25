@@ -2527,8 +2527,8 @@
       "page_last_updated": "7/21/2026, 9:50:42 PM",
       "raw_bytes": 26020,
       "raw_sha256": "66a45f0ba80096b3f2455e4c04c15b9c0e71e23bc0eee1d0b7a8ba9718f6af68",
-      "markdown_bytes": 4493,
-      "markdown_sha256": "422ca4338c13877501759b59bf792048b6383c6e1b9bfadb433a1d36ffe80c89",
+      "markdown_bytes": 3997,
+      "markdown_sha256": "b69446e9900a674345debc066238c9948101ac7300f9aa04f2b766ef28f63b16",
       "comparison_with_20260919": "changed"
     },
     {
@@ -2991,7 +2991,10 @@
       "develop/api-v2/dev-prepare/getting-started.md",
       "develop/api-v2/index.md"
     ],
-    "ascii_flowchart_aligned": "develop/api-v2/server-inter/message/rich-media.md"
+    "official_ascii_flowchart_redrawn_as_mermaid": {
+      "path": "develop/api-v2/server-inter/message/rich-media.md",
+      "reason": "官方 ASCII 图混排 CJK 与制表符，宽度随字体漂移无法稳定对齐；按原文文字重绘为 Mermaid。"
+    }
   },
   "assets": [
     {

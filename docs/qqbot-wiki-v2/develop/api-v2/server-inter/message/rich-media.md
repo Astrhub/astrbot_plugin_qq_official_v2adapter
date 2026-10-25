@@ -48,15 +48,13 @@
 
 流程图：
 
-```text
- upload_prepare         分片 PUT + part_finish        上传接口（合并）
-┌──────────────┐    ┌─────────────────────────┐    ┌──────────────────┐
-│ 获取         │    │  for each chunk:        │    │ POST .../files   │
-│ upload_id    │───▶│  PUT → presigned_url    │───▶│ { upload_id }    │
-│ block_size   │    │  POST → part_finish     │    │ → file_info      │
-│ presigned    │    └─────────────────────────┘    └──────────────────┘
-│ URLs         │
-└──────────────┘
+```mermaid
+flowchart LR
+  A["upload_prepare<br/>获取 upload_id、block_size、presigned URLs"]
+  B["分片 PUT + part_finish<br/>for each chunk:<br/>PUT → presigned_url<br/>POST → part_finish"]
+  C["上传接口（合并）<br/>POST .../files<br/>{ upload_id }<br/>→ file_info"]
+  A --> B
+  B --> C
 ```
 
 ### URL 上传
