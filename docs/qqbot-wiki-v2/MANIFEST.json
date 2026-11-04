@@ -343,8 +343,8 @@
       "page_last_updated": "10/28/2026, 12:08:50 PM",
       "raw_bytes": 40429,
       "raw_sha256": "3e5aea63578cbc01a7a73c007463012d7bb7c6bcd189e044d7517ff5d4ad9b63",
-      "markdown_bytes": 12979,
-      "markdown_sha256": "12cb9b70ea2c482920684c6eedd74b65985ac1b327cb99599bb763e84f42f37c",
+      "markdown_bytes": 14554,
+      "markdown_sha256": "53104fd2db072b0cbdb279d0c41e837d64208253c9117a74931825c6582495a1",
       "comparison_with_20260919": "changed"
     },
     {
@@ -637,8 +637,8 @@
       "page_last_updated": "10/28/2026, 11:59:59 AM",
       "raw_bytes": 41396,
       "raw_sha256": "dc60f2599d800cef65cad419891c1817c0475f7782caba469a9f47188b731331",
-      "markdown_bytes": 13528,
-      "markdown_sha256": "b18aa6389d7bdfff9cfb53bad30983b5ec720cf84081a91823b40b8c4886e4cc",
+      "markdown_bytes": 15506,
+      "markdown_sha256": "ac679f24ae718b63f1a52dfc37babda51bf9362b0ef2c7d759bb161b15de23a4",
       "comparison_with_20260919": "changed"
     },
     {
@@ -2597,8 +2597,8 @@
       "page_last_updated": "10/26/2026, 5:41:55 PM",
       "raw_bytes": 21746,
       "raw_sha256": "6ca0383c8656e80fc61d2631785d6e485f645392409b232a106d8b5e4f9fa6ce",
-      "markdown_bytes": 3060,
-      "markdown_sha256": "b5cfda5bb6d77f8a03b34f3dfca4dc57efd3ceec6f17bdfc66a1be84010d1b32",
+      "markdown_bytes": 4230,
+      "markdown_sha256": "c6d8bc24b6bdf5ce51007aa37b4e3bb9026705b0bd496ad536562ba70c4b7c53",
       "comparison_with_20260919": "changed"
     },
     {
@@ -2983,6 +2983,17 @@
     "official_ascii_flowchart_redrawn_as_mermaid": {
       "path": "develop/api-v2/server-inter/message/rich-media.md",
       "reason": "官方 ASCII 图混排 CJK 与制表符，宽度随字体漂移无法稳定对齐；按原文文字重绘为 Mermaid。"
+    },
+    "implementation_call_chain_annotations_20261104": {
+      "date": "2026-11-04",
+      "official_content_modified": false,
+      "paths": [
+        "develop/api-v2/autogen/api/v2_groups_group_openid_messages.post.md",
+        "develop/api-v2/autogen/api/v2_users_user_openid_messages.post.md",
+        "develop/api-v2/server-inter/message/trans/text-chain.md"
+      ],
+      "reason": "按当前源码补充真实发送、媒体、流式与引用调用链；明确官方新增字段不等于插件已经实现或账号已经获权。",
+      "metadata": "线上 raw_bytes/raw_sha256 保持不变；本地 Markdown 字节数和哈希按校注后的文件更新。"
     }
   },
   "assets": [

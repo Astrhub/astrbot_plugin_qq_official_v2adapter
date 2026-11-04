@@ -1,5 +1,42 @@
 <!-- 来源: https://bot.q.qq.com/wiki/develop/api-v2/autogen/api/v2_users_user_openid_messages.post.html · 抓取 2026-11-04 -->
 
+> 镜像校注（2026-11-04，非官方正文）：本插件 `post_c2c_message` 当前只接受 `msg_type=0/2/6/7`，尚未实现官方新增的 `msg_type=8/card`，调用 `msg_type=8` 会在联网前返回 `invalid_message`。统一发送、原生发送和 C2C 流式发送的真实调用链见[本地实现调用链](#本地实现调用链)。
+
+## 本地实现调用链
+
+> 镜像校注（2026-11-04，非官方正文）：以下链路按本插件当前源码整理。
+
+统一消息链发送：
+
+```text
+V2MessageEvent.send / V2Adapter.send_by_session / client.qq.send
+→ V2Client._send_owned
+→ SendingCore.send → parse_message → build_body / card_body
+→ MessageStore.reserve → ReplyDelivery.apply
+→ [MediaService.prepare → MediaService.upload → POST .../files → file_info]（仅 msg_type=7）
+→ HTTPTransport.request → POST https://api.bot.qq.com/v2/users/{user_openid}/messages
+→ MessageStore.finish(sent)
+```
+
+原生 JSON 与流式发送：
+
+```text
+client.qq.post_c2c_message
+→ NativeView.post_c2c_message → NativeMessageMixin._native_send（校验 msg_type=0/2/6/7）
+→ SendingCore.send_native → MessageStore.reserve_native
+→ HTTPTransport.request → POST 同一官方 messages 路径
+→ 保留 QQ 原始响应，并提取 id/ext_info.ref_idx 写入 MessageStore.finish
+
+client.qq.send_streaming
+→ V2Client._stream_owned
+→ StreamingCore.send（native 模式）
+→ ExtensionStore.execute（每个流式分片）
+→ HTTPTransport.request → POST https://api.bot.qq.com/v2/users/{user_openid}/stream_messages
+→ 复用 stream_msg_id 并递增 index；最后由 MessageStore.finish 结算整条逻辑消息
+```
+
+媒体分支实际执行 `MediaService.prepare` 和 `upload`，成功取得 `file_info` 后才进入消息发送；发送结果未知或流已部分发送时不会从头自动重放。`card_body` 当前处理的是插件已有文本/Markdown/媒体键盘卡片，不等于本页新增的 `MessageCard` 图文卡片。
+
 # 发送单聊消息
 
 向指定用户发送私聊消息。
