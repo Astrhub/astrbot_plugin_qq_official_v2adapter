@@ -41,6 +41,8 @@
 | 2 | Markdown | `markdown` | ✅ | - |
 | 7 | 富媒体 | `media`（需先上传文件获取 `file_info`） | ✅ | ✅ |
 
+> 镜像校注（非官方正文）：上表未列出的 `msg_type=8` 图文卡片（`card` / `MessageCard`）可用于官方[群聊](../../autogen/api/v2_groups_group_openid_messages.post.md)和[单聊](../../autogen/api/v2_users_user_openid_messages.post.md)发送接口；本插件尚未实现 `msg_type=8/card`，不能据此推断插件支持该消息类型。
+
 除上述之外，响应中还可能收到图片、视频、语音、表情、卡片等类型，详见 [消息类型](type/overview.md)。
 
 ## 富媒体消息
