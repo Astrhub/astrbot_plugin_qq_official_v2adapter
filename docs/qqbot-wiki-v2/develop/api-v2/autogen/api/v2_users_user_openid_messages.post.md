@@ -1,4 +1,4 @@
-<!-- 来源: https://bot.q.qq.com/wiki/develop/api-v2/autogen/api/v2_users_user_openid_messages.post.html · 抓取 2026-10-25 -->
+<!-- 来源: https://bot.q.qq.com/wiki/develop/api-v2/autogen/api/v2_users_user_openid_messages.post.html · 抓取 2026-11-04 -->
 
 # 发送单聊消息
 
@@ -30,7 +30,7 @@
 
 | 名称 | 类型 | 必填 | 描述 |
 | --- | --- | --- | --- |
-| msg_type | integer | 否 | 消息类型。决定哪个内容字段生效: 0=纯文本(content) 2=Markdown(markdown) 6=输入中状态（input_notify) 7=富媒体(media) |
+| msg_type | integer | 否 | 消息类型。决定哪个内容字段生效: 0=纯文本(content) 2=Markdown(markdown) 6=输入中状态（input_notify) 7=富媒体(media) 8=图文卡片(card) |
 | content | string | 否 | 文本内容。msg_type=0 时为全文 注意: 传了 markdown 后此字段必须为空 |
 | markdown | [MessageMarkdown](#messagemarkdown) | 否 | Markdown 消息。msg_type=2 时必填 注意: 填写此字段后 content/ark 必须全为空 |
 | keyboard | [Keyboard](#keyboard) | 否 | 内嵌键盘。短形式只传 id，长形式传 content.rows |
@@ -40,6 +40,7 @@
 | media | [MediaInfo](#mediainfo) | 否 | 富媒体消息。msg_type=7 时填写，file_info 来自 /v2/users/{user_openid}/files |
 | message_reference | [MessageReference](#messagereference) | 否 | 引用回复。填写后以引用形式展示，关联上下文 |
 | is_wakeup | boolean | 否 | 指明发送消息为互动召回消息，与 msg_id，event_id 互斥使用 |
+| card | [MessageCard](#messagecard) | 否 | msg_type=8时必须填写 |
 | input_notify | [InputNotify](#inputnotify) | 否 | 输入中状态，msg_type=6时使用 |
 
 ### MessageMarkdown
@@ -129,6 +130,13 @@
 | --- | --- | --- | --- |
 | message_id | string | 否 | 被引用消息 ID，例如REFIDX_xxxxxx <br> - 非机器人发的消息，从消息事件的`MessageScene`的`ext`数组，`msg_idx`字段中获取 <br> - 机器人自己发的消息，从发消息请求响应`ext_info.ref_idx`获取 |
 
+### MessageCard
+
+| 名称 | 类型 | 必填 | 描述 |
+| --- | --- | --- | --- |
+| type | string | 否 | 卡片类型：tuwen： 图文卡片 |
+| content | object | 否 | 卡片消息中上传的元素 当type=tuwen, 时必须包括: title(1-50 字符), description(1-200 字符), url(必须为https,链接长度≤ 1024 字符), pic_url(必须为https,链接长度≤ 1024 字符) |
+
 ### InputNotify
 
 | 名称 | 类型 | 必填 | 描述 |
@@ -190,6 +198,26 @@ POST /v2/users/A1B2C3D4E5F6A1B2C3D4E5F6A1B2C3D4/messages
   "msg_type": 7,
   "media": {
     "file_info": "AE86C5D3F0E14B238C656C0F6DD1D0479C"
+  },
+  "msg_id": "ROBOT1.0_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+  "msg_seq": 1
+}
+```
+
+**图文卡片消息 (msg_type=8)**
+
+```text
+POST /v2/users/A1B2C3D4E5F6A1B2C3D4E5F6A1B2C3D4/messages
+{
+  "msg_type": 8,
+  "card": {
+    "type": "tuwen",
+    "content": {
+      "title":       "今日天气预报",
+      "description": "深圳 多云转晴 24°C~32°C，紫外线强，注意防晒",
+      "url":         "https://xxx",
+      "pic_url":     "https://xx.png"
+    }
   },
   "msg_id": "ROBOT1.0_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
   "msg_seq": 1

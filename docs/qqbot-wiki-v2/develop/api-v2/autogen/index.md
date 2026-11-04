@@ -1,4 +1,4 @@
-<!-- 来源: https://bot.q.qq.com/wiki/develop/api-v2/autogen/index.html · 抓取 2026-10-25 -->
+<!-- 来源: https://bot.q.qq.com/wiki/develop/api-v2/autogen/index.html · 抓取 2026-11-04 -->
 
 # 接口文档索引
 
