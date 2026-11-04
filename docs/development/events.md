@@ -15,6 +15,8 @@
 
 `V2MessageEvent` 绑定当前代次的 route、来源和 client。事件的 raw envelope 保留在事件对象中；引用只能根据官方提供的合法索引/引用元素还原，不能凭 ID 猜正文或作者。
 
+引用机器人已确认发送的消息（含 `ext_info.ref_idx`）时，`Reply.sender_id` 会对齐 `self_id` 并触发与 @ 等同的唤醒；判定只来自本机器人自身的发送记录。插件经 StarTools 重建的同会话消息在 `adapter.create_event` 时按当前代次恢复来源与原始载荷，无法恢复时保持主动发送。
+
 入站附件只保留结构化元数据和 URL，按需消费：图片映射 `Image`，voice 与 `audio/wav`、`audio/x-wav`、`audio/mpeg` 映射 `Record`，`video/mp4` 映射 `Video`，未知类型映射 `File` 或 `Unknown`。
 
 ## NativeEvent

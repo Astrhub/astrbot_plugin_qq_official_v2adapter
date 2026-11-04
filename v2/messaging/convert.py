@@ -158,7 +158,7 @@ def attachment_parts(items):
     return parts
 
 
-def convert_chat(identity, envelope, *, isolated=False, bot_id=""):
+def convert_chat(identity, envelope, *, isolated=False, bot_id="", store=None):
     payload = envelope.payload
     if payload.get("op") != 0 or payload.get("t") not in CHAT_EVENTS or payload.get("derived_from_interaction"):
         raise V2Error("not_chat_source", "Only original chat envelopes may enter the message pipeline.")
@@ -378,4 +378,7 @@ def convert_chat(identity, envelope, *, isolated=False, bot_id=""):
     message.raw_message, message.timestamp = copy.deepcopy(payload), int(sent_at)
     message.v2_source = source
     guild = text_id(data["guild_id"]) if scene == "channel" and data.get("guild_id") else None
-    return Chat(identity, route, source, message, observations, attachments, references, guild)
+    chat = Chat(identity, route, source, message, observations, attachments, references, guild)
+    if store is not None:
+        store.bind_self_references(chat)
+    return chat

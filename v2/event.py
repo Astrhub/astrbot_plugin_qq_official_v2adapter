@@ -41,7 +41,8 @@ class V2MessageEvent(AstrMessageEvent):
         super().__init__(message.message_str, message, meta, session.session_id)
         # A public ID alone may match several QQ scenes; this binding stays event-local.
         self.session._qq_v2_route = (client.identity, route, session.session_id, getattr(message, "v2_source", None))
-        self.is_at_or_wake_command = self.raw_data.get("t") in {"GROUP_AT_MESSAGE_CREATE", "AT_MESSAGE_CREATE"} and not self.raw_data.get("derived_from_interaction")
+        raw = self.raw_data if isinstance(self.raw_data, dict) else {}
+        self.is_at_or_wake_command = raw.get("t") in {"GROUP_AT_MESSAGE_CREATE", "AT_MESSAGE_CREATE"} and not raw.get("derived_from_interaction")
 
     def get_message_outline(self):
         """Hide only this event's self mention in the host summary view."""
@@ -87,7 +88,7 @@ class V2MessageEvent(AstrMessageEvent):
                     raise V2Error("invalid_management_response", "QQ channel identity differs from the requested channel.", status=502)
                 if isinstance(info.get("name"), str):
                     group.group_name = info["name"]
-                guild_id = info.get("guild_id") or self.raw_data.get("d", {}).get("guild_id") if bound else info.get("guild_id")
+                guild_id = info.get("guild_id") or (self.raw_data if isinstance(self.raw_data, dict) else {}).get("d", {}).get("guild_id") if bound else info.get("guild_id")
                 if isinstance(guild_id, str) and guild_id:
                     guild = await self.qq.get_guild(guild_id)
                     if guild.get("id") == guild_id:

@@ -7,6 +7,7 @@ import pytest
 from astrbot.core.message.components import Plain
 from astrbot.core.message.message_event_result import MessageChain
 from astrbot.core.platform.message_session import MessageSession
+from astrbot.core.platform.astrbot_message import AstrBotMessage, MessageMember
 from astrbot.core.platform.message_type import MessageType
 from astrbot.core.platform.platform_metadata import PlatformMetadata
 from test_interactions import interaction
@@ -242,3 +243,52 @@ def test_persisted_observations_resolve_without_schema_changes_or_touching_unkno
         assert exc.value.code == "send_result_unknown"
     finally:
         store.close()
+
+
+def synthetic_message(message_id, *, session="group-one", raw=None):
+    """A host-side AstrBotMessage as StarTools.create_message would build it."""
+    message = AstrBotMessage()
+    message.type = MessageType.GROUP_MESSAGE
+    message.self_id = "replayer"
+    message.session_id = session
+    message.message_id = message_id
+    message.sender = MessageMember("user-one", None)
+    message.message = []
+    message.message_str = ""
+    message.raw_message = raw
+    return message
+
+
+async def test_synthetic_star_replay_recovers_source_and_sends_passively(sending, adapter):
+    s = sending
+    chat, _ = s.observe()
+    message = synthetic_message(chat.source.message_id)
+    event = adapter.create_event(message)
+    assert message.v2_source is event.bot._source and event.bot._source.generation == s.client.identity.generation
+    assert event.route == chat.route and event.raw_data == chat.message.raw_message
+    await event.send(MessageChain([Plain("继续")]))
+    assert s.calls == [("/v2/groups/group-one/messages", {"content": "继续", "msg_id": "msg-one", "msg_type": 0, "msg_seq": 1})]
+
+
+async def test_synthetic_unknown_message_id_keeps_active_send(sending, adapter):
+    s = sending
+    s.observe()
+    event = adapter.create_event(synthetic_message("never-observed"))
+    assert event.bot._source is None and event.raw_data is None and not event.is_at_or_wake_command
+    await event.send(MessageChain([Plain("主动")]))
+    assert s.calls == [("/v2/groups/group-one/messages", {"content": "主动", "msg_type": 0})]
+
+
+async def test_expired_or_old_generation_sources_are_not_recovered(sending, adapter):
+    s = sending
+    chat, _ = s.observe()
+    assert s.store.source_for_message(chat.route, "old-generation", chat.source.message_id) == (None, None)
+    adapter.identity = replace(adapter.identity, generation="old-generation")
+    event = adapter.create_event(synthetic_message(chat.source.message_id))
+    assert event.bot._source is None
+    s.clock[0] += 301
+    adapter.identity = s.client.identity
+    event = adapter.create_event(synthetic_message(chat.source.message_id))
+    assert event.bot._source is None
+    await event.send(MessageChain([Plain("过期")]))
+    assert "msg_id" not in s.calls[0][1]
