@@ -302,6 +302,13 @@ class V2Adapter(Platform):
         from .event import V2MessageEvent
         source = getattr(message, "v2_source", None)
         route = source.route if source is not None else self.owner.messages.resolve_session(self.identity.robot, message.type, message.session_id)
+        if source is None and getattr(message, "message_id", None):
+            # StarTools replays lose the source and raw payload; recover them from the live observation.
+            source, raw_message = self.owner.messages.source_for_message(route, self.identity.generation, message.message_id)
+            if source is not None:
+                message.v2_source = source
+                if getattr(message, "raw_message", None) is None and raw_message is not None:
+                    message.raw_message = raw_message
         return V2MessageEvent(message, self.meta(), self.client, route)
 
     async def send_by_session(self, session, message_chain):

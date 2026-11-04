@@ -2513,8 +2513,8 @@
       "page_last_updated": "7/21/2026, 11:01:44 PM",
       "raw_bytes": 25669,
       "raw_sha256": "4c35b272fc6804e5bc696f643634d8c971e5247f574fa86d15779436a5a4c414",
-      "markdown_bytes": 6382,
-      "markdown_sha256": "5756bf31ebf52dd65b6c140c87639b3ae8e9c58730a2dc374016d706cef260f7",
+      "markdown_bytes": 6749,
+      "markdown_sha256": "eb4a23a3a72bc0050f61cd89aa6a23a3a442964a72098a75db5ec88316ca0824",
       "comparison_with_20260919": "changed"
     },
     {
@@ -2990,7 +2990,8 @@
       "paths": [
         "develop/api-v2/autogen/api/v2_groups_group_openid_messages.post.md",
         "develop/api-v2/autogen/api/v2_users_user_openid_messages.post.md",
-        "develop/api-v2/server-inter/message/trans/text-chain.md"
+        "develop/api-v2/server-inter/message/trans/text-chain.md",
+        "develop/api-v2/server-inter/message/overview.md"
       ],
       "reason": "按当前源码补充真实发送、媒体、流式与引用调用链；明确官方新增字段不等于插件已经实现或账号已经获权。",
       "metadata": "线上 raw_bytes/raw_sha256 保持不变；本地 Markdown 字节数和哈希按校注后的文件更新。"

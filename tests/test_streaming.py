@@ -42,6 +42,8 @@ async def streaming(config, tmp_path):
             return web.json_response({"code": 50002 if mode == "429" else 11244}, status=int(mode), headers={"Retry-After": "0"})
         if mode == "missing":
             return web.json_response({"remain_msg_len": 0})
+        if mode == "no-ref":
+            return web.json_response({"id": "real-stream-id", "remain_msg_len": 0})
         if mode == "ambiguous":
             return web.json_response({"code": 50055001})
         if mode == "event_expired":
@@ -94,6 +96,16 @@ async def test_native_fragments_share_real_id_sequence_and_one_quota(streaming, 
     assert s.store.operation(chat.route.robot, "one-stream")["state"] == "sent"
     assert all(url == "https://api.bot.qq.com/v2/users/user-one/stream_messages" for method, url, _ in s.http.session.calls if url.endswith("stream_messages"))
 
+
+async def test_c2c_stream_keeps_first_fragment_ref_idx_for_the_ledger(streaming):
+    s = streaming
+    chat = s.observe()
+    # Only the final frame omits ext_info.ref_idx; the ledger must still bind the bot's own ref.
+    s.modes.extend(["ok", "ok", "no-ref"])
+    result = await s.core.send(chat.route, chains("hello", " world"), source=chat.source, input_mode="append", operation_id="stream-ref")
+    assert result["state"] == "sent" and result["ref_idx"] == "REFIDX_stream"
+    assert s.store.db.execute("SELECT from_self FROM refs WHERE message_id='real-stream-id'").fetchone()[0] == 1
+    assert s.store.is_self_reference(chat.route, "REFIDX_stream")
 
 async def test_legacy_frame_rate_rows_do_not_delay_stream(streaming):
     s = streaming

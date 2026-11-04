@@ -93,7 +93,7 @@ class CoreConsumer:
                 validate_event(payload)
                 if name in CHAT_EVENTS:
                     chat = convert_chat(self.adapter.identity, RawEnvelope(payload, item["received_at"]),
-                        isolated=self.adapter.session_isolated, bot_id=self.adapter.bot_id)
+                        isolated=self.adapter.session_isolated, bot_id=self.adapter.bot_id, store=self.adapter.owner.messages)
                     self.adapter.owner.messages.observe(chat)
                     if receipt > self.recovered_through and chat.source.expires > self.adapter.owner.messages.now():
                         reply = chat.source
