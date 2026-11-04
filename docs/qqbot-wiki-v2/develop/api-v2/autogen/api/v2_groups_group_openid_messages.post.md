@@ -1,5 +1,35 @@
 <!-- 来源: https://bot.q.qq.com/wiki/develop/api-v2/autogen/api/v2_groups_group_openid_messages.post.html · 抓取 2026-11-04 -->
 
+> 镜像校注（2026-11-04，非官方正文）：本插件 `post_group_message` 当前只接受 `msg_type=0/2/7`，尚未实现官方新增的 `msg_type=8/card`，调用 `msg_type=8` 会在联网前返回 `invalid_message`。统一发送和原生发送的真实调用链见[本地实现调用链](#本地实现调用链)。
+
+## 本地实现调用链
+
+> 镜像校注（2026-11-04，非官方正文）：以下链路按本插件当前源码整理。
+
+统一消息链发送：
+
+```text
+V2MessageEvent.send / V2Adapter.send_by_session / client.qq.send
+→ V2Client._send_owned
+→ SendingCore.send → parse_message → build_body / card_body
+→ MessageStore.reserve → ReplyDelivery.apply
+→ [MediaService.prepare → MediaService.upload → POST .../files → file_info]（仅 msg_type=7）
+→ HTTPTransport.request → POST https://api.bot.qq.com/v2/groups/{group_openid}/messages
+→ MessageStore.finish(sent)
+```
+
+原生 JSON 发送：
+
+```text
+client.qq.post_group_message
+→ NativeView.post_group_message → NativeMessageMixin._native_send（校验 msg_type=0/2/7）
+→ SendingCore.send_native → MessageStore.reserve_native
+→ HTTPTransport.request → POST 同一官方路径
+→ 保留 QQ 原始响应，并提取 id/ext_info.ref_idx 写入 MessageStore.finish
+```
+
+媒体分支实际执行 `MediaService.prepare` 和 `upload`，成功取得 `file_info` 后才进入消息发送；发送结果未知时不会自动重放。`card_body` 当前处理的是插件已有文本/Markdown/媒体键盘卡片，不等于本页新增的 `MessageCard` 图文卡片。
+
 # 发送群聊消息
 
 向指定群发送消息。支持文本/Markdown/富媒体等类型，可附带内嵌键盘。

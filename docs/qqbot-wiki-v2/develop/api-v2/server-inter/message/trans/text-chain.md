@@ -1,5 +1,22 @@
 <!-- 来源: https://bot.q.qq.com/wiki/develop/api-v2/server-inter/message/trans/text-chain.html · 抓取 2026-11-04 -->
 
+> 镜像校注（2026-11-04，非官方正文）：本插件出站 `At` 的 `id="all"` 当前只允许文字子频道；群聊会在联网前返回 `unsupported`，不能据此校注推断账号已获群 @全部成员权限。实际编码与发送调用链见[本地实现调用链](#本地实现调用链)。
+
+## 本地实现调用链
+
+> 镜像校注（2026-11-04，非官方正文）：以下链路按本插件当前源码整理。
+
+```text
+消息链 At / 原生 content 或 markdown.content
+→ SendingCore.send → parse_message
+→ build_body → check_at / MarkupCheck（场景、指令和属性校验）
+→ ReplyDelivery.apply（被动来源与 msg_seq）
+→ HTTPTransport.request → POST 对应 messages 路径
+→ MessageStore.finish(sent)
+```
+
+`build_body` 对 `At.qq` 编码为 `<qqbot-at-user id="..." />`，文字子频道的 `At.qq="all"` 编码为 `<qqbot-at-everyone />`；Markdown 原文中的 QQ 指令由 `MarkupCheck` 校验，不转义合法标签。群聊 @用户可以使用统一消息链，群聊 @全部成员会被 `check_at` 在联网前拒绝；原生接口按其实际请求体发送，账号权限与频控仍由 QQ 服务端决定。
+
 # 文本交互
 
 > **说明**

@@ -44,3 +44,5 @@
 2026-10-25 复核以下原始目标仍跳转至 V2「启动接入」：`gateway/message/model.html`、`openapi/guild/model.html`、`openapi/guild/role_model.html#DefaultRoles`。保留 2026-09-19 的四处本地校注和有效链接，另保留角色对象页不存在 `#DefaultRoles` 锚点的修正；不修改协议字段。
 
 Markdown 示例中的模板变量和 `qqbot-media://` 引用不是待抓取页面。镜像补充内容仅限排版、有效链接、现有页面导航及原图保存，并在此记录。
+
+2026-11-04 在群聊发送、单聊发送和文本交互页各增加一段“本地实现调用链”，依据当前源码说明 `SendingCore`、原生发送、媒体上传、C2C 流式分片与引用索引的实际路径，并明确 `msg_type=8/card` 及群聊 @全部成员尚未接入。这些段落均标记为非官方正文；`MANIFEST.json` 的线上 HTML 哈希保持原值，仅相应页面的本地 Markdown 字节数和哈希更新。
