@@ -65,13 +65,14 @@ class StreamingCore:
         stream_default = self.sender.markdown_default
         operation, last_id, last_result = None, None, None
         delivery = None
+        stream_ref_idx = None
         first_wire_started = None
         index, attempted, complete = 0, False, False
         self.last_mode = mode
         store = self.sender.store
 
         async def fragment(raw, final=False):
-            nonlocal index, last_id, last_result, attempted
+            nonlocal index, last_id, last_result, attempted, stream_ref_idx
             for _ in range(2):
                 check_owned(allow_active=last_id is None or delivery.wire_source is None)
                 body = delivery.apply({"input_mode": input_mode, "input_state": 10 if final else 1, "index": index,
@@ -106,6 +107,11 @@ class StreamingCore:
                         last_result = await self.state.execute(self.sender.http, RequestSpec(route.robot.environment, "POST", path, json_body=body),
                             op_id="stream-" + digest([op_id, index, retry, delivery.data["mode"]]), kind="stream_frame", validate=validate, before_send=before_send, ambiguous_codes=AMBIGUOUS_CODES | {50001},
                             context={"parent_operation_id": op_id, "index": index, "final": final, "stream_msg_id": last_id, "delivery_mode": delivery.data["mode"]})
+                        # QQ may only return ext_info.ref_idx on an early fragment; keep it for the ledger.
+                        if last_result.get("ref_idx"):
+                            stream_ref_idx = last_result["ref_idx"]
+                        if "ref_idx" not in last_result and stream_ref_idx is not None:
+                            last_result["ref_idx"] = stream_ref_idx
                         last_id = last_result["message_id"]
                         index += 1
                         return

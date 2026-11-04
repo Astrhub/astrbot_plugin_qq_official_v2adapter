@@ -99,7 +99,7 @@ class ChatConsumer:
                 return True
             try:
                 chat = convert_chat(self.adapter.identity, RawEnvelope(payload, item["received_at"]),
-                                    isolated=self.adapter.session_isolated, bot_id=self.adapter.bot_id)
+                                    isolated=self.adapter.session_isolated, bot_id=self.adapter.bot_id, store=self.store)
                 if self.store.delivered(chat) or receipt in self.enqueued:
                     if not self.store.delivered(chat):
                         self.store.mark_delivered(chat)

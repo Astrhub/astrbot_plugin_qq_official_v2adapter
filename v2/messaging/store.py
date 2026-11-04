@@ -1,4 +1,5 @@
 """Bounded robot-shared observations and durable, non-replayable send reservations."""
+import copy
 import json
 import os
 import sqlite3
@@ -49,6 +50,7 @@ class MessageStore:
         self.identity_capacity, self.operation_capacity, self.source_capacity = identity_capacity, operation_capacity, source_capacity
         self._delivery_pins = {}
         self.closed = False
+        self._live_sources = {}
         path = Path(path)
         private_file(path)
         lock_path = path.with_name(path.name + ".lock")
@@ -85,7 +87,8 @@ class MessageStore:
                     ref_idx TEXT, accepted REAL NOT NULL, PRIMARY KEY(robot,scene,target,message_id,ref_idx));
                 CREATE INDEX IF NOT EXISTS delivery_age ON deliveries(accepted);
                 CREATE TABLE IF NOT EXISTS refs (robot TEXT, scene TEXT, target TEXT, message_id TEXT,
-                    ref_idx TEXT, expires REAL NOT NULL, PRIMARY KEY(robot,scene,target,message_id));
+                    ref_idx TEXT, expires REAL NOT NULL, from_self INTEGER NOT NULL DEFAULT 0,
+                    PRIMARY KEY(robot,scene,target,message_id));
                 CREATE INDEX IF NOT EXISTS reference_age ON refs(expires);
                 CREATE TABLE IF NOT EXISTS operations (robot TEXT, op_id TEXT, scene TEXT, target TEXT,
                     source TEXT, digest TEXT NOT NULL, seq INTEGER, state TEXT NOT NULL, started REAL NOT NULL,
@@ -117,6 +120,18 @@ class MessageStore:
             if "event_id" not in {row[1] for row in self.db.execute("PRAGMA table_info(sources)")}:
                 self.db.execute("ALTER TABLE sources ADD COLUMN event_id TEXT")
             self.db.execute("CREATE INDEX IF NOT EXISTS source_event_id ON sources(event_id)")
+            if "from_self" not in {row[1] for row in self.db.execute("PRAGMA table_info(refs)")}:
+                self.db.execute("ALTER TABLE refs ADD COLUMN from_self INTEGER NOT NULL DEFAULT 0")
+                # Only this robot's confirmed sends prove which refs it wrote itself.
+                self.db.execute("""
+                    UPDATE refs SET from_self=1 WHERE EXISTS (
+                        SELECT 1 FROM operations o
+                        WHERE o.robot=refs.robot AND o.scene=refs.scene AND o.target=refs.target
+                            AND o.state='sent' AND o.result IS NOT NULL
+                            AND (json_extract(o.result,'$.message_id')=refs.message_id
+                                OR json_extract(o.result,'$.ref_idx')=refs.message_id
+                                OR json_extract(o.result,'$.ref_idx')=refs.ref_idx))
+                """)
             self.db.commit()
             self._water = self.db.execute("SELECT value FROM clock_guard WHERE id=1").fetchone()[0]
             with self.transaction():
@@ -138,6 +153,7 @@ class MessageStore:
             self.db.close()
             self._lease.close()
             self._delivery_pins.clear()
+            self._live_sources.clear()
 
     def now(self):
         if self.closed:
@@ -205,6 +221,7 @@ class MessageStore:
         self.db.execute("DELETE FROM targets WHERE last<=?", (now - 86400,))
         self.db.execute("DELETE FROM charges WHERE until<=?", (now,))
         self.db.execute("DELETE FROM refs WHERE expires<=?", (now,))
+        self._live_sources = {k: v for k, v in self._live_sources.items() if v[0].expires > now}
         guard = " AND (robot,scene,target,message_id) != (?,?,?,?)" if keep_source is not None else ""
         args = keep_source or ()
         pins = {value[:4] for value in self._delivery_pins.values()}
@@ -267,15 +284,22 @@ class MessageStore:
                     self._put_ref(key, msg_id, reference.get("ref_idx"), seen_at + 86400)
             if source.ref_idx and chat.route.scene in {"group", "c2c"}:
                 self._put_ref(key, source.ref_idx, source.ref_idx, seen_at + 86400)
+        self.bind_self_references(chat)
+        self._live_sources.pop((*key, source.message_id), None)
+        self._live_sources[(*key, source.message_id)] = (source, copy.deepcopy(chat.message.raw_message))
+        while len(self._live_sources) > self.source_capacity:
+            self._live_sources.pop(next(iter(self._live_sources)))
 
-    def _put_ref(self, key, message_id, ref_idx, expires):
-        old = self.db.execute("SELECT ref_idx FROM refs WHERE robot=? AND scene=? AND target=? AND message_id=?", (*key, message_id)).fetchone()
+    def _put_ref(self, key, message_id, ref_idx, expires, *, from_self=False):
+        old = self.db.execute("SELECT ref_idx,from_self FROM refs WHERE robot=? AND scene=? AND target=? AND message_id=?", (*key, message_id)).fetchone()
         if old and old[0] != ref_idx:
-            self.db.execute("UPDATE refs SET ref_idx=NULL WHERE robot=? AND scene=? AND target=? AND message_id=?", (*key, message_id))
+            self.db.execute("UPDATE refs SET ref_idx=NULL,from_self=0 WHERE robot=? AND scene=? AND target=? AND message_id=?", (*key, message_id))
             return
         if not old:
             self._cache_room("refs")
-        self.db.execute("INSERT OR IGNORE INTO refs VALUES(?,?,?,?,?,?)", (*key, message_id, ref_idx, expires))
+            self.db.execute("INSERT INTO refs VALUES(?,?,?,?,?,?,?)", (*key, message_id, ref_idx, expires, int(bool(from_self))))
+        elif from_self and not old["from_self"]:
+            self.db.execute("UPDATE refs SET from_self=1,expires=max(expires,?) WHERE robot=? AND scene=? AND target=? AND message_id=?", (expires, *key, message_id))
 
     def lookup(self, robot, kind, scope, subject):
         with self.transaction():
@@ -336,6 +360,54 @@ class MessageStore:
         if row is None or (route.scene in {"c2c", "group"} and not row[0]):
             failure("reference_not_observed", "No equivalent reference exists for this robot, scene and target.", 404)
         return row[0] if route.scene in {"c2c", "group"} else message_id
+
+    def is_self_reference(self, route, reference_id):
+        if self.closed or not isinstance(reference_id, str) or not reference_id:
+            return False
+        try:
+            ref_id = text_id(reference_id)
+        except V2Error:
+            return False
+        now = max(self._water, self.clock())
+        row = self.db.execute(
+            "SELECT 1 FROM refs WHERE robot=? AND scene=? AND target=? AND message_id=? AND from_self=1 AND expires>?",
+            (*route_key(route), ref_id, now),
+        ).fetchone()
+        return row is not None
+
+    def bind_self_references(self, chat):
+        from astrbot.core.message.components import Reply
+        for part in chat.message.message:
+            if isinstance(part, Reply) and isinstance(part.id, str) and part.id and self.is_self_reference(chat.route, part.id):
+                self_id = chat.message.self_id or (part.sender_id if isinstance(part.sender_id, str) and part.sender_id else chat.identity.robot.appid)
+                chat.message.self_id = self_id
+                part.sender_id = self_id
+
+    def source_for_message(self, route, generation, message_id):
+        if self.closed or not isinstance(message_id, str) or not message_id:
+            return None, None
+        try:
+            msg_id = text_id(message_id)
+        except V2Error:
+            return None, None
+        key = (*route_key(route), msg_id)
+        entry = self._live_sources.get(key)
+        if entry is None:
+            return None, None
+        source, raw_message = entry
+        if source.generation != generation:
+            return None, None
+        now = max(self._water, self.clock())
+        if source.expires <= now:
+            return None, None
+        row = self.db.execute(
+            "SELECT expires,blocked FROM sources WHERE robot=? AND scene=? AND target=? AND message_id=?",
+            key,
+        ).fetchone()
+        if row is None or row["expires"] <= now or (row["blocked"] and not row["blocked"].startswith("active:")):
+            return None, None
+        from dataclasses import replace
+        return replace(source, route=route), copy.deepcopy(raw_message)
 
     def delivered(self, chat):
         return self.db.execute("SELECT 1 FROM deliveries WHERE robot=? AND scene=? AND target=? AND message_id=? AND ref_idx=?",
@@ -729,9 +801,9 @@ class MessageStore:
         self.db.execute("UPDATE operations SET state=?,updated=?,result=?,error=? WHERE robot=? AND op_id=?",
                         (state, now, json.dumps(result) if result else None, json.dumps(error) if error else None, robot, op_id))
         if state == "sent" and result.get("message_id"):
-            self._put_ref((robot, row["scene"], row["target"]), result["message_id"], result.get("ref_idx"), now + 86400)
+            self._put_ref((robot, row["scene"], row["target"]), result["message_id"], result.get("ref_idx"), now + 86400, from_self=True)
             if result.get("ref_idx") and row["scene"] in {"group", "c2c"}:
-                self._put_ref((robot, row["scene"], row["target"]), result["ref_idx"], result["ref_idx"], now + 86400)
+                self._put_ref((robot, row["scene"], row["target"]), result["ref_idx"], result["ref_idx"], now + 86400, from_self=True)
 
     def finish(self, robot, op_id, state, *, result=None, error=None):
         if state not in {"not_sent", "rejected", "unknown", "sent"}:
