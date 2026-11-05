@@ -29,6 +29,8 @@ Append `-k reply` to select reply-related tests. Plugin runtime dependencies are
 
 Use four-space Python indentation, `snake_case` functions/modules, `PascalCase` classes, and uppercase constants. Preserve async I/O patterns and relative imports. JavaScript uses two-space indentation and camelCase. No repository formatter or lint configuration is checked in; follow surrounding formatting.
 
+Production code must import logger from AstrBot (normally `from astrbot.api import logger`); `logging`, `loguru`, and `structlog` imports are forbidden outside `tests/`.
+
 ## Testing Guidelines
 
 Use pytest/pytest-asyncio, `test_*.py` files, and `test_<behavior>` functions. Page tests invoke Node. Always use the isolated runner; tests reject execution outside its sandbox. Cover changed behavior with temporary stores and local upstream fixtures. No numeric coverage threshold is configured.
