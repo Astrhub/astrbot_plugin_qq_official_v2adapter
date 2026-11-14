@@ -5,6 +5,7 @@ import os
 import subprocess
 from pathlib import Path
 
+from v2.connection_config import DEFAULT_INTENTS
 from v2.settings import DEFAULTS
 
 ROOT = Path(__file__).parents[1]
@@ -21,6 +22,7 @@ def test_control_view_singlefile_artifact_and_i18n_metadata():
     assert "html[data-theme=dark]" in html and "#3c96ca" in html
     assert 'src="' not in html and 'href="' not in html
     assert "localStorage" not in html and "media_roots" not in html and "onebot_network_enabled" not in html
+    assert "配置事件订阅" in html and "Configure Event Subscriptions" in html
     for src_file in (ROOT / "dash" / "src").glob("*"):
         src_text = src_file.read_text(encoding="utf-8")
         assert "fetch(" not in src_text and "localStorage" not in src_text and "window.confirm" not in src_text
@@ -39,6 +41,20 @@ def test_control_view_singlefile_artifact_and_i18n_metadata():
         assert "webui_enabled" in data["config"] and "onebot_network_enabled" not in data["config"]
         assert "display_name" in data["metadata"]
 
+def test_connection_panel_intents_dialog_cancel_and_apply_contract():
+    """The dialog drafts locally: canceling must not touch the form, applying must write an integer mask."""
+    import re
+
+    src = (ROOT / "dash" / "src" / "ConnectionPanel.vue").read_text(encoding="utf-8")
+    cancel_body = re.search(r"function cancelIntents\(\) \{(.*?)\n\}", src, re.S).group(1)
+    assert "form.intents" not in cancel_body
+    apply_body = re.search(r"function applyIntents\(\) \{(.*?)\n\}", src, re.S).group(1)
+    assert "form.intents" in apply_body
+    assert 'role="dialog"' in src and 'aria-modal="true"' in src and "aria-labelledby" in src
+    assert '@keydown.esc.prevent="cancelIntents"' in src
+    assert re.search(r"watch\(\s*\(\) => props\.state\.view", src)
+
+
 def test_control_view_api_state_machine_and_i18n_theme_sync():
     node = os.environ.get("V2_NODE")
     assert node, "Node is required for the Vue control view state-machine test."
@@ -46,9 +62,11 @@ def test_control_view_api_state_machine_and_i18n_theme_sync():
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import { applyHostContext, isDark, locale, t, tError, tScanHint, tState } from "/plugin/dash/src/i18n.js";
-import { changed, connectionFields, createApi } from "/plugin/dash/src/api.js";
+import { changed, connectionFields, createIntentsEditor, createApi, KNOWN_INTENT_BITS, toUint32, unknownIntentBits, withIntentBit } from "/plugin/dash/src/api.js";
 
-const defaults = JSON.parse(fs.readFileSync(0, "utf8"));
+const payload = JSON.parse(fs.readFileSync(0, "utf8"));
+const defaults = payload.defaults;
+const defaultIntents = payload.default_intents;
 const attrs = new Map([["data-theme", "light"]]);
 globalThis.document = {
   title: "",
@@ -105,6 +123,47 @@ assert.deepEqual(
 
 assert.throws(() => connectionFields({ type: "qq_official_v2", shard_mode: "manual", shardIndex: 2, shardCount: 2 }), /分片/);
 assert.deepEqual(connectionFields({ type: "qq_official_v2_webhook", shard_mode: "manual", shardIndex: 1, shardCount: 2 }).shard, [0, 1]);
+
+assert.deepEqual(KNOWN_INTENT_BITS.map(e => e.name), ["PUBLIC_GUILD_MESSAGES", "INTERACTION", "GROUP_AND_C2C_EVENT", "DIRECT_MESSAGE"]);
+const EXPECTED_BITS = { PUBLIC_GUILD_MESSAGES: 30, INTERACTION: 26, GROUP_AND_C2C_EVENT: 25, DIRECT_MESSAGE: 12 };
+for (const { name, bit } of KNOWN_INTENT_BITS) assert.equal(bit, EXPECTED_BITS[name]);
+const knownSum = KNOWN_INTENT_BITS.reduce((sum, { bit }) => sum + 2 ** bit, 0);
+assert.equal(knownSum, defaultIntents);
+assert.equal((2 ** 30) + (2 ** 26) + (2 ** 25) + (2 ** 12), defaultIntents);
+assert.equal(toUint32(-1), 4294967295);
+assert.equal(unknownIntentBits(4294967295), 4294967295 - defaultIntents);
+assert.equal(withIntentBit(4294967295, 30, true), 4294967295);
+assert.equal(withIntentBit(4294967295, 30, false), 4294967295 - 2 ** 30);
+
+// A saved legacy mask with unlisted bits must keep them across toggles.
+const legacyMask = defaultIntents + (1 << 9) + 3;
+assert.equal(unknownIntentBits(legacyMask), (1 << 9) + 3);
+assert.equal(t("conn.intentsUnknownRetained", { mask: 515 }), "另有未列出的订阅掩码 515，将原样保留。");
+const editor = createIntentsEditor(legacyMask);
+assert.equal(editor.value, legacyMask);
+assert.equal(editor.has(30) && editor.has(26) && editor.has(25) && editor.has(12), true);
+editor.toggle(25, false);
+assert.equal(editor.value, legacyMask - 2 ** 25);
+assert.equal(editor.unknownBits(), (1 << 9) + 3);
+editor.toggle(12, false);
+assert.equal(editor.value, legacyMask - 2 ** 25 - 2 ** 12);
+editor.setDecimal("0");
+assert.equal(editor.valid, true);
+editor.toggle(26, true);
+const applied = editor.apply();
+assert.equal(applied, 2 ** 26);
+assert.equal(Number.isInteger(applied), true);
+const afterApply = connectionFields({ appid: "102030", use_markdown: true, type: "qq_official_v2", intents: applied, shard_mode: "auto", enable: false });
+assert.equal(afterApply.intents, 2 ** 26);
+assert.equal(Number.isInteger(afterApply.intents), true);
+
+// Invalid decimal input blocks apply and toggles instead of corrupting the draft.
+const guarded = createIntentsEditor(defaultIntents);
+guarded.setDecimal("3.5");
+assert.equal(guarded.valid, false);
+guarded.toggle(30, false);
+assert.equal(Number.isNaN(guarded.value), true);
+assert.equal(guarded.apply(), null);
 
 const normalized = connectionFields({
   appid: " 102030 ",
@@ -173,7 +232,7 @@ assert.equal(state.boot.flags.remote_menu_sync, true);
     result = subprocess.run(
         [node, "--input-type=module", "-e", script],
         cwd="/plugin/dash",
-        input=json.dumps(DEFAULTS),
+        input=json.dumps({"defaults": DEFAULTS, "default_intents": DEFAULT_INTENTS}),
         text=True,
         capture_output=True,
         timeout=15,

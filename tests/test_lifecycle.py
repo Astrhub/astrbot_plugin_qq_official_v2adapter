@@ -18,6 +18,7 @@ from host_display import display_service
 from test_onboarding import HostConfig
 
 from v2 import PLATFORM_TYPE, PLUGIN_NAME
+from v2.connection_config import INTENT_BOOL_FIELDS
 
 
 @pytest.fixture
@@ -101,6 +102,16 @@ async def test_platform_form_uses_chinese_labels_without_changing_config(plugin_
         assert items["is_sandbox"] == sandbox_metadata and items["is_sandbox"]["type"] == "bool"
         for key in ("environment", "transport", "intents", "shard", "shard_mode", "onebot"):
             assert items[key]["invisible"] is True
+        for name in INTENT_BOOL_FIELDS:
+            assert items[name]["type"] == "bool" and not items[name].get("invisible")
+        translations = data["platform_i18n_translations"]
+        for lang in ("zh-CN", "en-US"):
+            fields = translations[lang]["platform_group"]["platform"][PLATFORM_TYPE]
+            for name in INTENT_BOOL_FIELDS:
+                assert fields[name]["description"] and fields[name]["hint"]
+                text = f"{fields[name]['description']} {fields[name]['hint']}"
+                for token in ("PUBLIC_GUILD_MESSAGES", "INTERACTION", "GROUP_AND_C2C_EVENT", "DIRECT_MESSAGE", "1<<"):
+                    assert token not in text
         template = platform_meta["config_template"][PLATFORM_TYPE]
         if "logo_token" in items:
             assert items["logo_token"]["invisible"] is True

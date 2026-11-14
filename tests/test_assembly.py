@@ -14,6 +14,7 @@ import pytest
 from inbox_assembly import exercise_inbox_recovery
 
 from v2 import PLATFORM_TYPE, PLUGIN_NAME
+from v2.connection_config import INTENT_BOOL_FIELDS
 
 
 @pytest.mark.assembly
@@ -263,6 +264,9 @@ async def test_real_astrbot_assembly(config, monkeypatch, qq_reject_server, qq_p
             bot_service = BotConfigService(lifecycle)
             template_hook = dict(platform_form["config_template"]["qq_official_v2_webhook"])
             template_hook.update(id="template-hook", appid="new-fixture-app", secret="new-fixture-secret", intents=7)
+            # The fixture keeps a raw custom mask, so the native switches start cleared.
+            for name in INTENT_BOOL_FIELDS:
+                template_hook[name] = False
             await bot_service.create_bot(template_hook)
             assert not any(i.identity.platform_id == "template-hook" for i in new_owner.instances)
             await bot_service.set_bot_enabled("template-hook", True)

@@ -1,4 +1,55 @@
+import { ref } from "vue";
+
 import { t } from "./i18n.js";
+
+// Official intent families exposed in the subscription dialog; bits follow v2/sdk/catalog.py.
+export const KNOWN_INTENT_BITS = [
+  { name: "PUBLIC_GUILD_MESSAGES", bit: 30 },
+  { name: "INTERACTION", bit: 26 },
+  { name: "GROUP_AND_C2C_EVENT", bit: 25 },
+  { name: "DIRECT_MESSAGE", bit: 12 },
+];
+
+export function toUint32(value) {
+  return Number(value) >>> 0;
+}
+
+export function intentsHasBit(mask, bit) {
+  return (toUint32(mask) >>> bit) % 2 === 1;
+}
+
+export function withIntentBit(mask, bit, enabled) {
+  const base = toUint32(mask);
+  if (intentsHasBit(base, bit) === Boolean(enabled)) return base;
+  const delta = 2 ** bit;
+  return enabled ? base + delta : base - delta;
+}
+
+export function unknownIntentBits(mask) {
+  const value = toUint32(mask);
+  const known = KNOWN_INTENT_BITS.reduce((sum, { bit }) => sum + (intentsHasBit(value, bit) ? 2 ** bit : 0), 0);
+  return value - known;
+}
+
+// Draft state for the intents dialog: starts from the current form mask,
+// mutates only explicit bits, and yields the new mask only on apply.
+export function createIntentsEditor(mask) {
+  const draft = ref(toUint32(Number(mask) || 0));
+  const valid = () => Number.isInteger(draft.value) && draft.value >= 0 && draft.value <= 4294967295;
+  return {
+    get value() { return draft.value; },
+    get valid() { return valid(); },
+    has(bit) { return valid() && intentsHasBit(draft.value, bit); },
+    unknownBits() { return valid() ? unknownIntentBits(draft.value) : 0; },
+    toggle(bit, enabled) { if (valid()) draft.value = withIntentBit(draft.value, bit, enabled); },
+    setDecimal(raw) {
+      const value = Number(raw);
+      draft.value = raw === "" || raw === null || !Number.isInteger(value) || value < 0 || value > 4294967295 ? NaN : value;
+    },
+    decimalText() { return Number.isInteger(draft.value) ? String(draft.value) : ""; },
+    apply() { return valid() ? draft.value : null; },
+  };
+}
 
 export function clone(value) {
   return JSON.parse(JSON.stringify(value));
