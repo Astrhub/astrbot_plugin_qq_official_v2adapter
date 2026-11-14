@@ -1,7 +1,7 @@
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 import AbSelect from "./AbSelect.vue";
-import { changed, connectionFields } from "./api.js";
+import { changed, connectionFields, createIntentsEditor, KNOWN_INTENT_BITS } from "./api.js";
 import { t, tError, tScanHint, tState } from "./i18n.js";
 
 const props = defineProps({
@@ -32,6 +32,35 @@ const secretActionOptions = computed(() => [
   { value: "replace", label: t("conn.secretReplace") },
   { value: "clear", label: t("conn.secretClear") },
 ]);
+const knownIntentOptions = computed(() =>
+  KNOWN_INTENT_BITS.map(entry => ({ ...entry, label: t(`conn.intentsBit.${entry.name}`) }))
+);
+
+const intentsDialog = reactive({ open: false, editor: null });
+const intentsCard = ref(null);
+const intentsDecimal = computed({
+  get: () => intentsDialog.editor?.decimalText() ?? "",
+  set: raw => intentsDialog.editor?.setDecimal(raw),
+});
+
+function openIntents() {
+  intentsDialog.editor = createIntentsEditor(props.state.form.intents);
+  intentsDialog.open = true;
+  nextTick(() => intentsCard.value?.focus());
+}
+
+function cancelIntents() {
+  intentsDialog.open = false;
+  intentsDialog.editor = null;
+}
+
+function applyIntents() {
+  const next = intentsDialog.editor?.apply();
+  if (next === null || next === undefined) return;
+  props.state.form.intents = next;
+  intentsDialog.open = false;
+  intentsDialog.editor = null;
+}
 
 function paint(matrix) {
   const node = canvas.value;
@@ -98,6 +127,13 @@ async function reloadConnection() {
   emit("status", t("conn.reloadedStatus"));
   emit("reload");
 }
+
+watch(
+  () => props.state.view,
+  (current, previous) => {
+    if (current !== previous) cancelIntents();
+  },
+);
 
 function leave() {
   window.clearTimeout(timer);
@@ -218,10 +254,13 @@ onBeforeUnmount(() => { window.removeEventListener("pagehide", leave); leave(); 
           <input v-model="state.form.enable" type="checkbox">
           {{ t("conn.enable") }}
         </label>
-        <label class="wide">
-          {{ t("conn.intents") }}
-          <input v-model.number="state.form.intents" type="number" min="0" max="4294967295">
-        </label>
+        <div class="wide">
+          <span class="field-label">{{ t("conn.intents") }}</span>
+          <div class="intents-entry">
+            <code class="intents-entry-mask">{{ Number(state.form.intents) || 0 }}</code>
+            <button type="button" class="secondary" @click="openIntents">{{ t("conn.intentsConfigure") }}</button>
+          </div>
+        </div>
       </div>
 
       <fieldset v-if="state.form.type === 'qq_official_v2'">
@@ -254,5 +293,47 @@ onBeforeUnmount(() => { window.removeEventListener("pagehide", leave); leave(); 
         <button type="button" class="secondary" :disabled="busy || !state.view" @click="emit('run', reloadConnection)">{{ t("conn.reloadInstanceBtn") }}</button>
       </div>
     </form>
+
+    <div
+      v-if="intentsDialog.open"
+      class="ab-modal-backdrop"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="intents-dialog-title"
+      @click.self="cancelIntents"
+    >
+      <div ref="intentsCard" class="ab-modal-card intents-modal" tabindex="-1" @keydown.esc.prevent="cancelIntents">
+        <h3 id="intents-dialog-title">{{ t("conn.intentsDialogTitle") }}</h3>
+        <p class="muted">{{ t("conn.intentsDialogDesc") }}</p>
+        <div class="intents-option-list">
+          <label v-for="opt in knownIntentOptions" :key="opt.name" class="intents-option">
+            <input
+              type="checkbox"
+              :checked="intentsDialog.editor.has(opt.bit)"
+              :disabled="!intentsDialog.editor.valid"
+              @change="intentsDialog.editor.toggle(opt.bit, $event.target.checked)"
+            >
+            <span class="intents-option-text">
+              <code class="code-tag">{{ opt.name }}</code>
+              <span class="intents-option-desc">{{ opt.label }}</span>
+            </span>
+            <span class="code-tag intents-option-bit">1 &lt;&lt; {{ opt.bit }}</span>
+          </label>
+        </div>
+        <p v-if="intentsDialog.editor.unknownBits() > 0" class="muted">{{ t("conn.intentsUnknownRetained", { mask: intentsDialog.editor.unknownBits() }) }}</p>
+        <details class="intents-advanced">
+          <summary>{{ t("conn.intentsAdvanced") }}</summary>
+          <label>
+            {{ t("conn.intentsDecimal") }}
+            <input v-model="intentsDecimal" type="number" min="0" max="4294967295" step="1">
+          </label>
+        </details>
+        <p v-if="!intentsDialog.editor.valid" class="field-error">{{ t("conn.intentsInvalid") }}</p>
+        <div class="actions modal-actions">
+          <button type="button" class="secondary" @click="cancelIntents">{{ t("dialog.cancelBtn") }}</button>
+          <button type="button" :disabled="!intentsDialog.editor.valid" @click="applyIntents">{{ t("conn.intentsApply") }}</button>
+        </div>
+      </div>
+    </div>
   </section>
 </template>

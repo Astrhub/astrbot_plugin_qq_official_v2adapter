@@ -5,7 +5,15 @@ from . import PLATFORM_TYPE, PLATFORM_TYPES, WEBHOOK_TYPE
 from .errors import V2Error
 
 DEFAULT_INTENTS = 1174409216
+INTENT_BOOL_FIELDS = {"intent_public_guild_messages": 30, "intent_interaction": 26,
+                      "intent_group_and_c2c_event": 25, "intent_direct_message": 12}
+KNOWN_INTENTS = sum(1 << bit for bit in INTENT_BOOL_FIELDS.values())
 MAX_AUTO_SHARDS = 32
+
+
+def intent_switches(intents):
+    """Project the canonical intents mask onto the four known switches."""
+    return {name: bool(intents & (1 << bit)) for name, bit in INTENT_BOOL_FIELDS.items()}
 
 
 def normalize_connection(config):
@@ -34,9 +42,17 @@ def normalize_connection(config):
     intents = value.get("intents", DEFAULT_INTENTS)
     if type(intents) is not int or not 0 <= intents < 2**32:
         raise V2Error("invalid_intents", "Expected a uint32 intents mask.")
+    # Stated switches win for known bits; unstated switches and custom bits stay with the mask.
+    stated = {name: value.pop(name) for name in INTENT_BOOL_FIELDS if name in value}
+    if stated:
+        if any(type(flag) is not bool for flag in stated.values()):
+            raise V2Error("invalid_intents", "Intent switches must be boolean.")
+        for name, bit in INTENT_BOOL_FIELDS.items():
+            if name in stated:
+                intents = (intents | (1 << bit)) if stated[name] else intents & ~(1 << bit)
     value.update(type=WEBHOOK_TYPE if transport == "webhook" else PLATFORM_TYPE, transport=transport,
                  environment="production", use_markdown=use_markdown, shard_mode=mode,
-                 shard=list(shard), intents=intents)
+                 shard=list(shard), intents=intents, **intent_switches(intents))
     return value
 
 

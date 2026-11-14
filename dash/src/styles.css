@@ -1207,6 +1207,102 @@ details > summary {
   justify-content: flex-end;
 }
 
+/* Intents Subscription Dialog */
+.field-label {
+  display: block;
+  color: var(--ab-subtext);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.field-error {
+  color: var(--ab-error);
+  font-size: 0.8rem;
+  margin: 8px 0 0;
+}
+
+.intents-entry {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 36px;
+  margin-top: 5px;
+  padding: 5px 5px 5px 10px;
+  border: 1px solid var(--ab-input-border);
+  border-radius: 8px;
+  background: var(--ab-surface);
+}
+
+.intents-entry-mask {
+  font-variant-numeric: tabular-nums;
+}
+
+.intents-modal {
+  width: min(100%, 520px);
+}
+
+.ab-modal-card[tabindex="-1"]:focus {
+  outline: none;
+}
+
+.intents-option-list {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.intents-option-list .intents-option {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  padding: 9px 12px;
+  border: 1px solid var(--ab-border);
+  border-radius: 8px;
+  background: var(--ab-surface-subtle);
+  cursor: pointer;
+}
+
+.intents-option-list .intents-option:has(input:checked) {
+  border-color: var(--ab-primary);
+  background: var(--ab-lightprimary);
+}
+
+.intents-option-list .intents-option:has(input:disabled) {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.intents-option-text {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  flex: 1;
+  min-width: 180px;
+}
+
+.intents-option-desc {
+  color: var(--ab-subtext);
+  font-size: 0.78rem;
+}
+
+.intents-option-bit {
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+.intents-advanced {
+  margin-top: 4px;
+}
+
+.intents-advanced label {
+  margin-top: 10px;
+}
+
 @media (max-width: 1080px) {
   .command-grid,
   .connection-grid,

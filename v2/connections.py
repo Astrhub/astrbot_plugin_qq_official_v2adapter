@@ -7,9 +7,13 @@ import secrets
 import uuid
 from pathlib import Path
 
+from astrbot.api import logger
+
 from . import PLATFORM_TYPE, PLATFORM_TYPES, WEBHOOK_TYPE
 from .connection_config import (
     DEFAULT_INTENTS,
+    INTENT_BOOL_FIELDS,
+    KNOWN_INTENTS,
     normalize_connection,
     receiver_conflict,
     saved_connection,
@@ -68,6 +72,7 @@ class Connections:
         return {"platform_id": platform_id, "exists": config is not None,
                 "fingerprint": self.fingerprint(platform_id, config),
                 "fields": {**{k: value[k] for k in EDITABLE - {"onebot"} if k in value},
+                           **{k: value[k] for k in INTENT_BOOL_FIELDS},
                            "onebot": {k: network[k] for k in NETWORK_FIELDS}},
                 "network_token_configured": bool(network["token"]),
                 "network_global_enabled": self.owner.config.get("onebot_network_enabled") is True,
@@ -164,7 +169,15 @@ class Connections:
                 candidate["shard_mode"] = "manual"
             candidate.update(copy.deepcopy(patch))
             candidate["id"] = platform_id
+            previous_intents = normalize_connection(old)["intents"] if old is not None else None
+            custom_intents = previous_intents & ~KNOWN_INTENTS if previous_intents is not None else 0
+            # The web patch mask is authoritative for known bits; switches re-derive from it.
+            for name in INTENT_BOOL_FIELDS:
+                candidate.pop(name, None)
             candidate = saved_connection(candidate)
+            if custom_intents and "intents" in patch:
+                candidate["intents"] = (candidate["intents"] & KNOWN_INTENTS) | custom_intents
+                candidate = saved_connection(candidate)
             previous_network = network_config((old or {}).get("onebot"))
             network_patch = patch.get("onebot", {})
             if not isinstance(network_patch, dict) or network_patch.keys() - NETWORK_FIELDS:
@@ -211,6 +224,9 @@ class Connections:
             except Exception:
                 platforms[:] = previous
                 raise V2Error("config_save_failed", "Host save failed; original runtime configuration retained. Reload disk state before retrying.", status=503) from None
+            if custom_intents and candidate["intents"] != previous_intents:
+                logger.warning("qq-v2 web page changed intents while preserving custom bits: platform=%s old=%d new=%d",
+                               platform_id, previous_intents, candidate["intents"])
             for instance in list(self.owner.instances):
                 if instance.identity.platform_id == platform_id and instance.config_fingerprint != self.owner.control.fingerprint(candidate):
                     instance.revoke()

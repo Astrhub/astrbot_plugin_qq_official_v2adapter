@@ -45,6 +45,10 @@ appid, use_markdown, type, intents, shard_mode, shard, enable, onebot
 
 `type` 表示 WebSocket 或 Webhook 平台类型，`shard_mode` 表示自动或手动分片。旧配置中的 `transport`、`environment` 和 `is_sandbox` 由服务端兼容处理，Vue 页面不应把它们作为当前表单字段发送。`onebot` 是迁移期的旧网络入口配置；它不代表 SDK 的调用方式。
 
+`intents` 在表单中显示当前十进制掩码，并通过「配置事件订阅」弹窗编辑。弹窗提供四个官方事件类别开关（`PUBLIC_GUILD_MESSAGES 1<<30`、`INTERACTION 1<<26`、`GROUP_AND_C2C_EVENT 1<<25`、`DIRECT_MESSAGE 1<<12`，与 `v2/sdk/catalog.py` 的事件族一致），并在高级折叠区内保留十进制输入作为兜底。弹窗在草稿上操作：切换开关只增减对应位、保留未列出的订阅位，取消不写回表单，点击「应用」后掩码才进入表单并随连接保存提交整数。
+
+服务端以 `intents` 整数为唯一规范来源：`connection` 读取返回的 `fields` 携带与掩码一致的四个 `intent_*` 布尔投影；WebUI 保存掩码后服务端重派生并持久化这四个布尔，避免原生页面显示过期状态。AstrBot 原生平台页不显示整数掩码，只显示同一批 `intent_*` 开关（中英文描述由适配器 i18n 资源提供）；整配置保存绕过插件保存路径，实例加载时按开关应用已知位、保留自定义位。旧掩码含自定义位时，WebUI 保存只改变已知位并保留自定义位；最终掩码发生变化才写一条 warning，只含 platform_id 与新旧掩码。
+
 菜单草稿由 `v2/settings.py` 校验，包含四层 `layout`、四个场景的 `panels`、`scene_overrides`、`node_overrides` 和当前 `extensions` 字段。页面不能自行加入 `media_roots` 或其他未经 schema 声明的字段。编辑嵌套对象时，删除字段应在 patch 中表达为 `null`，因为服务端对对象使用递归合并。
 
 连接保存、菜单草稿保存和菜单应用是三个不同动作：

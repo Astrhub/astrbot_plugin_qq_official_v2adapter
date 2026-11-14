@@ -37,6 +37,36 @@ class V2Only(filter.CustomFilter):
         return event.get_platform_name() in PLATFORM_TYPES
 
 
+INTENT_SWITCH_FIELDS = ("intent_public_guild_messages", "intent_interaction",
+                        "intent_group_and_c2c_event", "intent_direct_message")
+INTENT_I18N_RESOURCES = {
+    "zh-CN": {
+        "appid": {"description": "QQ AppID"},
+        "secret": {"description": "QQ AppSecret"},
+        "intent_public_guild_messages": {"description": "公域频道消息",
+                                         "hint": "接收公域频道中 @ 机器人的消息。"},
+        "intent_interaction": {"description": "按钮与指令互动",
+                               "hint": "接收按钮、指令回调等互动事件。"},
+        "intent_group_and_c2c_event": {"description": "群聊与单聊消息",
+                                       "hint": "接收群聊和单聊消息。"},
+        "intent_direct_message": {"description": "频道私信",
+                                  "hint": "接收频道私信消息。"},
+    },
+    "en-US": {
+        "appid": {"description": "QQ AppID"},
+        "secret": {"description": "QQ AppSecret"},
+        "intent_public_guild_messages": {"description": "Public guild messages",
+                                         "hint": "Receive @-mention messages in public guilds."},
+        "intent_interaction": {"description": "Button and command interactions",
+                               "hint": "Receive button and command callback events."},
+        "intent_group_and_c2c_event": {"description": "Group and direct messages",
+                                       "hint": "Receive group and direct messages."},
+        "intent_direct_message": {"description": "Guild direct messages",
+                                  "hint": "Receive direct messages in guilds."},
+    },
+}
+
+
 class V2Addressed(filter.CustomFilter):
     def filter(self, event, cfg):
         return event.get_platform_name() in PLATFORM_TYPES and event.raw_data.get("t") in {"GROUP_AT_MESSAGE_CREATE", "AT_MESSAGE_CREATE"}
@@ -88,13 +118,16 @@ class QQOfficialV2(Star):
                 adapter = type("OwnedWebhookAdapter" if kind == WEBHOOK_TYPE else "OwnedAdapter", (V2Adapter,),
                                {"owner": self, "__module__": __name__})
                 title = "QQ 官方 V2（Webhook）" if kind == WEBHOOK_TYPE else "QQ 官方 V2（WebSocket）"
-                template = {**copy.deepcopy(DEFAULT_PLATFORM_CONFIG), "type": kind, "id": kind}
+                template = {**copy.deepcopy(DEFAULT_PLATFORM_CONFIG), "type": kind, "id": kind,
+                            **{name: True for name in INTENT_SWITCH_FIELDS}}
                 register_platform_adapter(
                     kind, title, default_config_tmpl=template, adapter_display_name=title,
                     logo_path="assets/qq.png", support_streaming_message=True,
+                    i18n_resources=INTENT_I18N_RESOURCES,
                     config_metadata={
                         "secret": {"description": "QQ AppSecret", "type": "string", "secret": True},
                         "appid": {"description": "QQ AppID", "type": "string"},
+                        **{name: {"description": name, "hint": name, "type": "bool"} for name in INTENT_SWITCH_FIELDS},
                         **{key: {"invisible": True} for key in
                            ("environment", "transport", "intents", "shard", "shard_mode", "onebot", "logo_token")},
                     },

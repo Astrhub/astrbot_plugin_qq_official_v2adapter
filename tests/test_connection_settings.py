@@ -19,7 +19,7 @@ from test_onboarding import HostConfig
 from test_onboarding import owner as owner
 
 from v2 import PLATFORM_TYPE, PLATFORM_TYPES, WEBHOOK_TYPE
-from v2.connection_config import normalize_connection
+from v2.connection_config import DEFAULT_INTENTS, INTENT_BOOL_FIELDS, KNOWN_INTENTS, normalize_connection, saved_connection
 from v2.errors import V2Error
 from v2.models import InstanceKey
 
@@ -45,6 +45,7 @@ def test_legacy_and_new_configuration_keep_identity_and_topology(fields, transpo
     {"type": WEBHOOK_TYPE, "transport": "websocket"}, {"shard_mode": "invalid"},
     {"type": WEBHOOK_TYPE, "shard": [1, 2]}, {"shard_mode": "auto", "shard": [1, 2]},
     {"shard": [False, 1]}, {"intents": True}, {"intents": 2**32},
+    {"intents": 0, "intent_interaction": 1}, {"intent_direct_message": "yes"},
 ])
 def test_conflicting_aliases_and_invalid_topology_reject_without_side_effects(fields):
     with pytest.raises(V2Error):
@@ -59,6 +60,106 @@ def test_sandbox_inputs_are_ignored_and_markdown_defaults_on():
     assert saved["use_markdown"] is False
 
 
+def test_default_and_legacy_masks_project_switches_without_mask_change():
+    value = normalize_connection({"appid": "app"})
+    assert value["intents"] == DEFAULT_INTENTS
+    assert all(value[name] is True for name in INTENT_BOOL_FIELDS)
+    custom = DEFAULT_INTENTS - (1 << 12) + (1 << 9) + 3
+    legacy = {"id": "old", "appid": "app", "intents": custom}
+    snapshot = copy.deepcopy(legacy)
+    projected = normalize_connection(legacy)
+    assert legacy == snapshot and projected["intents"] == custom
+    assert projected["intent_direct_message"] is False
+    assert (projected["intent_public_guild_messages"], projected["intent_interaction"],
+            projected["intent_group_and_c2c_event"]) == (True, True, True)
+    assert saved_connection(legacy)["intents"] == custom
+
+
+def test_switches_only_move_known_bits_and_never_drift():
+    custom = DEFAULT_INTENTS + (1 << 9) + 3
+    value = normalize_connection({"appid": "app", "intents": custom, "intent_group_and_c2c_event": False})
+    assert value["intents"] == custom - (1 << 25)
+    assert value["intent_public_guild_messages"] is True and value["intent_direct_message"] is True
+    assert normalize_connection(dict(value)) == value
+    assert normalize_connection({**value, "intent_group_and_c2c_event": True})["intents"] == custom
+
+
+async def test_web_intents_save_warns_once_and_syncs_switches(owner, config, caplog):
+    connections = owner.connections
+    cfg = owner.context.get_config()
+    custom = DEFAULT_INTENTS + (1 << 9)
+    cfg["platform"][0]["intents"] = custom
+    cfg.save_config()
+    view = connections.view(config["id"])
+    with caplog.at_level("WARNING"):
+        saved = await connections.save(config["id"], view["fingerprint"],
+                                       {"intents": custom - (1 << 25)}, confirm=True)
+    warnings = [r for r in caplog.records if "preserving custom bits" in r.getMessage()]
+    assert len(warnings) == 1
+    message = warnings[0].getMessage()
+    assert config["id"] in message and str(custom) in message and config["secret"] not in message
+    assert "custom=" not in message
+    persisted = cfg["platform"][0]
+    assert persisted["intents"] == custom - (1 << 25)
+    assert persisted["intent_group_and_c2c_event"] is False and persisted["intent_public_guild_messages"] is True
+    assert saved["fields"]["intents"] == persisted["intents"]
+    assert all(saved["fields"][name] is persisted[name] for name in INTENT_BOOL_FIELDS)
+    caplog.clear()
+    with caplog.at_level("WARNING"):
+        await connections.save(config["id"], connections.view(config["id"])["fingerprint"], {}, confirm=True)
+    assert not [r for r in caplog.records if "preserving custom bits" in r.getMessage()]
+
+
+async def test_web_intents_save_preserves_custom_bits_when_patch_changes_unknown_bits(owner, config):
+    connections = owner.connections
+    cfg = owner.context.get_config()
+    custom = DEFAULT_INTENTS + (1 << 9)
+    cfg["platform"][0]["intents"] = custom
+    cfg.save_config()
+    view = connections.view(config["id"])
+    saved = await connections.save(config["id"], view["fingerprint"], {"intents": 1 << 20}, confirm=True)
+    assert cfg["platform"][0]["intents"] == (custom & ~KNOWN_INTENTS)
+    assert saved["fields"]["intents"] == (custom & ~KNOWN_INTENTS)
+    assert all(saved["fields"][name] is False for name in INTENT_BOOL_FIELDS)
+
+
+async def test_plain_mask_save_stays_silent_and_persists_switches(owner, config, caplog):
+    connections = owner.connections
+    view = connections.view(config["id"])
+    with caplog.at_level("WARNING"):
+        saved = await connections.save(config["id"], view["fingerprint"], {"intents": 7}, confirm=True)
+    assert not caplog.records
+    persisted = owner.context.get_config()["platform"][0]
+    assert persisted["intents"] == 7 and all(persisted[name] is False for name in INTENT_BOOL_FIELDS)
+    assert all(saved["fields"][name] is False for name in INTENT_BOOL_FIELDS)
+
+
+async def test_native_switch_save_applies_known_bits_and_keeps_custom(plugin_module, config, tmp_path):
+    custom = DEFAULT_INTENTS + (1 << 9)
+    host = HostConfig(tmp_path / "host.json", {**config, "intents": custom})
+    ctx = context()
+    ctx.get_config = lambda: host
+    owner = plugin_module.QQOfficialV2(ctx, {})
+    await owner.initialize()
+    try:
+        migrated = host["platform"][0]
+        assert migrated["intents"] == custom and all(migrated[name] is True for name in INTENT_BOOL_FIELDS)
+        assert saved_connection(dict(migrated)) == migrated
+        # The native editor saves the whole record: switches change while the invisible mask stays stale.
+        stale = dict(migrated)
+        stale["intent_group_and_c2c_event"] = False
+        host["platform"][0] = stale
+        host.save_config()
+        instance = owner.adapter_class(copy.deepcopy(stale), {}, asyncio.Queue())
+        assert instance.identity.intents == custom - (1 << 25)
+        view = owner.connections.view(config["id"])
+        assert view["fields"]["intents"] == custom - (1 << 25)
+        assert view["fields"]["intent_group_and_c2c_event"] is False
+        assert view["fields"]["intent_public_guild_messages"] is True
+    finally:
+        await owner.terminate()
+
+
 async def test_both_registered_forms_leave_shared_host_management_metadata_unchanged(plugin_module):
     service = display_service(SimpleNamespace(astrbot_config={}))
     before = (await service.get_astrbot_config())["metadata"]["platform_group"]["metadata"]["platform"]["items"]
@@ -66,14 +167,17 @@ async def test_both_registered_forms_leave_shared_host_management_metadata_uncha
     owner = plugin_module.QQOfficialV2(context(), {})
     await owner.initialize()
     try:
-        form = (await service.get_astrbot_config())["metadata"]["platform_group"]["metadata"]["platform"]
+        data = await service.get_astrbot_config()
+        form = data["metadata"]["platform_group"]["metadata"]["platform"]
         for key in ("id", "enable", "unified_webhook_mode", "webhook_uuid", "is_sandbox", "use_markdown"):
             assert form["items"].get(key) == before.get(key)
         for kind, title in [(PLATFORM_TYPE, "QQ 官方 V2（WebSocket）"), (WEBHOOK_TYPE, "QQ 官方 V2（Webhook）")]:
             meta = next(m for m in platform_registry if m.name == kind)
             template = form["config_template"][kind]
             visible = {k for k in template if not form["items"].get(k, {}).get("invisible")}
-            assert visible - {"logo_url"} == {"id", "enable", "appid", "secret", "use_markdown"}
+            assert visible - {"logo_url"} == {"id", "enable", "appid", "secret", "use_markdown", *INTENT_BOOL_FIELDS}
+            for name in INTENT_BOOL_FIELDS:
+                assert form["items"][name]["type"] == "bool" and template[name] is True
             if "logo_url" in template:
                 assert template["logo_url"] == f"/api/v1/logos/platform/{kind}"
             assert meta.adapter_display_name == title and meta.logo_path == "assets/qq.png"
@@ -82,6 +186,11 @@ async def test_both_registered_forms_leave_shared_host_management_metadata_uncha
             assert form["items"]["use_markdown"]["type"] == "bool"
             assert form["items"]["secret"]["secret"] is True
             assert "unified_webhook_mode" not in template and "transport" not in template
+        translations = data["platform_i18n_translations"]
+        for lang in ("zh-CN", "en-US"):
+            fields = translations[lang]["platform_group"]["platform"][PLATFORM_TYPE]
+            for name in INTENT_BOOL_FIELDS:
+                assert fields[name]["description"] and fields[name]["hint"]
         for kind in PLATFORM_TYPES:
             event = SimpleNamespace(get_platform_name=lambda: kind, raw_data={"t": "GROUP_AT_MESSAGE_CREATE"})
             assert plugin_module.V2Only().filter(event, {}) and plugin_module.V2Addressed().filter(event, {})
@@ -124,6 +233,8 @@ async def test_legacy_webhook_save_ignores_sandbox_and_persists_production(owner
     persisted = host["platform"][0]
     assert json.loads(InstanceKey.from_config(persisted).settings_key) == [config["id"], config["appid"], "production"]
     assert persisted["type"] == WEBHOOK_TYPE and persisted["use_markdown"] is True
+    assert persisted["intents"] == 7 and all(persisted[name] is False for name in INTENT_BOOL_FIELDS)
+    assert saved["fields"]["intents"] == 7 and all(saved["fields"][name] is False for name in INTENT_BOOL_FIELDS)
     assert persisted["secret"] == config["secret"] and persisted["webhook_uuid"] == original["platform"][0]["webhook_uuid"]
     assert not ({"environment", "transport", "logo_token", "unified_webhook_mode", "is_sandbox"} & persisted.keys())
     assert not owner.context.platform_manager.calls
