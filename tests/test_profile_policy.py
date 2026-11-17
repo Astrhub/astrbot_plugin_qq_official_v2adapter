@@ -1,8 +1,8 @@
 """Plugin-level profile store policy is persisted in profiles.sqlite3 and applies immediately."""
+import sqlite3
 from types import SimpleNamespace
 
 import pytest
-import sqlite3
 
 from v2.errors import V2Error
 from v2.models import InstanceKey, RobotKey
@@ -131,8 +131,9 @@ def test_control_profile_api_plugin_scoped(tmp_path):
 
 @pytest.mark.asyncio
 async def test_control_profile_api_requires_admin(monkeypatch, tmp_path):
-    from v2 import web_api as web_api_mod
     from test_web_api import parse
+
+    from v2 import web_api as web_api_mod
     store = ProfileStore(tmp_path / "profiles.sqlite3")
     api = ControlAPI(SimpleNamespace(stopping=False, config={"webui_enabled": True}, context=object(), profiles=store))
     monkeypatch.setattr(web_api_mod, "request", SimpleNamespace(method="GET", query={}))

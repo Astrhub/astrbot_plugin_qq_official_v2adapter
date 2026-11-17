@@ -45,6 +45,14 @@ def history_time(value, name):
         raise V2Error("invalid_request", f"{name} must be a unix timestamp.")
     return float(value)
 
+
+def history_search_params(params):
+    q = params.get("q")
+    if q in (None, ""):
+        q = params.get("keyword")
+    return q or None, params.get("message_id") or None
+
+
 class ControlAPI:
     def __init__(self, owner):
         self.owner = owner
@@ -314,12 +322,10 @@ class ControlAPI:
                 limit = int(limit)
             since = history_time(params.get("since"), "since")
             until = history_time(params.get("until"), "until")
-            q = params.get("q")
-            if q in (None, ""):
-                q = params.get("keyword")
+            q, message_id = history_search_params(params)
             rows = history.query(
                 owner,
-                message_id=params.get("message_id") or None,
+                message_id=message_id,
                 scene=scene,
                 target=params.get("target") or None,
                 since=since,
@@ -349,12 +355,15 @@ class ControlAPI:
         if operation == "history_checkpoint":
             return history.checkpoint()
         if operation == "history_export":
+            q, message_id = history_search_params(body)
             return history.export_rows(
                 owner,
                 scene=scene,
                 target=body.get("target") or None,
                 since=history_time(body.get("since"), "since"),
                 until=history_time(body.get("until"), "until"),
+                q=q,
+                message_id=message_id,
                 limit=body.get("limit", 1000) if type(body.get("limit", 1000)) is int else 1000,
             )
         if operation == "history_delete":

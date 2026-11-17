@@ -30,7 +30,7 @@ ControlAPI 注册在插件命名空间下，当前页面使用这些请求组：
 | QQ 面板 | `panels/plan`、`panels/enable`、`panels/sync`、`panels/disable`、`panels/status` | 预览范围、确认托管、同步或停止同步指定的远端面板。 |
 | 全局开关 | `flags` | 修改 WebUI 和远端面板同步开关。 |
 | 保留事件 | `inbox/retained`、`inbox/discard` | 查看元数据并在短期确认窗口内明确丢弃事件。 |
-| 消息历史 | `history/status`、`history/query`、`history/message`、`history/policy`、`history/integrity`、`history/checkpoint`、`history/export`、`history/delete`、`history/purge` | 独立历史库的策略、查询和维护；`history/query` 支持全文检索（FTS5，失败则 LIKE 降级）并返回 `search_mode`；补索引进度在 `status.search`。危险操作需确认，且只影响消息历史。 |
+| 消息历史 | `history/status`、`history/query`、`history/message`、`history/policy`、`history/integrity`、`history/checkpoint`、`history/export`、`history/delete`、`history/purge` | 独立历史库的策略、查询和维护；`history/query` 支持全文检索（FTS5，失败则 LIKE 降级）并返回 `search_mode`；`history/export` 使用相同的 q、message_id 与范围过滤，只导出当前筛选的消息及其转发；补索引进度在 `status.search`。危险操作需确认，且只影响消息历史。 |
 | 资料库 | `profile/status`、`profile/policy` | 插件级资料库限制；保存后立即生效，不带 `platform_id`，不写入实例代次。新字节上限低于当前占用时拒绝。 |
 
 每个管理请求都必须由页面桥接对象发送。POST 请求携带 `csrf`；涉及写入的连接和平台请求携带 `platform_id` 与当前 `fingerprint`；菜单草稿和预览请求还携带 `revision` 与 `scene`。页面应在目标实例切换、请求失败或收到 `config_conflict` 后重新读取状态，不能继续使用旧实例的 revision、fingerprint 或扫码 ticket。

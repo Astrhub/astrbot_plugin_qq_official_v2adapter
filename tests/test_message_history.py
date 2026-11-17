@@ -5,8 +5,8 @@ from types import SimpleNamespace
 
 import pytest
 from astrbot.core.message.components import Reply
-
-from test_messaging_delivery import accept, receiver as receiver
+from test_messaging_delivery import accept
+from test_messaging_delivery import receiver as receiver
 from test_messaging_state import NOW, chat_payload, observed
 
 from v2.client import ClientState, V2Client
@@ -400,8 +400,9 @@ def test_control_history_api_requires_admin_and_isolates_ledger(config, tmp_path
 
 @pytest.mark.asyncio
 async def test_history_handle_requires_admin_session(monkeypatch):
-    from v2 import web_api as web_api_mod
     from test_web_api import parse
+
+    from v2 import web_api as web_api_mod
     owner = SimpleNamespace(stopping=False, config={"webui_enabled": True}, context=object(), history=None)
     api = ControlAPI(owner)
     monkeypatch.setattr(web_api_mod, "request", SimpleNamespace(method="GET", query={"platform_id": "x"}))

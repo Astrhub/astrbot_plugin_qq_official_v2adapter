@@ -3,14 +3,15 @@ import sqlite3
 from types import SimpleNamespace
 
 import pytest
-
 from test_message_history import history_store, owner_key, recorded
-from test_messaging_state import NOW, observed
+from test_messaging_state import NOW, chat_payload, observed
 
 from v2.errors import V2Error
+from v2.messaging.convert import convert_chat
 from v2.messaging.history import FTS_TABLE, HistoryStore
 from v2.messaging.store import MessageStore
 from v2.models import InstanceKey, RobotKey
+from v2.protocol import RawEnvelope
 from v2.web_api import ControlAPI
 
 
@@ -23,6 +24,19 @@ def fts_orphans(store):
         f"SELECT count(*) FROM {FTS_TABLE} WHERE rowid NOT IN (SELECT rowid FROM messages)"
     ).fetchone()[0]
 
+
+def forwarded(config, store, *, message_id, text, nested_id):
+    payload = chat_payload(message_id=message_id, text=text)
+    payload["d"]["message_type"] = 102
+    payload["d"]["msg_elements"] = [
+        {"content": "node-one", "author": {"member_openid": "forward-user", "username": "Fwd"}},
+        {"message_type": 102, "msg_idx": nested_id, "msg_elements": [
+            {"content": "nested"},
+        ]},
+    ]
+    chat = convert_chat(InstanceKey.from_config(config), RawEnvelope(payload, NOW))
+    assert store.record(chat) is True
+    return chat
 
 def test_chinese_token_search_hits(config, tmp_path):
     store, _ = history_store(tmp_path)
@@ -194,6 +208,7 @@ def test_control_query_reports_search_mode(config, tmp_path, monkeypatch):
     store, _ = history_store(tmp_path)
     chat = recorded(config, store, text="请帮我查询订单状态")
     identity = InstanceKey.from_config(config)
+    assert identity.settings_key == owner_key(chat)
     owner = SimpleNamespace(
         stopping=False,
         config={"webui_enabled": True, "remote_menu_sync": False},
@@ -213,7 +228,97 @@ def test_control_query_reports_search_mode(config, tmp_path, monkeypatch):
     )
     rows = api.dispatch_history("history_query", "admin", {}, identity, "fp")
     assert rows["search_mode"] == "fts5"
-    assert ids(rows["entries"]) == ["msg-one"]
+    assert ids(rows["entries"]) == [chat.source.message_id]
+    assert rows["entries"][0]["event"]["raw_message"] == chat.message.message_str
+    store.close()
+
+
+def test_export_applies_q_message_id_and_instance_isolation(config, tmp_path):
+    store, _ = history_store(tmp_path)
+    hit = recorded(config, store, message_id="hit", text="请帮我查询订单状态")
+    recorded(config, store, message_id="miss", text="today weather is fine")
+    owner = owner_key(hit)
+    sibling = dict(config)
+    sibling["id"] = "other-v2"
+    other = observed(sibling, message_id="other", text="请帮我查询订单状态")
+    assert store.record(other) is True
+    by_q = store.export_rows(owner, q="订单")
+    assert ids(by_q["messages"]) == ["hit"]
+    assert by_q["forwards"] == []
+    by_id = store.export_rows(owner, message_id="miss")
+    assert ids(by_id["messages"]) == ["miss"]
+    empty = store.export_rows(owner, q="zzzznomatch")
+    assert empty["messages"] == [] and empty["forwards"] == []
+    other_export = store.export_rows(owner_key(other), q="订单")
+    assert ids(other_export["messages"]) == ["other"]
+    store.close()
+
+
+def test_export_search_hits_match_fts_and_like(config, tmp_path):
+    store, _ = history_store(tmp_path)
+    recorded(config, store, message_id="hit", text="请帮我查询订单状态")
+    miss = recorded(config, store, message_id="miss", text="today weather is fine")
+    owner = owner_key(miss)
+    assert store.search_mode() == "fts5"
+    fts = store.export_rows(owner, q="订单")
+    assert ids(fts["messages"]) == ["hit"]
+    store._fts_available = False
+    like = store.export_rows(owner, q="订单")
+    assert ids(like["messages"]) == ["hit"]
+    assert store.last_query_mode() == "like"
+    store.close()
+
+
+def test_export_forwards_only_for_filtered_messages(config, tmp_path):
+    store, _ = history_store(tmp_path)
+    hit = forwarded(config, store, message_id="hit", text="请帮我查询订单状态", nested_id="hit-fwd")
+    forwarded(config, store, message_id="miss", text="today weather is fine", nested_id="miss-fwd")
+    exported = store.export_rows(owner_key(hit), q="订单")
+    assert ids(exported["messages"]) == ["hit"]
+    assert {row["source_message_id"] for row in exported["forwards"]} == {"hit"}
+    assert "hit-fwd" in {row["forward_id"] for row in exported["forwards"]}
+    assert "miss-fwd" not in {row["forward_id"] for row in exported["forwards"]}
+    by_id = store.export_rows(owner_key(hit), message_id="miss")
+    assert ids(by_id["messages"]) == ["miss"]
+    assert {row["source_message_id"] for row in by_id["forwards"]} == {"miss"}
+    store.close()
+
+
+def test_control_export_passes_q_and_message_id(config, tmp_path, monkeypatch):
+    from v2 import web_api as web_api_mod
+
+    store, _ = history_store(tmp_path)
+    hit = recorded(config, store, message_id="hit", text="请帮我查询订单状态")
+    recorded(config, store, message_id="miss", text="today weather is fine")
+    identity = InstanceKey.from_config(config)
+    owner = SimpleNamespace(
+        stopping=False,
+        config={"webui_enabled": True, "remote_menu_sync": False},
+        context=SimpleNamespace(get_config=lambda: {"platform": [config]}),
+        history=store,
+        messages=SimpleNamespace(db=SimpleNamespace(execute=lambda *a, **k: SimpleNamespace(fetchone=lambda: (1,)))),
+    )
+    api = ControlAPI(owner)
+    monkeypatch.setattr(web_api_mod, "require_admin", lambda ctx: "admin")
+    monkeypatch.setattr(web_api_mod, "request", SimpleNamespace(method="POST", query={}))
+    by_q = api.dispatch_history(
+        "history_export", "admin",
+        {"fingerprint": "fp", "confirm": True, "q": "订单", "limit": 1000},
+        identity, "fp",
+    )
+    assert ids(by_q["messages"]) == [hit.source.message_id]
+    by_keyword = api.dispatch_history(
+        "history_export", "admin",
+        {"fingerprint": "fp", "confirm": True, "keyword": "订单", "limit": 1000},
+        identity, "fp",
+    )
+    assert ids(by_keyword["messages"]) == [hit.source.message_id]
+    by_id = api.dispatch_history(
+        "history_export", "admin",
+        {"fingerprint": "fp", "confirm": True, "message_id": "miss", "limit": 1000},
+        identity, "fp",
+    )
+    assert ids(by_id["messages"]) == ["miss"]
     store.close()
 
 
@@ -226,4 +331,7 @@ def test_invalid_query_text_rejected(config, tmp_path):
     with pytest.raises(V2Error) as too_long:
         store.query(owner_key(chat), q="x" * 513)
     assert too_long.value.code == "invalid_request"
+    with pytest.raises(V2Error) as export_q:
+        store.export_rows(owner_key(chat), q=1)
+    assert export_q.value.code == "invalid_request"
     store.close()

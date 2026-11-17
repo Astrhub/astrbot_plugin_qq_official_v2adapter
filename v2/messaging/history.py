@@ -8,12 +8,20 @@ from contextlib import contextmanager
 from pathlib import Path
 
 from astrbot.api import logger
-from astrbot.core.message.components import At, File, Image, Plain, Record, Reply, Unknown, Video
+from astrbot.core.message.components import (
+    At,
+    File,
+    Image,
+    Plain,
+    Record,
+    Reply,
+    Unknown,
+    Video,
+)
 
 from ..errors import V2Error
 from ..models import text_id
 from .convert import attachment_component, author_nickname
-
 
 DEFAULT_POLICY = {
     "enabled": True,
@@ -1174,31 +1182,38 @@ class HistoryStore:
         self._secure_sidecars()
         return {"busy": busy, "log": log, "checkpointed": checkpointed, "size_bytes": self._file_size()}
 
-    def export_rows(self, owner, *, scene=None, target=None, since=None, until=None, limit=EXPORT_LIMIT):
+    def export_rows(self, owner, *, scene=None, target=None, since=None, until=None, q=None, message_id=None, limit=EXPORT_LIMIT):
         if type(limit) is not int or not 1 <= limit <= EXPORT_LIMIT:
             limit = EXPORT_LIMIT
-        rows = self.query(owner, scene=scene, target=target, since=since, until=until, limit=limit, max_limit=EXPORT_LIMIT)
+        rows = self.query(
+            owner, message_id=message_id, scene=scene, target=target, since=since, until=until, q=q,
+            limit=limit, max_limit=EXPORT_LIMIT,
+        )
         key = history_owner(owner)
-        with self.transaction():
-            sql = "SELECT forward_id, scene, target, source_message_id, nodes_json, media_json FROM forwards WHERE owner=?"
-            params = [key]
-            if scene:
-                sql += " AND scene=?"
-                params.append(scene)
-            if target:
-                sql += " AND target=?"
-                params.append(text_id(target))
-            forwards = [
-                {
-                    "forward_id": row["forward_id"],
-                    "scene": row["scene"],
-                    "target": row["target"],
-                    "source_message_id": row["source_message_id"],
-                    "messages": load(row["nodes_json"]),
-                    "media": load(row["media_json"]),
-                }
-                for row in self.db.execute(sql, params).fetchall()
-            ]
+        exported = {(row["scene"], row["target"], row["message_id"]) for row in rows}
+        forwards = []
+        if exported:
+            with self.transaction():
+                sql = "SELECT forward_id, scene, target, source_message_id, nodes_json, media_json FROM forwards WHERE owner=?"
+                params = [key]
+                if scene:
+                    sql += " AND scene=?"
+                    params.append(scene)
+                if target:
+                    sql += " AND target=?"
+                    params.append(text_id(target))
+                forwards = [
+                    {
+                        "forward_id": row["forward_id"],
+                        "scene": row["scene"],
+                        "target": row["target"],
+                        "source_message_id": row["source_message_id"],
+                        "messages": load(row["nodes_json"]),
+                        "media": load(row["media_json"]),
+                    }
+                    for row in self.db.execute(sql, params).fetchall()
+                    if (row["scene"], row["target"], row["source_message_id"]) in exported
+                ]
         truncated = len(rows) >= min(limit, EXPORT_LIMIT)
         return {"messages": rows, "forwards": forwards, "truncated": truncated}
 
