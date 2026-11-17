@@ -28,7 +28,7 @@ ControlAPI 注册在插件命名空间下，当前页面使用这些请求组：
 | 扫码绑定 | `onboarding/start`、`onboarding/status`、`onboarding/cancel`、`onboarding/commit` | 管理短期扫码租约，提交凭据时执行身份和凭据确认。 |
 | 本地菜单 | `config`、`commands`、`preview`、`config/mutate` | 读取设置草稿、命令目录和本地预览；`apply` 只改变本地运行设置。 |
 | QQ 面板 | `panels/plan`、`panels/enable`、`panels/sync`、`panels/disable`、`panels/status` | 预览范围、确认托管、同步或停止同步指定的远端面板。 |
-| 全局开关 | `flags` | 修改 WebUI、远端面板同步和 OneBot 网络入口的开关。 |
+| 全局开关 | `flags` | 修改 WebUI 和远端面板同步开关。 |
 | 保留事件 | `inbox/retained`、`inbox/discard` | 查看元数据并在短期确认窗口内明确丢弃事件。 |
 
 每个管理请求都必须由页面桥接对象发送。POST 请求携带 `csrf`；涉及写入的连接和平台请求携带 `platform_id` 与当前 `fingerprint`；菜单草稿和预览请求还携带 `revision` 与 `scene`。页面应在目标实例切换、请求失败或收到 `config_conflict` 后重新读取状态，不能继续使用旧实例的 revision、fingerprint 或扫码 ticket。
@@ -42,10 +42,10 @@ ControlAPI 把预期管理错误和未预期异常写入应用日志，字段为
 连接表单应跟随 `v2/connections.py` 的当前字段：
 
 ```text
-appid, use_markdown, type, intents, shard_mode, shard, enable, onebot
+appid, use_markdown, type, intents, shard_mode, shard, enable
 ```
 
-`type` 表示 WebSocket 或 Webhook 平台类型，`shard_mode` 表示自动或手动分片。旧配置中的 `transport`、`environment` 和 `is_sandbox` 由服务端兼容处理，Vue 页面不应把它们作为当前表单字段发送。`onebot` 是 OneBot 网络入口配置；它不代表 SDK 的调用方式。
+`type` 表示 WebSocket 或 Webhook 平台类型，`shard_mode` 表示自动或手动分片。旧配置中的 `transport`、`environment`、`is_sandbox` 和 `onebot` 由服务端忽略或剥离，Vue 页面不应把它们作为当前表单字段发送。
 
 `intents` 在表单中显示当前十进制掩码，并通过「配置事件订阅」弹窗编辑。弹窗提供四个官方事件类别开关（`PUBLIC_GUILD_MESSAGES 1<<30`、`INTERACTION 1<<26`、`GROUP_AND_C2C_EVENT 1<<25`、`DIRECT_MESSAGE 1<<12`，与 `v2/sdk/catalog.py` 的事件族一致），并在高级折叠区内保留十进制输入作为兜底。弹窗在草稿上操作：切换开关只增减对应位、保留未列出的订阅位，取消不写回表单，点击「应用」后掩码才进入表单并随连接保存提交整数。
 
@@ -83,21 +83,9 @@ Vue 组件应只调用 `api.js` 中的控制方法。组件不应：
 
 页面需要显示服务端返回的 `remote_state`、`extension_state.operations`、`pending` 和错误阶段，给用户“重新读取状态”的路径。网络超时或进程重启后，页面应先查询原操作和面板状态，再决定是否继续。
 
-## OneBot 迁移期边界
+## 兼容调用
 
-`onebot_network_enabled` 和实例中的 `onebot` 配置只服务已有外部客户端。它们属于迁移期兼容入口，默认关闭，关闭全局开关会撤销正在运行的监听。控制页面的连接、菜单和面板功能不依赖这个网络入口。
-
-新插件和新集成应使用：
-
-```python
-event.bot.qq
-event.bot.qq.events
-event.send(...)
-```
-
-需要明确场景和目标时，使用 `event.bot.qq.send(scene, target, message, operation_id=...)` 或 SDK 中对应的具名 API。外部网络客户端可继续使用 OneBot 翻译层；需要原生字段和更细生命周期控制时，再按[SDK 迁移指南](sdk-migration.md)切换，确认不再依赖网络入口后才关闭 `onebot_network_enabled` 并移除实例监听配置。
-
-页面仍可以显示 OneBot 兼容入口的状态，便于管理员查看监听、独立 token 和重载要求。页面不能把 OneBot action 当作 SDK 功能清单，也不能为了兼容外部客户端而给 SDK 增加数字 QQ 号、跨场景 ID 或隐式权限。
+控制页面的连接、菜单和面板功能使用进程内 SDK，不依赖 OneBot HTTP/WebSocket 入口。新插件使用 `event.bot.qq`、`event.bot.qq.events` 和 `event.send(...)`。需要明确场景和目标时，使用 `event.bot.qq.send(scene, target, message, operation_id=...)` 或 SDK 中对应的具名 API。页面不能把 OneBot action 当作 SDK 功能清单，也不能为兼容调用增加数字 QQ 号、跨场景 ID 或隐式权限。
 
 ## 本地开发和构建
 

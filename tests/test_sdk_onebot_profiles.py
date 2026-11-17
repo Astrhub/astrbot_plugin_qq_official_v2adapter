@@ -6,7 +6,7 @@ import pytest
 
 from v2.client import (
     ACTION_PARAMS,
-    REMOTE_ACTIONS,
+    COMPAT_ACTIONS,
     WRITE_ACTIONS,
     ClientState,
     V2Client,
@@ -155,7 +155,7 @@ async def test_stranger_chat_fields_survive_profile_overlay_and_historical_fallb
 async def test_onebot_new_actions_are_scoped_and_writes_classified(history):
     h = history
     assert {"set_group_kick_members", "_qq_set_group_blacklist"} <= WRITE_ACTIONS
-    assert {"get_group_shut_list", "_qq_get_join_approval_strategies"} <= REMOTE_ACTIONS
+    assert {"get_group_shut_list", "_qq_get_join_approval_strategies"} <= COMPAT_ACTIONS
     assert ACTION_PARAMS["get_group_member_list"]["no_cache"] == "bool"
     with pytest.raises(V2Error):
         await h.client.call_action("set_group_kick_members", group_id="g", user_ids=["001"])

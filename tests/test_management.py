@@ -24,6 +24,11 @@ async def management(config, tmp_path):
         if request.path == "/app/getAppAccessToken":
             return web.json_response({"access_token": "management-fixture", "expires_in": 7200})
         assert request.headers["Authorization"] == "QQBot management-fixture"
+        if request.method == "DELETE" and "/messages/" in request.path:
+            calls.append((request.method, request.path, dict(request.query), None))
+            if modes and modes[0] == "delete_unknown":
+                return web.json_response({"code": 50000}, status=500)
+            return web.Response(status=204)
         body = await request.json() if request.can_read_body else None
         calls.append((request.method, request.path, dict(request.query), body))
         if modes and modes[0] == "denied":

@@ -92,7 +92,6 @@ WebSocket 支持自动分片和手动分片。自动模式按 QQ 网关返回的
 | --- | --- | ---: | --- |
 | `webui_enabled` | bool | `true` | 提供 V2 Pages 管理接口 |
 | `remote_menu_sync` | bool | `false` | 允许托管面板同步到 QQ |
-| `onebot_network_enabled` | bool | `false` | 独立 OneBot HTTP/正向 WebSocket 入口（默认关闭） |
 | `profile_max_records` | int | `32768` | 资料库记录上限 |
 | `profile_max_bytes` | int | `64 MiB` | 资料库字节上限 |
 | `profile_stale_seconds` | int | `300` | 资料标记为过时前的秒数 |
@@ -154,14 +153,11 @@ v2menu kb
 
 入站附件只在消费时按需读取，不会收到一条消息就下载所有附件。无法安全转换的媒体会保留为文件或 Unknown，并保留原始元数据。
 
-## OneBot 网络入口
+## 进程内兼容调用
 
-> [!WARNING]
->当前版本保留独立 OneBot 网络入口，用于已有外部客户端。原生 SDK 与 OneBot 入口都是正式公共入口。不需要时可以关闭全局 `onebot_network_enabled`，并移除实例中的 `onebot` 监听配置。
+`event.bot` 就是当前事件绑定的 `V2Client`；`event.bot.api` 与 `event.bot` 是同一实例。同一客户端提供 `client.qq` 原生调用，以及 `client.api` / `client.call_action` / `client.<action>` 的 OneBot v11 风格投影。这是 AstrBot 进程内 Bot API，不是 NapCat/Lagrange HTTP 服务。边界见 [OneBot v11 说明](docs/ONEBOT.md)，对应关系见 [SDK 迁移指南](docs/development/sdk-migration.md)。
 
-这是 OpenID 子集，完整边界见 [OneBot v11 说明](docs/ONEBOT.md)。从网络调用迁移到 SDK 的对应关系见 [SDK 迁移指南](docs/development/sdk-migration.md)。
-
-控制页面不通过 OneBot 网络入口执行 QQ 操作。页面请求先经过 Dashboard 管理员认证、CSRF、实例指纹和版本检查，再由 `ControlAPI` 调用连接管理、设置存储、`PanelService` 托管状态机和当前 SDK 服务。外部客户端可继续使用 OneBot 网络入口；新页面和新插件可按是否需要原生字段与生命周期控制选择进程内 SDK 或 OneBot 翻译层。
+控制页面不通过兼容 action 执行 QQ 操作。页面请求先经过 Dashboard 管理员认证、CSRF、实例指纹和版本检查，再由 `ControlAPI` 调用连接管理、设置存储、`PanelService` 托管状态机和当前 SDK 服务。
 
 ## Vue 控制页面开发
 
@@ -190,7 +186,6 @@ astrbot_plugin_qq_official_v2adapter/
 │   ├── adapter.py                  # 平台实例、重载与生命周期
 │   ├── client.py                   # V2Client 与 NativeView
 │   ├── event.py                    # AstrBot 聊天事件
-│   ├── network.py                  # OneBot v11 网络兼容入口
 │   ├── sdk/                        # 原生 SDK、事件和 HTTP 目录
 │   ├── messaging/                  # 消息转换、发送与账本
 │   ├── media/                      # 媒体读取与上传
@@ -208,7 +203,7 @@ astrbot_plugin_qq_official_v2adapter/
 - [开发者文档索引](docs/README.md)
 - [SDK 使用指南](docs/development/sdk.md)
 - [Vue 控制页面与 SDK 集成](docs/development/vue-control-page.md)
-- [从 OneBot 网络入口迁移到 SDK](docs/development/sdk-migration.md)
+- [从 OneBot 兼容调用迁到原生 SDK](docs/development/sdk-migration.md)
 - [事件模型](docs/development/events.md)
 - [发送、媒体与幂等](docs/development/delivery-and-media.md)
 - [连接、代次与配置](docs/development/lifecycle-and-configuration.md)
