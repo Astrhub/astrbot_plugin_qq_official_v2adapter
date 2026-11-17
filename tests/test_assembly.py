@@ -327,8 +327,9 @@ async def test_real_astrbot_assembly(config, monkeypatch, qq_reject_server, qq_p
             assert saved_target["secret"] == "new-fixture-secret" and not saved_target["enable"]
             assert "not-a-chat-observation" not in json.dumps(astrbot_config.get("admins_id", []))
             connection = committed.json()["result"]
-            from v2.models import InstanceKey
             from test_onebot_network import TOKEN, free_port
+
+            from v2.models import InstanceKey
             network_save = {**save_body, "fingerprint": connection["fingerprint"],
                             "patch": {"enable": True, "onebot": {"enable": True, "port": free_port(), "writes": True}},
                             "network_token_action": "replace", "network_token": TOKEN, "confirm_network_token": True}

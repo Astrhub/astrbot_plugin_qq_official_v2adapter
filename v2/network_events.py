@@ -10,6 +10,7 @@ from .errors import V2Error
 from .models import text_id
 from .protocol import NOTICE_EVENTS
 
+
 class Peer:
     def __init__(self, server, ws, events):
         self.server, self.ws, self.events = server, ws, events

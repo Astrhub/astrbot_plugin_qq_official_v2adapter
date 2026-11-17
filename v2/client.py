@@ -19,8 +19,8 @@ from .sdk.api.material import NativeMaterialMixin
 from .sdk.api.media import NativeMediaMixin
 from .sdk.api.menus import NativeMenuMixin
 from .sdk.api.messages import NativeMessageMixin
-from .sdk.http_catalog import HTTP_TARGETS
 from .sdk.api.reads import NativeReadMixin
+from .sdk.http_catalog import HTTP_TARGETS
 
 REMOTE_ACTIONS = {
     "send_group_msg", "send_private_msg", "send_msg", "delete_msg", "get_msg",

@@ -89,6 +89,7 @@ async def test_real_self_id_meta_and_no_ticket_or_original_payload_export(sendin
 
 async def test_group_live_notice_is_not_also_name_only_retained(receiver):
     from test_messaging_state import NOW
+
     from v2.protocol import RawEnvelope
 
     owner, adapter = receiver
