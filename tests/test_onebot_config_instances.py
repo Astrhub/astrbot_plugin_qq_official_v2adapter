@@ -12,7 +12,6 @@ from test_lifecycle import plugin_module as plugin_module
 from test_onboarding import owner as owner
 
 
-
 async def test_onebot_network_fields_are_ignored_and_stripped(owner, config):
     conn = owner.connections
     initial = conn.view(config["id"])

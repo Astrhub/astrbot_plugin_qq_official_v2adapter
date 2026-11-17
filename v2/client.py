@@ -500,7 +500,12 @@ class V2Client:
             raise V2Error("invalid_params", "Unsupported action parameters.")
         if "no_cache" in params and type(params["no_cache"]) is not bool:
             raise V2Error("invalid_params", "no_cache must be boolean.")
-        from .onebot_profiles import OneBotProfiles, official_member, project_group_info, project_login_info
+        from .onebot_profiles import (
+            OneBotProfiles,
+            official_member,
+            project_group_info,
+            project_login_info,
+        )
         if action == "get_login_info":
             return project_login_info(await self.qq.me())
         if action == "get_group_info":
