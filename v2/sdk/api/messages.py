@@ -121,12 +121,20 @@ class NativeMessageMixin:
                                  embed: dict | None = None, ark: dict | None = None, message_reference: dict | None = None,
                                  media: dict | None = None, msg_id: str | None = None, msg_seq: int | None = None,
                                  event_id: str | None = None, markdown: dict | None = None, keyboard: dict | None = None,
-                                 *, operation_id: str | None = None) -> dict:
+                                 *, card: dict | None = None, operation_id: str | None = None) -> dict:
         """Send an exact group body; caller-supplied sources are resolved by QQ."""
-        if type(msg_type) is not int or msg_type not in (0, 2, 7):
-            raise V2Error("invalid_message", "Group msg_type must be 0, 2 or 7.")
+        if type(msg_type) is not int or msg_type not in (0, 2, 7, 8):
+            raise V2Error("invalid_message", "Group msg_type must be 0, 2, 7 or 8.")
+        if msg_type == 8:
+            if any(item is not None for item in (content, embed, ark, media, markdown)):
+                raise V2Error("invalid_message", "Image-text cards cannot mix content, Markdown or media.")
+            from ...messaging.cards import official_tuwen_card
+            card = official_tuwen_card(card)
+        elif card is not None:
+            raise V2Error("invalid_message", "card is only valid for msg_type=8.")
         body = fields(msg_type=msg_type, content=content, embed=embed, ark=ark, message_reference=message_reference,
-                      media=media, msg_id=msg_id, msg_seq=msg_seq, event_id=event_id, markdown=markdown, keyboard=keyboard)
+                      media=media, msg_id=msg_id, msg_seq=msg_seq, event_id=event_id, markdown=markdown,
+                      keyboard=keyboard, card=card)
         return await self._native_send("group", group_openid,
             f"/v2/groups/{segment(group_openid)}/messages", body, operation_id=operation_id)
 
@@ -134,14 +142,21 @@ class NativeMessageMixin:
                                embed: dict | None = None, ark: dict | None = None, message_reference: dict | None = None,
                                media: dict | None = None, msg_id: str | None = None, msg_seq: int | None = None,
                                event_id: str | None = None, markdown: dict | None = None, keyboard: dict | None = None,
-                               *, is_wakeup: bool | None = None, input_notify: dict | None = None,
+                               *, is_wakeup: bool | None = None, input_notify: dict | None = None, card: dict | None = None,
                                operation_id: str | None = None) -> dict:
         """Send exact C2C fields including input status and wakeup semantics."""
-        if type(msg_type) is not int or msg_type not in (0, 2, 6, 7):
-            raise V2Error("invalid_message", "C2C msg_type must be 0, 2, 6 or 7.")
+        if type(msg_type) is not int or msg_type not in (0, 2, 6, 7, 8):
+            raise V2Error("invalid_message", "C2C msg_type must be 0, 2, 6, 7 or 8.")
+        if msg_type == 8:
+            if any(item is not None for item in (content, embed, ark, media, markdown, input_notify)):
+                raise V2Error("invalid_message", "Image-text cards cannot mix content, Markdown or media.")
+            from ...messaging.cards import official_tuwen_card
+            card = official_tuwen_card(card)
+        elif card is not None:
+            raise V2Error("invalid_message", "card is only valid for msg_type=8.")
         body = fields(msg_type=msg_type, content=content, embed=embed, ark=ark, message_reference=message_reference,
                       media=media, msg_id=msg_id, msg_seq=msg_seq, event_id=event_id, markdown=markdown,
-                      keyboard=keyboard, is_wakeup=is_wakeup, input_notify=input_notify)
+                      keyboard=keyboard, is_wakeup=is_wakeup, input_notify=input_notify, card=card)
         return await self._native_send("c2c", openid, f"/v2/users/{segment(openid)}/messages", body, operation_id=operation_id)
 
     async def post_c2c_stream_message(self, openid: str, content_raw: str, index: int,

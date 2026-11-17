@@ -26,7 +26,7 @@ post_group_message post_c2c_message post_group_file post_c2c_file
 """.split()
 
 V2_EXTENSIONS = (
-    "get_gateway", "get_gateway_bot", "get_group_info", "get_group_bot_state",
+    "get_gateway", "get_gateway_bot", "get_user_info", "get_group_info", "get_group_bot_state",
     "get_group_member_info", "get_group_member_list", "iter_group_members",
     "get_group_restrict_chat_setting", "get_group_member_blacklist",
     "get_group_join_requests", "get_join_approval_strategies", "get_menu",

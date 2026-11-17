@@ -8,7 +8,8 @@ def merge_chat(store, chat, payload, received):
         if row.get("scope") != f"{scene}:{scope}":
             continue
         store.merge(robot, scene, scope, row["user_id"],
-                    {"nickname": row.get("nickname"), "avatar_url": row.get("avatar_url")},
+                    {"nickname": row.get("nickname"), "avatar_url": row.get("avatar_url"),
+                     "union_openid": row.get("union_openid")},
                     source=row.get("source", "current_chat"), as_of=row.get("as_of"), received=received, kind=row["id_kind"])
     if scene == "group":
         store.member_event(robot, scene, scope, chat.message.sender.user_id, "present", int(chat.source.sent_at),

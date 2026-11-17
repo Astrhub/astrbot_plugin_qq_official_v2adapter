@@ -85,6 +85,31 @@ async def test_real_self_id_meta_and_no_ticket_or_original_payload_export(sendin
             assert frame["event_type"] == "FRIEND_ADD" and frame["post_type"] != "request" and "time" not in frame
 
 
+
+
+async def test_group_live_notice_is_not_also_name_only_retained(receiver):
+    from test_messaging_state import NOW
+    from v2.protocol import RawEnvelope
+
+    owner, adapter = receiver
+    frames = []
+    adapter.network.observed = lambda: True
+    adapter.network.publish = frames.append
+    payload = {"op": 0, "s": 21, "id": "evt-robot", "t": "GROUP_ADD_ROBOT",
+               "d": {"timestamp": 11, "group_openid": "g", "op_member_openid": "admin",
+                     "union_group_openid": "UG"}}
+    owner.inbox.accept(adapter.identity.settings_key, RawEnvelope(payload, NOW))
+    assert adapter.consumer.step()
+    adapter.core.step()
+    assert [frame.get("qq_type") for frame in frames] == ["notice"]
+    assert frames[0]["group_id"] == "g" and frames[0]["_qq"]["op_member_openid"] == "admin"
+    assert "operator_id" not in frames[0] and "user_id" not in frames[0] and "notice_type" not in frames[0]
+    adapter.network.events.retained("GROUP_ADD_ROBOT")
+    adapter.network.events.retained("GROUP_DEL_ROBOT")
+    assert [frame.get("qq_type") for frame in frames] == ["notice"]
+    adapter.network.events.retained("FRIEND_ADD")
+    assert frames[-1]["qq_type"] == "retained" and frames[-1]["event_type"] == "FRIEND_ADD"
+
 async def test_slow_peer_disconnect_does_not_block_another_subscriber(sending, monkeypatch):
     async with listener(sending) as n:
         n.server.queue_frames = 2

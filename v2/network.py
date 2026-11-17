@@ -473,6 +473,12 @@ class OneBotServer:
         except Exception:
             self.observation_failed()
 
+    def observe_notice(self, name, data):
+        try:
+            self.events.notice(name, data)
+        except Exception:
+            self.observation_failed()
+
     def observation_failed(self):
         self.last_error = "event_projection_failed"
         for peer in self.peers:
