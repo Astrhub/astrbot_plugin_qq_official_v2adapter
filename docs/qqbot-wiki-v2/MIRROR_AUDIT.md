@@ -46,3 +46,11 @@
 Markdown 示例中的模板变量和 `qqbot-media://` 引用不是待抓取页面。镜像补充内容仅限排版、有效链接、现有页面导航及原图保存，并在此记录。
 
 2026-11-04 在群聊发送、单聊发送和文本交互页各增加一段“本地实现调用链”，依据当前源码说明 `SendingCore`、原生发送、媒体上传、C2C 流式分片与引用索引的实际路径，并明确 `msg_type=8/card` 及群聊 @全部成员尚未接入。这些段落均标记为非官方正文；`MANIFEST.json` 的线上 HTML 哈希保持原值，仅相应页面的本地 Markdown 字节数和哈希更新。
+
+## 2026-11-16 差异补页
+
+按官方 changelog `20261116` 增补，未整库重抓。官方用户信息页 `GET /v2/users/{user_openid}/info` 已发布（10 QPS；响应 `username`/`avatar`/`allow_proactive_msg`/`union_openid`；错误码 40184001），本地新增对应 Markdown。`changelog.md` 写入当日变更。官方 autogen 索引页尚未列出该接口，本地索引按已发布页面增补并加校注。
+
+changelog 字段已写入对应表格：C2C User 增加 `avatar`；群消息/群@ User 增加 `member_nickname` 与 `avatar`；群 info、群消息/群@、机器人进退群、群成员增减增加 `union_group_openid`（绑定第三方应用时有效，不作为路由主键）。官方 autogen 页表示例仍未同步，本地校注标明来源为 changelog，未改示例 JSON。`GROUP_MSG_RECEIVE`/`GROUP_MSG_REJECT` 官方表与 changelog 均未点名，未写入。
+
+同日抽查官方站点资源为 `v1.50.0`（`app.83c054bf.js`），抽查页 Last-Modified 均为 `Mon, 16 Nov 2026 12:29:16 GMT`。发送页与消息总览 HTML 字节数与 11-04 快照相同。MANIFEST 保留 11-04 全量 `site_version`/`app_js`/`fetched_at`，另记 `incremental_*` 当前来源，并更新本轮核对页哈希与第 193 页。群/C2C 发送页本地实现校注为 `msg_type=8` tuwen 已接入。

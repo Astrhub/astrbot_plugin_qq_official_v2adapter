@@ -16,6 +16,10 @@ EXTENSION_DEFAULTS = {
     "typing_enabled": False, "keyboard_enabled": False, "keyboard_execute": False,
     "ticket_ttl": 120, "management_writes": False,
 }
+RUNTIME_EXTENSION_KEYS = frozenset({
+    "media_max_bytes", "stream_fallback", "stream_max_chars", "stream_timeout",
+    "typing_enabled", "management_writes",
+})
 DEFAULTS = {
     "schema_version": 2, "title": "机器人菜单", "extensions": copy.deepcopy(EXTENSION_DEFAULTS),
     "layout": {layer: dict(LAYOUT) for layer in LAYERS},
@@ -214,6 +218,37 @@ class SettingsStore:
                 if self.db.execute("SELECT count(*) FROM command_bindings").fetchone()[0] + len(bindings) > 32768:
                     raise V2Error("settings_capacity", "Selected handler bindings exceed capacity.", status=409)
                 self.db.executemany("INSERT INTO command_bindings VALUES(?,?,?)", [(key, handler, fingerprint) for handler, fingerprint in bindings.items()])
+            self.db.commit()
+        except BaseException:
+            self.db.rollback()
+            raise
+        return self.get(key)
+
+    def validate_runtime_policy(self, key, revision, policy):
+        if type(revision) is not int or revision < 0:
+            invalid("revision must be a nonnegative integer.")
+        if not isinstance(policy, dict) or policy.keys() - RUNTIME_EXTENSION_KEYS:
+            invalid("Only documented runtime policy fields are accepted.")
+        current = self.get(key)
+        if current["revision"] != revision:
+            raise V2Error("config_conflict", "Runtime policy changed; reload before saving.", status=409)
+        validate_settings(merge_patch(current["draft"], {"extensions": policy}))
+
+    def apply_runtime_policy(self, key, revision, editor, policy):
+        self.validate_runtime_policy(key, revision, policy)
+        self.db.execute("BEGIN IMMEDIATE")
+        try:
+            current = self.get(key)
+            if current["revision"] != revision:
+                raise V2Error("config_conflict", "Runtime policy changed; reload before saving.", status=409)
+            draft = validate_settings(merge_patch(current["draft"], {"extensions": policy}))
+            applied = validate_settings(merge_patch(current["applied"], {"extensions": policy}))
+            new_revision = revision + 1
+            applied_revision = new_revision if draft == applied else current["applied_revision"]
+            self.db.execute("INSERT OR REPLACE INTO settings VALUES (?, ?, ?, ?, ?, ?)",
+                            (key, new_revision, json.dumps(draft), applied_revision, json.dumps(applied), editor))
+            self.db.execute("INSERT OR REPLACE INTO versions VALUES (?, ?, ?)", (key, new_revision, json.dumps(draft)))
+            self.db.execute("DELETE FROM versions WHERE key=? AND revision NOT IN (SELECT revision FROM versions WHERE key=? ORDER BY revision DESC LIMIT 20)", (key, key))
             self.db.commit()
         except BaseException:
             self.db.rollback()

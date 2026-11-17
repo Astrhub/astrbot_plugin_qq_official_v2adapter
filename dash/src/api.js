@@ -1,6 +1,13 @@
 import { ref } from "vue";
 
-import { t } from "./i18n.js";
+import { errorFields, t } from "./i18n.js";
+
+const CSRF_EXPIRED_MESSAGE = "Reload the page to obtain a management confirmation token.";
+
+function isCsrfExpired(error) {
+  const { code, message } = errorFields(error);
+  return code === "csrf_expired" || message === CSRF_EXPIRED_MESSAGE;
+}
 
 // Official intent families exposed in the subscription dialog; bits follow v2/sdk/catalog.py.
 export const KNOWN_INTENT_BITS = [
@@ -9,6 +16,17 @@ export const KNOWN_INTENT_BITS = [
   { name: "GROUP_AND_C2C_EVENT", bit: 25 },
   { name: "DIRECT_MESSAGE", bit: 12 },
 ];
+
+export const RUNTIME_POLICY_KEYS = [
+  "media_max_bytes", "stream_fallback", "stream_max_chars", "stream_timeout",
+  "typing_enabled", "management_writes",
+];
+
+export const COMMAND_EXTENSION_KEYS = ["ticket_ttl", "keyboard_enabled", "keyboard_execute"];
+
+export function runtimePolicyFields(extensions = {}) {
+  return Object.fromEntries(RUNTIME_POLICY_KEYS.map(key => [key, extensions[key]]));
+}
 
 export function toUint32(value) {
   return Number(value) >>> 0;
@@ -68,6 +86,11 @@ export function changed(base, next) {
   return patch;
 }
 
+export function draftPatch(state) {
+  const commandExtensions = Object.fromEntries(COMMAND_EXTENSION_KEYS.map(key => [key, state.extensions[key]]));
+  state.draft.extensions = { ...state.draft.extensions, ...commandExtensions };
+  return changed(state.current.draft, state.draft);
+}
 export function connectionFields(form) {
   const mode = form.type === "qq_official_v2_webhook" ? "manual" : form.shard_mode;
   const shard = mode === "auto" || form.type === "qq_official_v2_webhook" ? [0, 1] : [Number(form.shardIndex), Number(form.shardCount)];
@@ -85,9 +108,35 @@ export function connectionFields(form) {
   };
 }
 
+function csrfRefreshFailed() {
+  const error = new Error(t("msg.csrfRefreshFailed"));
+  error.code = "csrf_refresh_failed";
+  return error;
+}
+
 export function createApi(state) {
-  const post = (endpoint, body = {}) => state.bridge.apiPost(endpoint, { csrf: state.boot.csrf, ...body });
   const get = (endpoint, params = {}) => state.bridge.apiGet(endpoint, params);
+  async function refreshCsrf() {
+    const boot = await get("bootstrap");
+    const csrf = typeof boot?.csrf === "string" ? boot.csrf.trim() : "";
+    if (!csrf) throw csrfRefreshFailed();
+    state.boot.csrf = csrf;
+  }
+  const post = async (endpoint, body = {}) => {
+    try {
+      return await state.bridge.apiPost(endpoint, { csrf: state.boot.csrf, ...body });
+    } catch (error) {
+      if (!isCsrfExpired(error)) throw error;
+      try {
+        await refreshCsrf();
+      } catch (refreshError) {
+        throw refreshError?.code === "csrf_refresh_failed" ? refreshError : csrfRefreshFailed();
+      }
+      const retry = new Error(t("msg.csrfExpiredRetry"));
+      retry.code = "csrf_expired";
+      throw retry;
+    }
+  };
   const needView = () => {
     if (!state.view) throw new Error(t("msg.readConnectionFirst"));
   };

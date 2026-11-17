@@ -2,10 +2,14 @@
 
 from datetime import datetime
 
-from .errors import V2Error
+from .errors import V2Error, unsupported
 from .models import text_id
 
 SCOPED_IDS = {"group": "member_openid", "c2c": "user_openid", "channel": "channel_user_id", "dm": "channel_user_id"}
+
+
+def proven_text(value):
+    return value if isinstance(value, str) and value else None
 
 
 def join_seconds(value):
@@ -39,6 +43,10 @@ def profile_member(group, member, *, role_stale_at):
                      "membership": member["membership"], "current": member["membership"] == "present",
                      "missing_fields": member["missing_fields"], "field_sources": {
                          key: {"source": entry["source"], "as_of": entry["as_of"]} for key, entry in fields.items()}}
+    if value("union_openid"):
+        result["_qq"]["union_openid"] = value("union_openid")
+    if value("avatar_url"):
+        result["_qq"]["avatar"] = value("avatar_url")
     return result
 
 
@@ -58,6 +66,10 @@ def official_member(group, row, *, source="official_query", current=True, at=Non
     stamp = join_seconds(row.get("joined_at"))
     if stamp is not None:
         result["join_time"] = stamp
+    if union := proven_text(row.get("union_openid")):
+        result["_qq"]["union_openid"] = union
+    if avatar := proven_text(row.get("avatar")):
+        result["_qq"]["avatar"] = avatar
     return result
 
 
@@ -71,7 +83,8 @@ class OneBotProfiles:
         group, user = text_id(group), text_id(user)
         if refresh:
             row = await self.client.qq.get_group_member_info(group, user)
-            return official_member(group, row, at=self.profiles.store.clock())
+            at = self.profiles.store.clock() if self.profiles is not None else None
+            return official_member(group, row, at=at)
         data = await self.profiles.get_member(group, user, mode="prefer_cache")
         return profile_member(group, data, role_stale_at=self.profiles.store.clock() - self.profiles.store.stale_seconds)
 
@@ -118,10 +131,47 @@ class OneBotProfiles:
                 if entry is not None and (record is None or entry.get("as_of") is not None and entry["as_of"] > record.get("last_seen", 0)):
                     result[alias] = entry["value"]
                     added[alias] = {"source": entry["source"], "as_of": entry["as_of"]}
+            union = profile["fields"].get("union_openid")
+            if union is not None:
+                added["union_openid"] = {"source": union["source"], "as_of": union["as_of"]}
             result["_qq"] = {"membership": profile["membership"], "stale": profile["stale"],
                              "as_of": profile["as_of"], "profile_fields": added,
                              "partial": profile["partial"]}
+            if union is not None and proven_text(union.get("value")):
+                result["_qq"]["union_openid"] = union["value"]
         if record is None and profile is not None:
             result.update(as_of=profile["as_of"], stale=profile["stale"], membership=profile["membership"])
         result.update(source="chat_cache" if record is not None else "profile_cache", partial=True)
+        qq = result.setdefault("_qq", {})
+        if avatar := proven_text(result.get("avatar_url")):
+            qq.setdefault("avatar", avatar)
         return result
+
+    async def stranger_live(self, user, kind, scope):
+        user = text_id(user)
+        if not isinstance(kind, str) or not isinstance(scope, str) or ":" not in scope:
+            raise V2Error("identity_scope_required", "Specify a scoped OpenID and identity kind.", status=400)
+        scene, target = scope.split(":", 1)
+        if SCOPED_IDS.get(scene) != kind:
+            raise V2Error("identity_scope_required", "Scene and identity kind disagree.", status=400)
+        text_id(target)
+        if scene == "c2c":
+            if user != target:
+                raise V2Error("identity_mismatch", "C2C user info scope must match the user OpenID.", status=409)
+            data = await self.client.qq.get_user_info(user)
+            result = {"user_id": user, "id_kind": kind, "scope": scope, "nickname": data["username"],
+                      "source": "official_query", "partial": True,
+                      "_qq": {"source": "official_query", "allow_proactive_msg": data["allow_proactive_msg"]}}
+            if avatar := proven_text(data.get("avatar")):
+                result["_qq"]["avatar"] = avatar
+            if union := proven_text(data.get("union_openid")):
+                result["_qq"]["union_openid"] = union
+            return result
+        if scene == "group":
+            row = await self.client.qq.get_group_member_info(target, user)
+            at = self.profiles.store.clock() if self.profiles is not None else None
+            result = official_member(target, row, at=at)
+            result["scope"] = scope
+            result["source"] = "official_query"
+            return result
+        raise unsupported("A live OpenID profile lookup is not available.")

@@ -180,3 +180,51 @@ async def test_card_operation_id_does_not_replay_conflicting_body(card_receiver)
         await instance.client.send(route, MessageChain([Json(other)]), operation_id="card-operation")
     assert error.value.code == "operation_conflict"
     assert len(seen) == 1
+
+
+
+def tuwen():
+    return {"msg_type": 8, "card": {"type": "tuwen", "content": {
+        "title": "iPhone 17 Pro 正式发布",
+        "description": "全新 A20 芯片",
+        "url": "https://news.qq.com/rain/a/20261014A05XYZ00",
+        "pic_url": "https://inews.gtimg.com/newsapp_bt/0/xxx/1000.jpg",
+    }}}
+
+
+@pytest.mark.asyncio
+async def test_tuwen_card_sends_official_body_and_keeps_keyboard_reference(card_receiver):
+    _, instance, seen = card_receiver
+    route = instance.client.route_for("group", "group-one")
+    item = tuwen()
+    item["keyboard"] = {"id": "qq-template"}
+    item["message_reference"] = {"message_id": "msg-one"}
+    result = await instance.client.send(route, MessageChain([Json(item)]))
+    assert result["state"] == "sent"
+    body = seen[0][2]
+    assert body["msg_type"] == 8 and body["card"]["type"] == "tuwen"
+    assert body["keyboard"] == {"id": "qq-template"}
+    assert body["message_reference"] == {"message_id": "REFIDX_msg-one"}
+    assert "content" not in body and "markdown" not in body and "media" not in body
+    c2c = tuwen()
+    await instance.client.send(instance.client.route_for("c2c", "user-one"), MessageChain([Json(c2c)]))
+    assert seen[1][1] == "/v2/users/user-one/messages" and seen[1][2]["msg_type"] == 8
+
+
+@pytest.mark.asyncio
+async def test_tuwen_card_rejects_http_mix_and_unknown_fields(card_receiver):
+    _, instance, seen = card_receiver
+    route = instance.client.route_for("group", "group-one")
+    bad = tuwen()
+    bad["card"]["content"]["url"] = "http://news.qq.com/x"
+    with pytest.raises(RuntimeError):
+        await instance.client.send(route, MessageChain([Json(bad)]))
+    mixed = tuwen()
+    mixed["content"] = "no"
+    with pytest.raises(RuntimeError):
+        await instance.client.send(route, MessageChain([Json(mixed)]))
+    extra = tuwen()
+    extra["card"]["content"]["badge"] = "x"
+    with pytest.raises(RuntimeError):
+        await instance.client.send(route, MessageChain([Json(extra)]))
+    assert not seen

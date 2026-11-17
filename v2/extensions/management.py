@@ -122,6 +122,8 @@ class Management:
         data = await self._read(f"/v2/groups/{ident(group)}/info", guard=guard)
         if not isinstance(data, dict) or data.get("group_openid") != group or not isinstance(data.get("group_name"), str) or type(data.get("group_member_num")) is not int or data["group_member_num"] < 0:
             invalid()
+        if "union_group_openid" in data and data["union_group_openid"] is not None and not isinstance(data["union_group_openid"], str):
+            invalid()
         return data
 
     async def bot_state(self, group, *, guard=None):
@@ -364,10 +366,21 @@ class Management:
         group = text_id(params.get("group_id"))
         if action == "get_group_info":
             data = await self.group_info(group)
-            return {"group_id": data["group_openid"], "group_name": data["group_name"], "member_count": data["group_member_num"], "partial": True, "permission": "unknown"}
+            result = {"group_id": data["group_openid"], "group_name": data["group_name"], "member_count": data["group_member_num"],
+                      "partial": True, "permission": "unknown", "_qq": {"source": "official_query"}}
+            if isinstance(data.get("union_group_openid"), str) and data["union_group_openid"]:
+                result["_qq"]["union_group_openid"] = data["union_group_openid"]
+            return result
         if action in {"get_group_member_info", "get_group_member_list"}:
             rows = [await self.group_member(group, text_id(params.get("user_id")))] if action.endswith("info") else await self.group_members(group)
-            result = [{"group_id": group, "user_id": row["member_openid"], "nickname": row["username"], "role": row["member_role"], "bot": row["bot"], "partial": True, "id_kind": "member_openid"} for row in rows]
+            result = []
+            for row in rows:
+                item = {"group_id": group, "user_id": row["member_openid"], "nickname": row["username"],
+                        "role": row["member_role"], "bot": row["bot"], "partial": True, "id_kind": "member_openid",
+                        "_qq": {"source": "official_query"}}
+                if isinstance(row.get("union_openid"), str) and row["union_openid"]:
+                    item["_qq"]["union_openid"] = row["union_openid"]
+                result.append(item)
             return result[0] if action.endswith("info") else result
         user = text_id(params.get("user_id"))
         if action == "set_group_ban":

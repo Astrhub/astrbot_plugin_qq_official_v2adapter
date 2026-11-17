@@ -58,6 +58,9 @@ CHAT_EVENTS = {
 }
 
 
+NOTICE_EVENTS = frozenset({"GROUP_MEMBER_ADD", "GROUP_MEMBER_REMOVE", "GROUP_ADD_ROBOT", "GROUP_DEL_ROBOT"})
+
+
 class ExpiringSet:
     def __init__(self, *, capacity=4096, ttl=300, clock=time.monotonic):
         if capacity < 1 or ttl <= 0:

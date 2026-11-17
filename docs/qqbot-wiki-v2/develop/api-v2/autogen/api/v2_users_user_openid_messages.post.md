@@ -1,6 +1,6 @@
 <!-- 来源: https://bot.q.qq.com/wiki/develop/api-v2/autogen/api/v2_users_user_openid_messages.post.html · 抓取 2026-11-04 -->
 
-> 镜像校注（2026-11-04，非官方正文）：本插件 `post_c2c_message` 当前只接受 `msg_type=0/2/6/7`，尚未实现官方新增的 `msg_type=8/card`，调用 `msg_type=8` 会在联网前返回 `invalid_message`。统一发送、原生发送和 C2C 流式发送的真实调用链见[本地实现调用链](#本地实现调用链)。
+> 镜像校注（2026-11-16，非官方正文）：本插件 `post_c2c_message` 与 Json 卡片发送接受 `msg_type=0/2/6/7/8`。`msg_type=8` 的 `card` 仅允许当前官方 tuwen 字段，HTTPS URL，并可与 keyboard、message_reference 并用。统一发送、原生发送和 C2C 流式发送的真实调用链见[本地实现调用链](#本地实现调用链)。
 
 ## 本地实现调用链
 
@@ -22,7 +22,7 @@ V2MessageEvent.send / V2Adapter.send_by_session / client.qq.send
 
 ```text
 client.qq.post_c2c_message
-→ NativeView.post_c2c_message → NativeMessageMixin._native_send（校验 msg_type=0/2/6/7）
+→ NativeView.post_c2c_message → NativeMessageMixin._native_send（校验 msg_type=0/2/6/7/8）
 → SendingCore.send_native → MessageStore.reserve_native
 → HTTPTransport.request → POST 同一官方 messages 路径
 → 保留 QQ 原始响应，并提取 id/ext_info.ref_idx 写入 MessageStore.finish
@@ -35,7 +35,7 @@ client.qq.send_streaming
 → 复用 stream_msg_id 并递增 index；最后由 MessageStore.finish 结算整条逻辑消息
 ```
 
-媒体分支实际执行 `MediaService.prepare` 和 `upload`，成功取得 `file_info` 后才进入消息发送；发送结果未知或流已部分发送时不会从头自动重放。`card_body` 当前处理的是插件已有文本/Markdown/媒体键盘卡片，不等于本页新增的 `MessageCard` 图文卡片。
+媒体分支实际执行 `MediaService.prepare` 和 `upload`，成功取得 `file_info` 后才进入消息发送；发送结果未知或流已部分发送时不会从头自动重放。`card_body` 在 `msg_type=8` 时发送官方 `MessageCard` 图文卡片，其余类型仍是文本/Markdown/媒体键盘卡片。
 
 # 发送单聊消息
 

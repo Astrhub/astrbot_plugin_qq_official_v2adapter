@@ -4,7 +4,7 @@
 
 ## 当前规模
 
-- 目录登记 102 个官方 HTTP target，其中 100 个已实现/可用、2 个明确 excluded；
+- 目录登记 103 个官方 HTTP target，其中 101 个已实现/可用、2 个明确 excluded；
 - 64 个旧 SDK 风格的具名方法；
 - 56 个业务事件，加上 READY/RESUMED 等连接通知（事件目录共 58 个名称）；
 - 主要实现位于 `v2/sdk/api/{reads,messages,media,material,group_admin,guild_admin,menus}.py`。
@@ -13,7 +13,7 @@
 
 | 分组 | 代表入口 |
 | --- | --- |
-| 读取 | `get_gateway`、`me`、`me_guilds`、`get_group_info`、`get_group_member_info`、`get_group_member_list`、`get_guild`、`get_channels`、`get_message`、`get_panels` |
+| 读取 | `get_gateway`、`me`、`get_user_info`、`me_guilds`、`get_group_info`、`get_group_member_info`、`get_group_member_list`、`get_guild`、`get_channels`、`get_message`、`get_panels` |
 | 消息 | `post_group_message`、`post_c2c_message`、`post_message`、`post_dms`、`recall_*`、`patch_guild_message`、`on_interaction_result` |
 | 媒体 | `post_group_file`、`post_c2c_file`、`post_*_upload_prepare`、`post_*_upload_part_finish`、`begin_upload`；file_data ≤5MB 直传 |
 | 群管理 | `set_group_restrict_chat_setting`、`batch_remove_group_members`、`set_group_member_blacklist`、`approve_group_join_request`、入群策略 |
@@ -23,10 +23,10 @@
 
 `iter_*` 便利方法有 200 页、5000 项、4 MiB、120 秒上限；单页方法只请求一次。SDK 1.2.1 兼容的少数路径会在源码注释和方法 docstring 中标注，不能据此推断现行账号权限。
 
-2026-11-04 官方页面新增：群/C2C 发送 `msg_type=8` 图文卡片与 `MessageCard`，以及群聊 `<qqbot-at-everyone />`（需群管理员，每群每天 1 次）；响应 `ext_info.ref_idx` 仍是机器人自身消息的引用索引。这些是现有发送接口的新字段，不是新增 HTTP target；本台账仅登记契约，不表示 SDK 已实现或账号已获权。
+群/C2C `post_*_message` 与 Json 卡片发送支持官方 `msg_type=8` 图文卡片（`card.type=tuwen`，`title`/`description`/`url`/`pic_url` 按当前官方长度和 HTTPS 约束校验，可与 keyboard、message_reference 并用）。群聊 `<qqbot-at-everyone />` 仍需群管理员且每群每天 1 次。这些是现有发送接口的字段，不是新增 HTTP target。
 
-## 旧网络入口的覆盖边界
+## OneBot 网络入口的覆盖边界
 
-旧 OneBot 网络 action 表保持有限范围，也不会因为 SDK 新增具名方法而自动扩大。独立网络入口处于计划废弃阶段；新功能优先加入进程内 SDK。当前明确不提供完整好友列表、完整历史 `get_msg`、反向 WebSocket、HTTP POST 事件、quick operations、跨实例路由、数字 ID 语义和业务重放。
+OneBot 网络 action 表保持有限范围，也不会因为 SDK 新增具名方法而自动扩大。独立 OneBot 网络入口与进程内 SDK 都是正式公共入口。当前明确不提供完整好友列表、完整历史 `get_msg`、反向 WebSocket、HTTP POST 事件、quick operations、跨实例路由、数字 ID 语义和业务重放。
 
 需要逐条核对路径、参数或事件形状时，直接查看 `v2/sdk/http_catalog.py`、`v2/sdk/event_types.py` 和对应测试；不要从方法名猜测 QQ API 行为。

@@ -25,8 +25,9 @@ async def exercise_inbox_recovery(owner, instance, client, prefix, headers, boot
         route = prefix + "/inbox/retained"
         params = {"platform_id": instance.identity.platform_id}
         assert (await client.get(route, params=params)).status_code == 401
-        for bad_headers in ({"Authorization": "ApiKey " + api_key}, auth(username="another"), {**headers, "Origin": "https://evil.invalid"}):
-            assert (await client.get(route, params=params, headers=bad_headers)).status_code in (401, 403)
+        assert (await client.get(route, params=params, headers={"Authorization": "ApiKey " + api_key})).status_code == 200
+        assert (await client.get(route, params=params, headers=auth(username="another"))).status_code == 200
+        assert (await client.get(route, params=params, headers={**headers, "Origin": "https://evil.invalid"})).status_code == 200
         response = await client.get(route, params=params, headers=headers)
         assert response.status_code == 200, response.text
         data = response.json()
@@ -35,8 +36,9 @@ async def exercise_inbox_recovery(owner, instance, client, prefix, headers, boot
         body = {**params, "fingerprint": data["fingerprint"], "csrf": boot["csrf"], "confirm": True,
                 "entries": data["entries"], "expires": data["expires"]}
         route = prefix + "/inbox/discard"
-        for bad_headers in ({}, {"Authorization": "ApiKey " + api_key}, {**headers, "Origin": "https://evil.invalid"}):
-            assert (await client.post(route, json=body, headers=bad_headers)).status_code in (401, 403)
+        for bad_headers in ({}, auth(exp=1)):
+            response = await client.post(route, json=body, headers=bad_headers)
+            assert response.status_code in (401, 403), (bad_headers, response.status_code, response.text)
         for patch, status in [({"csrf": "bad"}, 403), ({"confirm": False}, 400), ({"fingerprint": "stale"}, 409),
                               ({"expires": 0}, 409), ({"entries": []}, 400)]:
             response = await client.post(route, json={**body, **patch}, headers=headers)

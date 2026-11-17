@@ -8,6 +8,7 @@ from astrbot.core.message.components import At, Plain, Reply
 
 from .errors import V2Error
 from .models import text_id
+from .protocol import NOTICE_EVENTS
 
 
 class Peer:
@@ -117,11 +118,24 @@ class LiveEvents:
         profile = next((r for r in chat.observations if r["user_id"] == sender["user_id"]), {})
         if "nickname" in profile:
             sender["nickname"] = profile["nickname"]
+        elif chat.message.sender.nickname:
+            sender["nickname"] = chat.message.sender.nickname
         result = {"post_type": "qq_event", "qq_type": "message", "time": int(chat.source.sent_at),
                   "message_id": chat.source.message_id, "user_id": sender["user_id"], "sender": sender, "message": segments,
                   "_qq": {"platform_id": adapter.identity.platform_id, "generation": adapter.identity.generation,
                           "scene": chat.route.scene, "target": chat.route.target, "attachment_count": len(chat.attachments),
                           "missing": missing, "compatibility": "partial OpenID message view, not a standard v11 event"}}
+        payload = chat.message.raw_message.get("d") if isinstance(chat.message.raw_message, dict) else None
+        author = payload.get("author") if isinstance(payload, dict) else None
+        qq = result["_qq"]
+        if isinstance(profile.get("avatar_url"), str) and profile["avatar_url"]:
+            qq["avatar"] = profile["avatar_url"]
+        if isinstance(profile.get("union_openid"), str) and profile["union_openid"]:
+            qq["union_openid"] = profile["union_openid"]
+        elif isinstance(author, dict) and isinstance(author.get("union_openid"), str) and author["union_openid"]:
+            qq["union_openid"] = author["union_openid"]
+        if isinstance(payload, dict) and isinstance(payload.get("union_group_openid"), str) and payload["union_group_openid"]:
+            qq["union_group_openid"] = payload["union_group_openid"]
         if "content" in chat.message.raw_message["d"]:
             result["raw_message"] = chat.message.raw_message["d"]["content"]
         else:
@@ -152,8 +166,32 @@ class LiveEvents:
                 result[key] = value
         self.server.publish(result)
 
+    def notice(self, name, data):
+        if not self.server.observed() or not isinstance(data, dict):
+            return
+        adapter = self.server.adapter
+        result = {"post_type": "qq_event", "qq_type": "notice", "event_type": name,
+                  "_qq": {"platform_id": adapter.identity.platform_id, "generation": adapter.identity.generation,
+                          "event_type": name, "projection": "partial proven fields; not standard v11 notice"}}
+        if type(data.get("timestamp")) is int:
+            result["time"] = data["timestamp"]
+        if isinstance(data.get("group_openid"), str) and data["group_openid"]:
+            result["group_id"] = data["group_openid"]
+        if name in {"GROUP_MEMBER_ADD", "GROUP_MEMBER_REMOVE"} and isinstance(data.get("member_openid"), str) and data["member_openid"]:
+            result["user_id"] = data["member_openid"]
+        qq = result["_qq"]
+        for key in ("union_group_openid", "op_member_openid", "union_openid"):
+            value = data.get(key)
+            if isinstance(value, str) and value:
+                qq[key] = value
+        if adapter.bot_id:
+            result["self_id"] = adapter.bot_id
+        self.server.publish(result)
+
     def retained(self, name):
-        if name in {"FRIEND_ADD", "FRIEND_DEL", "GROUP_ADD_ROBOT", "GROUP_DEL_ROBOT", "C2C_MSG_REJECT", "C2C_MSG_RECEIVE", "GROUP_MSG_REJECT", "GROUP_MSG_RECEIVE"}:
+        if name in NOTICE_EVENTS:
+            return
+        if name in {"FRIEND_ADD", "FRIEND_DEL", "C2C_MSG_REJECT", "C2C_MSG_RECEIVE", "GROUP_MSG_REJECT", "GROUP_MSG_RECEIVE"}:
             self.server.publish({"post_type": "qq_event", "qq_type": "retained", "event_type": name,
                                  "_qq": {"platform_id": self.server.adapter.identity.platform_id,
                                          "generation": self.server.adapter.identity.generation, "projection": "name_only; no request semantics"}})

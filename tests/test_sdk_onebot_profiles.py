@@ -143,10 +143,14 @@ async def test_stranger_chat_fields_survive_profile_overlay_and_historical_fallb
     with pytest.raises(V2Error) as scope:
         await h.client.call_action("get_stranger_info", user_id="001", id_kind="member_openid", scope="group:other")
     assert scope.value.code == "identity_not_observed"
-    with pytest.raises(V2Error) as unsupported:
-        await h.client.call_action("get_stranger_info", user_id="001", id_kind="member_openid", scope="group:g", no_cache=True)
-    assert unsupported.value.code == "unsupported"
-
+    live = await h.client.call_action("get_stranger_info", user_id="001", id_kind="member_openid",
+                                      scope="group:g", no_cache=True)
+    assert live["nickname"] == "From QQ" and live["source"] == "official_query"
+    assert live["_qq"]["source"] == "official_query" and live["scope"] == "group:g"
+    with pytest.raises(V2Error) as channel:
+        await h.client.call_action("get_stranger_info", user_id="001", id_kind="channel_user_id",
+                                   scope="channel:c", no_cache=True)
+    assert channel.value.code == "unsupported"
 
 async def test_onebot_new_actions_are_scoped_and_writes_classified(history):
     h = history

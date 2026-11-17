@@ -13,6 +13,10 @@ class User(TypedDict, total=False):
     username: str
     bot: bool
     avatar: str
+    member_nickname: str
+    member_role: str
+    union_openid: str
+    union_user_account: str
 
 
 class Guild(TypedDict, total=False):
@@ -54,6 +58,7 @@ class Message(TypedDict, total=False):
     guild_id: str
     channel_id: str
     group_openid: str
+    union_group_openid: str
     member: GuildMember
     attachments: list[dict[str, object]]
     mentions: list[User]
@@ -68,11 +73,13 @@ class GroupMember(TypedDict, total=False):
     group_openid: str
     member_openid: str
     user_openid: str  # Removed from the current GROUP_MEMBER_ADD docs; kept as a tolerated legacy optional.
+    union_group_openid: str
 
 class GroupOperation(TypedDict, total=False):
     timestamp: int
     group_openid: str
     op_member_openid: str
+    union_group_openid: str
 
 
 class FriendOperation(TypedDict, total=False):

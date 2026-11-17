@@ -110,6 +110,18 @@ def safe_avatar(value):
     return None
 
 
+def author_nickname(user, scene):
+    if not isinstance(user, dict):
+        return None
+    if scene == "group":
+        nick = user.get("member_nickname")
+        if isinstance(nick, str) and nick and len(nick) <= 256:
+            return nick
+    name = user.get("username")
+    if isinstance(name, str) and len(name) <= 256:
+        return name
+    return None
+
 def attachment_url(value):
     if not isinstance(value, str):
         return None
@@ -195,11 +207,15 @@ def convert_chat(identity, envelope, *, isolated=False, bot_id="", store=None):
             return None
         user_id = text_id(user_id)
         record = {"user_id": user_id, "id_kind": kind, "scope": scope, "source": source, "as_of": as_of}
-        if isinstance(user.get("username"), str) and len(user["username"]) <= 256:
-            record["nickname"] = user["username"]
+        nickname = author_nickname(user, scene)
+        if nickname is not None:
+            record["nickname"] = nickname
         avatar = safe_avatar(user.get("avatar"))
         if avatar:
             record["avatar_url"] = avatar
+        union = user.get("union_openid")
+        if isinstance(union, str) and union and len(union) <= 256:
+            record["union_openid"] = union
         observations.append(record)
         return user_id
 
@@ -349,9 +365,7 @@ def convert_chat(identity, envelope, *, isolated=False, bot_id="", store=None):
         if authors and len({user for user, _, _ in authors}) == 1:
             from ..profiles.store import observation_time
             quoted_user = observe(authors[0][1], source="chat_history", as_of=observation_time(authors[0][2]))
-            quoted_name = authors[0][1].get("username")
-            if not isinstance(quoted_name, str) or len(quoted_name) > 256:
-                quoted_name = None
+            quoted_name = author_nickname(authors[0][1], scene)
         if selected and any(node[1] == ref for node in selected):
             references.append({"ref_idx": ref, "sender": quoted_user})
         reply = Reply(id=ref, sender_id=quoted_user, sender_nickname=quoted_name, time=None,
@@ -368,7 +382,7 @@ def convert_chat(identity, envelope, *, isolated=False, bot_id="", store=None):
     message = AstrBotMessage()
     message.type = MessageType.GROUP_MESSAGE if scene in {"group", "channel"} else MessageType.FRIEND_MESSAGE
     message.session_id, message.self_id, message.message_id = route.public_session(identity.platform_id, sender=sender).session_id, group_self_id or bot_id, message_id
-    message.sender = MessageMember(sender, author.get("username") if isinstance(author.get("username"), str) else None)
+    message.sender = MessageMember(sender, author_nickname(author, scene))
     message.group_id = target if scene in {"group", "channel"} else ""
     group_name = data.get("group_name")
     if (scene == "group" and isinstance(group_name, str) and 1 <= len(group_name) <= 256

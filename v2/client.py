@@ -20,6 +20,7 @@ from .sdk.api.media import NativeMediaMixin
 from .sdk.api.menus import NativeMenuMixin
 from .sdk.api.messages import NativeMessageMixin
 from .sdk.api.reads import NativeReadMixin
+from .sdk.http_catalog import HTTP_TARGETS
 
 REMOTE_ACTIONS = {
     "send_group_msg", "send_private_msg", "send_msg", "delete_msg", "get_msg",
@@ -74,8 +75,8 @@ ACTION_RETURNS = {
     "get_version_info": ["app_name", "app_version", "protocol_version"],
     "get_login_info": ["user_id", "nickname", "id_kind", "source"],
     "get_stranger_info": ["user_id", "id_kind", "scope", "nickname?", "source", "partial", "first_seen?", "last_seen?", "source_message_id?", "_qq?"],
-    "get_group_info": ["group_id", "group_name", "member_count", "partial", "permission"],
-    "get_group_member_info": ["group_id", "user_id", "nickname", "role", "bot", "partial", "id_kind"],
+    "get_group_info": ["group_id", "group_name", "member_count", "partial", "permission", "_qq?"],
+    "get_group_member_info": ["group_id", "user_id", "nickname", "role", "bot", "partial", "id_kind", "_qq?"],
     "get_group_member_list": ["array of get_group_member_info"],
     "_qq_get_avatar": ["url", "kind", "size", "source", "verified"],
     "_qq_get_send_status": ["op_id", "scene", "target", "source", "state", "seq", "result", "error"],
@@ -403,7 +404,7 @@ class V2Client:
                 **({name: {"support": "conditional", "permission": "unknown", "reason": "real_response_and_retained_scope_required; writes_opt_in"}
                     for name in MANAGEMENT_ACTIONS} if self._state.management else {}),
             },
-            "sdk": {"contract_version": 1, "http_targets": 96, "legacy_sdk_methods": 64,
+            "sdk": {"contract_version": 1, "http_targets": len(HTTP_TARGETS), "legacy_sdk_methods": 64,
                     "business_events": 56, "native_implemented": sorted(NATIVE_READ_ALIASES | NATIVE_WRITE_ALIASES | {
                         "get_group_info", "get_group_member_info", "get_group_member_list"}),
                     "event_observation": "live_bounded" if self._state.events else "not_attached",
@@ -421,7 +422,7 @@ class V2Client:
         for name, missing in {"get_group_info": ["max_member_count"],
                               "get_group_member_info": ["sex", "age", "card", "title", "level"],
                               "get_group_member_list": ["sex", "age", "card", "title", "level"],
-                              "get_stranger_info": ["unobserved profile fields", "live no_cache=true lookup"]}.items():
+                              "get_stranger_info": ["sex", "age", "channel/dm live lookup"]}.items():
             result["actions"][name]["missing_fields"] = missing
         return result
 
@@ -505,7 +506,9 @@ class V2Client:
         if action in ("can_send_image", "can_send_record"):
             implemented = bool(self._state.sender and self._state.sender.media)
             return {"yes": False, "implemented": implemented, "reason": "application_permission_unverified" if implemented else "transport_not_ready", "permission": "unknown"}
-        if params.get("no_cache", False) is not False:
+        if action == "get_stranger_info" and type(params.get("no_cache", False)) is not bool:
+            raise V2Error("invalid_params", "no_cache must be boolean.")
+        if action != "get_stranger_info" and params.get("no_cache", False) is not False:
             raise unsupported("A live OpenID profile lookup is not available.")
         if action == "_qq_get_avatar" and params.get("kind") == "group":
             if not self._state.sender or "user_id" in params or params.get("id_kind") not in (None, "group_openid"):
@@ -522,9 +525,12 @@ class V2Client:
             scope = f"{self._route.scene}:{self._route.target}"
         if not isinstance(kind, str) or not isinstance(scope, str):
             raise V2Error("identity_scope_required", "Explicit id_kind and scope are required outside a bound chat route.")
-        if action == "get_stranger_info" and self._state.profiles is not None:
+        if action == "get_stranger_info":
             from .onebot_profiles import OneBotProfiles
-            return OneBotProfiles(self).stranger(user_id, kind, scope)
+            if params.get("no_cache", False):
+                return await OneBotProfiles(self).stranger_live(user_id, kind, scope)
+            if self._state.profiles is not None:
+                return OneBotProfiles(self).stranger(user_id, kind, scope)
         if self._state.cache is None:
             raise not_ready()
         record = self._state.cache.lookup(self.identity.robot, kind, scope, user_id)

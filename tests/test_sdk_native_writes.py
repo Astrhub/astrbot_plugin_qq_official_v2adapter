@@ -681,3 +681,26 @@ async def test_owned_upload_handle_rejects_invalid_server_retry_config(native, t
     finally:
         await media.close()
         pool.close()
+
+
+
+TUWEN_CARD = {"type": "tuwen", "content": {
+    "title": "标题文字", "description": "说明文字",
+    "url": "https://news.qq.com/a", "pic_url": "https://inews.gtimg.com/p.jpg"}}
+
+
+async def test_native_tuwen_card_is_sent_and_invalid_bodies_stay_offline(native):
+    m = native
+    data = await m.client.qq.post_group_message("g", 8, card=TUWEN_CARD, keyboard={"id": "tpl"})
+    assert data["id"] == "native-sent"
+    assert m.calls[-1][2] == {"msg_type": 8, "keyboard": {"id": "tpl"}, "card": TUWEN_CARD}
+    private = await m.client.qq.post_c2c_message("u", 8, card=TUWEN_CARD)
+    assert private["id"] == "native-sent" and m.calls[-1][2]["card"]["type"] == "tuwen"
+    with pytest.raises(V2Error) as mixed:
+        await m.client.qq.post_group_message("g", 8, content="x", card=TUWEN_CARD)
+    assert mixed.value.code == "invalid_message"
+    bad = {"type": "tuwen", "content": {**TUWEN_CARD["content"], "url": "http://news.qq.com/a"}}
+    with pytest.raises(V2Error) as http:
+        await m.client.qq.post_c2c_message("u", 8, card=bad)
+    assert http.value.code == "invalid_message"
+    assert len(m.calls) == 2

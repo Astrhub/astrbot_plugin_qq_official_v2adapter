@@ -22,6 +22,33 @@ def _text(value, limit=512):
     return value
 
 
+def _https_url(value):
+    if not isinstance(value, str) or not 1 <= len(value) <= 1024:
+        invalid("Card URL must be HTTPS and at most 1024 characters.")
+    try:
+        parsed = urlsplit(value)
+    except ValueError:
+        invalid("Card URL is malformed.")
+    if parsed.scheme != "https" or not parsed.netloc:
+        invalid("Card URL must be HTTPS.")
+    return value
+
+
+def official_tuwen_card(value):
+    _fields(value, {"type", "content"})
+    if value["type"] != "tuwen":
+        invalid("Card type must be tuwen.")
+    content = value["content"]
+    _fields(content, {"title", "description", "url", "pic_url"})
+    title, description = content["title"], content["description"]
+    if not isinstance(title, str) or not 1 <= len(title) <= 50:
+        invalid("Card title must be 1..50 characters.")
+    if not isinstance(description, str) or not 1 <= len(description) <= 200:
+        invalid("Card description must be 1..200 characters.")
+    return {"type": "tuwen", "content": {"title": title, "description": description,
+                                         "url": _https_url(content["url"]), "pic_url": _https_url(content["pic_url"])}}
+
+
 def keyboard_body(route, keyboard, callbacks=None):
     if route.scene not in {"group", "c2c"}:
         raise unsupported("Keyboards are supported only for group/C2C messages.")
@@ -116,10 +143,20 @@ def keyboard_body(route, keyboard, callbacks=None):
 def card_body(route, payload, store, callbacks=None):
     if type(payload) is not dict:
         invalid("A QQ card must be a JSON object.")
+    kind = payload.get("msg_type")
+    if type(kind) is not int or kind not in {0, 2, 7, 8}:
+        invalid("Card message type must be text, Markdown, owned media or tuwen.")
+    if kind == 8:
+        _fields(payload, {"msg_type", "card"}, {"keyboard", "message_reference"})
+        body = {"msg_type": 8, "card": official_tuwen_card(payload["card"])}
+        tokens = []
+        if "message_reference" in payload:
+            _fields(payload["message_reference"], {"message_id"})
+            body["message_reference"] = {"message_id": store.reference(route, text_id(payload["message_reference"]["message_id"]))}
+        if "keyboard" in payload:
+            body["keyboard"], tokens = keyboard_body(route, payload["keyboard"], callbacks)
+        return body, None, tokens
     _fields(payload, {"msg_type", "keyboard"}, {"content", "markdown", "media", "message_reference"})
-    kind = payload["msg_type"]
-    if type(kind) is not int or kind not in {0, 2, 7}:
-        invalid("Card message type must be text, Markdown or owned media.")
     media = None
     if kind == 0:
         if "markdown" in payload or "media" in payload:

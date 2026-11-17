@@ -178,13 +178,14 @@ class V2MessageEvent(AstrMessageEvent):
                                media: dict | None = None, msg_id: str | None = None, msg_seq: int | None = None,
                                event_id: str | None = None, markdown: dict | None = None, keyboard: dict | None = None,
                                stream: dict | None = None, *, is_wakeup: bool | None = None,
-                               input_notify: dict | None = None, operation_id: str | None = None) -> dict:
+                               input_notify: dict | None = None, card: dict | None = None,
+                               operation_id: str | None = None) -> dict:
         """Forward a native C2C request without old SDK replay or channel substitution."""
         if stream is not None:
             raise unsupported("Use post_c2c_stream_message for native C2C fragments.")
         return await self.qq.post_c2c_message(openid, msg_type, content, embed, ark, message_reference,
             media, msg_id, msg_seq, event_id, markdown, keyboard, is_wakeup=is_wakeup,
-            input_notify=input_notify, operation_id=operation_id)
+            input_notify=input_notify, card=card, operation_id=operation_id)
 
 
     async def send_streaming(self, generator, use_fallback=False):

@@ -38,13 +38,15 @@ import v2.sdk, v2.sdk.api.groups, v2.profiles
 
 
 def test_catalog_excludes_only_documented_deprecated_announces():
-    assert len(HTTP_TARGETS) == 102
-    assert sum(entry.support != "excluded" for entry in HTTP_TARGETS.values()) == 100
+    assert len(HTTP_TARGETS) == 103
+    assert sum(entry.support != "excluded" for entry in HTTP_TARGETS.values()) == 101
     assert HTTP_TARGETS["A026"].path == "/v2/groups/{group_openid}/members/{member_openid}"
     assert HTTP_TARGETS["A027"].pagination == "cursor"
     assert HTTP_TARGETS["A058"].effect == "write"
     assert HTTP_TARGETS["A041"].support == "native"
     assert HTTP_TARGETS["A047"].support == HTTP_TARGETS["A048"].support == "native"
+    assert HTTP_TARGETS["A103"].path == "/v2/users/{user_openid}/info"
+    assert HTTP_TARGETS["A103"].method == "GET" and HTTP_TARGETS["A103"].effect == "read"
     assert {item.identifier for item in HTTP_TARGETS.values() if item.support == "excluded"} == {"A079", "A080"}
     assert all(item.support == "native" for item in HTTP_TARGETS.values() if item.identifier not in {"A079", "A080"})
 

@@ -29,6 +29,16 @@ def pagination_error(message):
     return V2Error("pagination_incomplete", message, status=502)
 
 
+def native_user_info(data):
+    if (not isinstance(data, dict)
+            or not isinstance(data.get("username"), str)
+            or not isinstance(data.get("avatar"), str)
+            or type(data.get("allow_proactive_msg")) is not bool):
+        raise V2Error("invalid_user_info", "QQ user info is missing required fields.", status=502)
+    if "union_openid" in data and data["union_openid"] is not None and not isinstance(data["union_openid"], str):
+        raise V2Error("invalid_user_info", "QQ user info union_openid must be a string.", status=502)
+    return data
+
 
 class NativeReadMixin:
     async def _native_read(self, path, *, params=None, json_body=None):
@@ -63,6 +73,10 @@ class NativeReadMixin:
     async def me(self) -> dict:
         """Fetch the native current-bot profile."""
         return await self._native_read("/users/@me")
+
+    async def get_user_info(self, user_openid: str) -> dict:
+        """Fetch one official C2C user profile without inventing union identifiers."""
+        return native_user_info(await self._native_read(f"/v2/users/{segment(user_openid)}/info"))
 
     async def me_guilds(self, guild_id: str | None = None, limit: int = 100, desc: bool = False) -> list:
         """Fetch one guild-membership page with the SDK's before/after convention."""

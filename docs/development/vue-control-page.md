@@ -24,16 +24,18 @@ ControlAPI 注册在插件命名空间下，当前页面使用这些请求组：
 | 用途 | 请求 | 后端职责 |
 | --- | --- | --- |
 | 初始化 | `bootstrap` | 返回 CSRF、全局开关、实例列表和设置默认值，不返回凭据。 |
-| 连接 | `connection`、`connection/save`、`connection/reload` | 读取和修改宿主平台配置；保存连接与重载实例分开。 |
+| 连接与接入 | `connection`、`connection/save`、`connection/reload` | 读取宿主配置；`connection/save` 保存连接并应用实例运行策略，重载仍单独确认。 |
 | 扫码绑定 | `onboarding/start`、`onboarding/status`、`onboarding/cancel`、`onboarding/commit` | 管理短期扫码租约，提交凭据时执行身份和凭据确认。 |
 | 本地菜单 | `config`、`commands`、`preview`、`config/mutate` | 读取设置草稿、命令目录和本地预览；`apply` 只改变本地运行设置。 |
 | QQ 面板 | `panels/plan`、`panels/enable`、`panels/sync`、`panels/disable`、`panels/status` | 预览范围、确认托管、同步或停止同步指定的远端面板。 |
-| 全局开关 | `flags` | 修改 WebUI、远端面板同步和旧 OneBot 网络入口的开关。 |
+| 全局开关 | `flags` | 修改 WebUI、远端面板同步和 OneBot 网络入口的开关。 |
 | 保留事件 | `inbox/retained`、`inbox/discard` | 查看元数据并在短期确认窗口内明确丢弃事件。 |
 
 每个管理请求都必须由页面桥接对象发送。POST 请求携带 `csrf`；涉及写入的连接和平台请求携带 `platform_id` 与当前 `fingerprint`；菜单草稿和预览请求还携带 `revision` 与 `scene`。页面应在目标实例切换、请求失败或收到 `config_conflict` 后重新读取状态，不能继续使用旧实例的 revision、fingerprint 或扫码 ticket。
 
-服务端先要求 Dashboard 管理员会话，再检查 `webui_enabled`。CSRF、实例指纹、草稿版本和平台代次分别防止跨站请求、写入错误实例、覆盖其他编辑者的草稿，以及操作已经重载或撤销的连接。前端确认框不能替代这些服务端检查。
+请求先由 AstrBot Plugin Web API 校验 Dashboard JWT 或 API key，再进入插件；插件只确认当前请求属于本插件上下文，并拒绝把 Plugin Page 的 asset token 当作管理凭证。CSRF、实例指纹、草稿版本和平台代次分别防止跨站请求、写入错误实例、覆盖其他编辑者的草稿，以及操作已经重载或撤销的连接。前端确认框不能替代这些服务端检查。CSRF 约 15 分钟过期；页面在 `csrf_expired` 时只 GET `bootstrap` 更新 csrf，不重放失败的 POST，由用户再点一次。
+
+ControlAPI 把预期管理错误和未预期异常写入应用日志，字段为 operation、code、status；不记录 CSRF、AppSecret、token 或请求体。
 
 ## 当前配置契约
 
@@ -43,19 +45,20 @@ ControlAPI 注册在插件命名空间下，当前页面使用这些请求组：
 appid, use_markdown, type, intents, shard_mode, shard, enable, onebot
 ```
 
-`type` 表示 WebSocket 或 Webhook 平台类型，`shard_mode` 表示自动或手动分片。旧配置中的 `transport`、`environment` 和 `is_sandbox` 由服务端兼容处理，Vue 页面不应把它们作为当前表单字段发送。`onebot` 是迁移期的旧网络入口配置；它不代表 SDK 的调用方式。
+`type` 表示 WebSocket 或 Webhook 平台类型，`shard_mode` 表示自动或手动分片。旧配置中的 `transport`、`environment` 和 `is_sandbox` 由服务端兼容处理，Vue 页面不应把它们作为当前表单字段发送。`onebot` 是 OneBot 网络入口配置；它不代表 SDK 的调用方式。
 
 `intents` 在表单中显示当前十进制掩码，并通过「配置事件订阅」弹窗编辑。弹窗提供四个官方事件类别开关（`PUBLIC_GUILD_MESSAGES 1<<30`、`INTERACTION 1<<26`、`GROUP_AND_C2C_EVENT 1<<25`、`DIRECT_MESSAGE 1<<12`，与 `v2/sdk/catalog.py` 的事件族一致），并在高级折叠区内保留十进制输入作为兜底。弹窗在草稿上操作：切换开关只增减对应位、保留未列出的订阅位，取消不写回表单，点击「应用」后掩码才进入表单并随连接保存提交整数。
 
 服务端以 `intents` 整数为唯一规范来源：`connection` 读取返回的 `fields` 携带与掩码一致的四个 `intent_*` 布尔投影；WebUI 保存掩码后服务端重派生并持久化这四个布尔，避免原生页面显示过期状态。AstrBot 原生平台页不显示整数掩码，只显示同一批 `intent_*` 开关（中英文描述由适配器 i18n 资源提供）；整配置保存绕过插件保存路径，实例加载时按开关应用已知位、保留自定义位。旧掩码含自定义位时，WebUI 保存只改变已知位并保留自定义位；最终掩码发生变化才写一条 warning，只含 platform_id 与新旧掩码。
 
-菜单草稿由 `v2/settings.py` 校验，包含四层 `layout`、四个场景的 `panels`、`scene_overrides`、`node_overrides` 和当前 `extensions` 字段。页面不能自行加入 `media_roots` 或其他未经 schema 声明的字段。编辑嵌套对象时，删除字段应在 patch 中表达为 `null`，因为服务端对对象使用递归合并。
+插件草稿由 `v2/settings.py` 校验，包含四层 `layout`、四个场景的 `panels`、`scene_overrides`、`node_overrides` 和当前 `extensions` 字段。命令页只编辑菜单、布局覆盖、回调键盘和票据；连接页的“实例运行策略”编辑媒体、流式、输入状态和管理写操作。连接页保存时直接应用运行策略，命令草稿仍需在命令页单独保存或应用；页面不能自行加入 `media_roots` 或其他未经 schema 声明的字段。编辑嵌套对象时，删除字段应在 patch 中表达为 `null`，因为服务端对对象使用递归合并。
 
-连接保存、菜单草稿保存和菜单应用是三个不同动作：
+连接保存和插件草稿动作仍使用不同存储，但连接页只有一个保存入口：
 
-1. 保存连接只写入宿主平台配置，并使旧实例代次失效；它不会自动连接 QQ。
-2. 保存草稿只写入设置版本；它不会发布 QQ 面板。
-3. 应用草稿只更新本地运行设置；发布 QQ 面板还需要打开 `remote_menu_sync`，重新预览范围并明确确认。
+1. 连接页“保存并应用配置”写入宿主平台配置，并把实例运行策略写入当前实例的插件设置；连接字段变化会使旧实例代次失效，但不会自动重载 QQ。
+2. 命令页草稿只写入菜单、布局、键盘和票据设置；应用命令草稿不会发布 QQ 面板。
+3. 发布 QQ 面板还需要打开 `remote_menu_sync`，重新预览范围并明确确认。
+4. 连接保存过程中若宿主配置已写入但运行策略应用失败，服务端返回 `settings_save_partial`；页面必须重新读取状态后再处理，不能盲目重试。
 
 页面切换实例或场景前，应检查连接表单和菜单草稿的 dirty 状态。加载新目标时先把响应写入临时对象，连接、配置和命令目录都成功后再替换页面状态。
 
@@ -92,9 +95,9 @@ event.bot.qq.events
 event.send(...)
 ```
 
-需要明确场景和目标时，使用 `event.bot.qq.send(scene, target, message, operation_id=...)` 或 SDK 中对应的具名 API。旧网络客户端应按照[SDK 迁移指南](sdk-migration.md)逐项迁移，确认调用方不再依赖网络入口后，再关闭 `onebot_network_enabled` 并移除实例监听配置。
+需要明确场景和目标时，使用 `event.bot.qq.send(scene, target, message, operation_id=...)` 或 SDK 中对应的具名 API。外部网络客户端可继续使用 OneBot 翻译层；需要原生字段和更细生命周期控制时，再按[SDK 迁移指南](sdk-migration.md)切换，确认不再依赖网络入口后才关闭 `onebot_network_enabled` 并移除实例监听配置。
 
-页面仍可以显示 OneBot 兼容入口的状态，因为迁移期间管理员需要知道监听是否启用、是否有独立 token 和是否需要重载。页面不能把 OneBot action 当作 SDK 功能清单，也不能为了兼容外部客户端而给 SDK 增加数字 QQ 号、跨场景 ID 或隐式权限。
+页面仍可以显示 OneBot 兼容入口的状态，便于管理员查看监听、独立 token 和重载要求。页面不能把 OneBot action 当作 SDK 功能清单，也不能为了兼容外部客户端而给 SDK 增加数字 QQ 号、跨场景 ID 或隐式权限。
 
 ## 本地开发和构建
 
@@ -131,7 +134,8 @@ git status --short
 - 实例或场景切换时的 dirty guard、revision 冲突和旧状态清理；
 - 菜单递归 patch、四层布局预览、保存与本地应用的分离；
 - 远端面板 plan fingerprint、全局开关确认、pending/unknown/reconcile；
-- 重复 operation ID、代次失效、服务端超时和进程重启后的状态查询。
+- 重复 operation ID、代次失效、服务端超时和进程重启后的状态查询；
+- CSRF 过期后刷新 bootstrap token，且不自动重放 POST。
 
 Python 回归测试按仓库的隔离运行器执行：
 

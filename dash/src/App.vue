@@ -5,7 +5,7 @@ import ConnectionPanel from "./ConnectionPanel.vue";
 import CommandPanel from "./CommandPanel.vue";
 import RemotePanel from "./RemotePanel.vue";
 import SdkPanel from "./SdkPanel.vue";
-import { changed, clone, connectionFields, createApi } from "./api.js";
+import { changed, clone, connectionFields, createApi, runtimePolicyFields } from "./api.js";
 import { applyHostContext, t, tError, tState } from "./i18n.js";
 import "./styles.css";
 
@@ -131,7 +131,12 @@ const connectionDirty = computed(() => {
     return true;
   }
 });
-const draftDirty = computed(() => Boolean(state.current && state.draftSnapshot && JSON.stringify(state.draft) !== state.draftSnapshot));
+const draftDirty = computed(() => {
+  if (!state.current || !state.draftSnapshot) return false;
+  const commandDirty = JSON.stringify(state.draft) !== state.draftSnapshot;
+  const runtimeDirty = JSON.stringify(runtimePolicyFields(state.extensions)) !== JSON.stringify(runtimePolicyFields(state.current.draft.extensions));
+  return commandDirty || runtimeDirty;
+});
 const dirty = computed(() => connectionDirty.value || draftDirty.value);
 const remoteAttention = computed(() => {
   const remote = state.current?.remote_state?.[state.scene];

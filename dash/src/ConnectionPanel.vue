@@ -1,7 +1,8 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 import AbSelect from "./AbSelect.vue";
-import { changed, connectionFields, createIntentsEditor, KNOWN_INTENT_BITS } from "./api.js";
+
+import { changed, clone, connectionFields, createIntentsEditor, KNOWN_INTENT_BITS, runtimePolicyFields } from "./api.js";
 import { t, tError, tScanHint, tState } from "./i18n.js";
 
 const props = defineProps({
@@ -31,6 +32,10 @@ const secretActionOptions = computed(() => [
   { value: "keep", label: t("conn.secretKeep") },
   { value: "replace", label: t("conn.secretReplace") },
   { value: "clear", label: t("conn.secretClear") },
+]);
+const streamFallbackOptions = computed(() => [
+  { value: "aggregate", label: t("conn.streamAggregate") },
+  { value: "reject", label: t("conn.streamReject") },
 ]);
 const knownIntentOptions = computed(() =>
   KNOWN_INTENT_BITS.map(entry => ({ ...entry, label: t(`conn.intentsBit.${entry.name}`) }))
@@ -107,17 +112,39 @@ function save() {
       shard: Array.isArray(props.state.view.fields?.shard) ? props.state.view.fields.shard : [0, 1],
       enable: Boolean(props.state.view.fields?.enable),
     };
-    await props.api.saveConnection({
+    const runtimePolicy = runtimePolicyFields(props.state.extensions);
+    const savedRuntimePolicy = runtimePolicyFields(props.state.current?.draft?.extensions || {});
+    const runtimeChanged = JSON.stringify(runtimePolicy) !== JSON.stringify(savedRuntimePolicy);
+    if (runtimeChanged && next.appid !== base.appid) throw new Error(t("conn.runtimeIdentityRequired"));
+    const localDraft = props.state.draft ? clone(props.state.draft) : null;
+    const response = await props.api.saveConnection({
       patch: changed(base, next),
+      ...(runtimeChanged ? { settings_revision: props.state.current.revision, runtime_policy: runtimePolicy } : {}),
       secret_action: props.state.secretAction,
       ...(secret ? { secret } : {}),
       confirm: true,
       confirm_secret: props.state.confirmSecret,
       confirm_identity: props.state.confirmIdentity,
     });
+    if (response?.settings) {
+      props.state.view = response;
+      props.state.current = response.settings;
+      props.state.draft = localDraft || clone(response.settings.draft);
+      props.state.draft.extensions = {
+        ...props.state.draft.extensions,
+        ...runtimePolicyFields(response.settings.draft.extensions),
+      };
+      props.state.draftSnapshot = JSON.stringify(response.settings.draft);
+      props.state.extensions = {
+        ...props.state.extensions,
+        ...runtimePolicyFields(response.settings.draft.extensions),
+      };
+      props.state.restoreRevision = response.settings.versions?.at(-1) || response.settings.revision;
+    } else {
+      emit("reload");
+    }
     props.state.secret = "";
     emit("status", t("conn.savedStatus"));
-    emit("reload");
   });
 }
 
@@ -273,6 +300,18 @@ onBeforeUnmount(() => { window.removeEventListener("pagehide", leave); leave(); 
           <label>{{ t("conn.shardIndex") }}<input v-model.number="state.form.shardIndex" type="number" min="0" max="1023"></label>
           <label>{{ t("conn.shardCount") }}<input v-model.number="state.form.shardCount" type="number" min="1" max="1024"></label>
         </div>
+      </fieldset>
+      <fieldset v-if="state.current">
+        <legend>{{ t("conn.runtimePolicyTitle") }}</legend>
+        <p class="muted">{{ t("conn.runtimePolicyDesc") }}</p>
+        <div class="form-grid">
+          <label>{{ t("conn.mediaMaxBytes") }}<input v-model.number="state.extensions.media_max_bytes" type="number" min="1" max="200000000"></label>
+          <label>{{ t("conn.streamFallback") }}<AbSelect v-model="state.extensions.stream_fallback" :options="streamFallbackOptions" /></label>
+          <label>{{ t("conn.streamMaxChars") }}<input v-model.number="state.extensions.stream_max_chars" type="number" min="1" max="4096"></label>
+          <label>{{ t("conn.streamTimeout") }}<input v-model.number="state.extensions.stream_timeout" type="number" min="1" max="180"></label>
+        </div>
+        <label class="check-row"><input v-model="state.extensions.typing_enabled" type="checkbox"> {{ t("conn.typingEnabled") }}</label>
+        <label class="check-row"><input v-model="state.extensions.management_writes" type="checkbox"> {{ t("conn.managementWrites") }}</label>
       </fieldset>
 
       <div class="form-grid">
