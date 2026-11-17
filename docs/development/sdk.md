@@ -7,7 +7,7 @@ client = event.bot
 native = client.qq       # 官方 V2 具名 API，保留官方字段和响应
 ```
 
-插件优先使用 `event.send(...)`、`event.bot.qq` 和 `event.bot.qq.events`。`client.api`、`event.bot.api` 与 `client.call_action()` 保留给已有兼容代码；独立 OneBot 网络入口处于计划废弃阶段。网络调用到 SDK 的对应关系见 [迁移指南](sdk-migration.md)。
+插件优先使用 `event.send(...)`、`event.bot.qq` 和 `event.bot.qq.events`。`client.api`、`event.bot.api` 与 `client.call_action()` 保留给已有兼容代码；独立 OneBot 网络入口与进程内 SDK 都是正式公共入口。网络调用到 SDK 的对应关系见 [迁移指南](sdk-migration.md)。
 
 `client.qq.get_group_member_info(group, member)` 返回 QQ 原始响应。兼容调用仍接受 OneBot 风格的参数和投影，调用入口不会扩大权限。
 
@@ -27,7 +27,7 @@ member = await event.bot.qq.get_group_member_info(event.route.target, "成员 Op
 
 原生 API 位于 `v2/sdk/api/`：
 
-- `reads.py`：网关、机器人资料、群/频道/成员、菜单/面板和分页读取；
+- `reads.py`：网关、机器人资料、C2C 用户信息、群/频道/成员、菜单/面板和分页读取；
 - `messages.py`：群/C2C/频道/DM 消息、撤回、修改和互动 ACK；
 - `media.py`：文件发送（URL、upload_id 或 ≤5MB 的 file_data 二进制直传）、上传准备、分片 PUT/finish/complete；
 - `group_admin.py`：群禁言、踢人、黑名单和入群申请；
@@ -35,7 +35,7 @@ member = await event.bot.qq.get_group_member_info(event.route.target, "成员 Op
 - `menus.py`：菜单与面板管理；
 - `material.py`：平台素材图片 prepare/complete/删除与有效图片列表，`qqbot-media://` 引用可写入 Markdown。
 
-目录登记 102 个官方 HTTP target，其中 100 个已实现/可用、2 个明确 excluded；另有 64 个旧 SDK 风格具名方法。逐项目录见 [SDK 覆盖台账](../SDK_COVERAGE.md)；实现不代表账号一定有权调用。
+目录登记 103 个官方 HTTP target，其中 101 个已实现/可用、2 个明确 excluded；另有 64 个旧 SDK 风格具名方法。逐项目录见 [SDK 覆盖台账](../SDK_COVERAGE.md)；实现不代表账号一定有权调用。
 
 ## 管理写入
 

@@ -17,8 +17,11 @@
 | --- | --- | --- |
 | timestamp | integer | 事件时间戳（Unix 秒） |
 | group_openid | string | 群 OpenID |
+| union_group_openid | string | 跨应用关联群 OpenID，当绑定了第三方应用时有效 |
 | member_openid | string | 退出成员的 OpenID |
 | user_openid | string | 退出成员的用户 OpenID（可能为空） |
+
+> 本地校注（changelog 20261116）：事件体已写入 `union_group_openid`。官方 autogen 页表示例尚未同步。该字段不作为群路由主键。
 
 ### 事件示例
 

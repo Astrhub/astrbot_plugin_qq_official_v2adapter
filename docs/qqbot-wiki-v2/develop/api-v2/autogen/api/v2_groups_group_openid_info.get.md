@@ -35,11 +35,14 @@ GET /v2/groups/3E5D8A1F7B2C9E4D6A0F1B3C5D7E9F2A/info
 | 名称 | 类型 | 描述 |
 | --- | --- | --- |
 | group_openid | string | 群 OpenID |
+| union_group_openid | string | 跨应用关联群 OpenID，当绑定了第三方应用时有效 |
 | group_name | string | 群名称 |
 | group_finger_memo | string | 群简介 |
 | group_class_text | string | 群分类 |
 | group_tags | []string | 群标签列表 |
 | group_member_num | integer | 群成员人数 |
+
+> 本地校注（changelog 20261116）：响应体已写入 `union_group_openid`。官方 autogen 页表示例尚未同步。该字段不作为群 OpenID 或路由主键。
 
 ## 响应示例
 

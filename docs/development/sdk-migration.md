@@ -1,6 +1,7 @@
-# 从旧 OneBot 网络入口迁移到进程内 SDK
+# 从 OneBot 网络入口迁移到进程内 SDK
 
-独立 OneBot HTTP/正向 WebSocket 入口处于计划废弃阶段。当前版本继续保留它来承接已有外部客户端；新插件和新集成直接调用进程内 SDK。这样可以复用当前事件的机器人身份、场景、权限检查和发送账本，也不需要为插件单独配置监听端口和 token。
+独立 OneBot 网络入口与进程内 SDK 都是正式公共入口。前者提供 OneBot v11 到 QQ 官方 V2 的直接翻译，后者提供原生字段和更细的生命周期控制；两者复用当前事件身份、场景、权限检查和发送账本，调用方不需要另写 QQ V2 适配器。
+
 
 ## 接入 SDK
 
@@ -36,7 +37,7 @@ state = event.bot.qq.send_status(result["operation_id"])
 
 ## 常用调用对应关系
 
-| 旧网络 action | 进程内 SDK |
+| OneBot 网络 action | 进程内 SDK |
 | --- | --- |
 | `send_group_msg` | 事件内使用 `await event.send(message)`；明确目标时使用 `await event.bot.qq.send("group", group_openid, message)` |
 | `send_private_msg` | `await event.bot.qq.send("c2c", user_openid, message)` |
@@ -45,7 +46,7 @@ state = event.bot.qq.send_status(result["operation_id"])
 | `get_group_info` | `await event.bot.qq.get_group_info(group_openid)` |
 | `get_group_member_info` | `await event.bot.qq.get_group_member_info(group_openid, member_openid)` |
 | `get_group_member_list` | 获取一页使用 `await event.bot.qq.get_group_member_list(group_openid, cursor)`；完整遍历使用 `async for row in event.bot.qq.iter_group_members(group_openid)` |
-| `get_stranger_info` | 群成员资料使用 `await event.bot.qq.profiles.get_member(group_openid, member_openid, mode="prefer_cache")`；需要新鲜数据时使用 `mode="refresh"` |
+| `get_stranger_info` | C2C 使用 `await event.bot.qq.get_user_info(user_openid)`；群成员使用 `await event.bot.qq.profiles.get_member(group_openid, member_openid, mode="prefer_cache")`，需要新鲜数据时使用 `mode="refresh"` 或 `get_group_member_info` |
 | `set_group_ban` | 使用 `await event.bot.qq.group_ban(group, member, duration, operation_id=...)`；原生管理方法见 [SDK 指南](sdk.md) |
 | `set_group_kick` | 使用 `await event.bot.qq.group_kick(group, [member], blacklist=..., operation_id=...)` |
 | `set_group_add_request` | 使用 `await event.bot.qq.approve(flag, approve=..., reason=..., blacklist=...)`；需要原生参数时使用 `approve_group_join_request(...)` |

@@ -21,6 +21,7 @@ content 字段已自动去除@机器人的前缀。
 | author | [User](#user) | 发送者（member_openid 有值） |
 | content | string | 消息文本内容（已去除@机器人的前缀） |
 | group_openid | string | 群 OpenID |
+| union_group_openid | string | 跨应用关联群 OpenID，当绑定了第三方应用时有效 |
 | timestamp | string | 消息发送时间，RFC3339 格式 |
 | message_type | integer | 消息内容类型（同 C2C_MESSAGE_CREATE） |
 | message_scene | [MessageScene](#messagescene) | 消息场景上下文 |
@@ -29,12 +30,16 @@ content 字段已自动去除@机器人的前缀。
 | ark_data | [ARKData](#arkdata) | 结构化卡片消息数据 |
 | msg_elements | [][MsgElement](#msgelement) | 消息元素列表 |
 
+> 本地校注（changelog 20261116）：事件体已写入 `union_group_openid`，User 表已写入 `member_nickname` 与头像。官方 autogen 页表示例尚未同步。`union_group_openid` 不作为群路由主键。
+
 #### User
 
 | 名称 | 类型 | 描述 |
 | --- | --- | --- |
 | id | string | 用户唯一标识（OpenID 格式） |
 | username | string | 用户昵称 |
+| member_nickname | string | 群内昵称 |
+| avatar | string | 用户头像 |
 | bot | boolean | 是否为机器人 |
 | union_openid | string | 跨应用统一用户 OpenID（可能为空） |
 | union_user_account | string | 跨应用统一用户账号（可能为空） |

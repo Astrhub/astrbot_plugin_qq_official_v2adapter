@@ -1,6 +1,16 @@
-<!-- 来源: https://bot.q.qq.com/wiki/develop/api-v2/changelog.html · 抓取 2026-11-04 -->
+<!-- 来源: https://bot.q.qq.com/wiki/develop/api-v2/changelog.html · 抓取 2026-11-16 -->
 
 # 变更记录
+
+
+## 20261116
+
+### 新增
+
+- **获取用户基本信息（`GET /v2/users/{user_openid}/info`）**：新增获取用户基本信息接口。
+- **单聊消息**：下发事件中增加消息发送者的昵称、头像。
+- **群聊消息**：下发事件中增加 `member_nickname`（群内昵称）字段及头像。
+- **群统一标识**：获取群基本信息接口，以及机器人进群、退群、群成员增减、群消息等事件新增 `union_group_openid` 字段，支持跨应用关联群 openid（当绑定了3方应用时有效）。
 
 ## 20261028
 

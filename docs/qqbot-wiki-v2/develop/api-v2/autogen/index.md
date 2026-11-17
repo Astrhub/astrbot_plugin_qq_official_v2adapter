@@ -55,6 +55,9 @@
 
 - [GET /users/@me](api/users_me.get.md) — 获取机器人详情
 - [GET /users/@me/guilds](api/users_me_guilds.get.md) — 获取机器人频道列表
+- [GET /v2/users/{user_openid}/info](api/v2_users_user_openid_info.get.md) — 获取用户基本信息
+
+> 本地校注（2026-11-16）：官方 autogen 索引页尚未列出该接口；本条按已发布页面与 changelog `20261116` 增补。
 
 ### 用户/网关
 

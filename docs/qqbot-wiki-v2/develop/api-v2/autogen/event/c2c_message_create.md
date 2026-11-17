@@ -28,12 +28,15 @@
 | ark_data | [ARKData](#arkdata) | 结构化卡片消息数据（message_type=3 时有值） |
 | msg_elements | [][MsgElement](#msgelement) | 消息元素列表（message_type=103 引用消息时包含被引用内容） |
 
+> 本地校注（changelog 20261116）：User 表已写入作者头像。官方 autogen 页表示例尚未同步。
+
 #### User
 
 | 名称 | 类型 | 描述 |
 | --- | --- | --- |
 | id | string | 用户唯一标识（OpenID 格式） |
 | username | string | 用户昵称 |
+| avatar | string | 用户头像 |
 | bot | boolean | 是否为机器人 |
 | union_openid | string | 跨应用统一用户 OpenID（可能为空） |
 | union_user_account | string | 跨应用统一用户账号（可能为空） |
