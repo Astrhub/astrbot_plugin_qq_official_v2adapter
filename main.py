@@ -129,7 +129,7 @@ class QQOfficialV2(Star):
                         "appid": {"description": "QQ AppID", "type": "string"},
                         **{name: {"description": name, "hint": name, "type": "bool"} for name in INTENT_SWITCH_FIELDS},
                         **{key: {"invisible": True} for key in
-                           ("environment", "transport", "intents", "shard", "shard_mode", "onebot", "logo_token")},
+                           ("environment", "transport", "intents", "shard", "shard_mode", "logo_token")},
                     },
                 )(adapter)
                 self.adapter_classes[kind] = adapter

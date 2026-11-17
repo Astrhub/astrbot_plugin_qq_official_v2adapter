@@ -58,7 +58,7 @@ def normalize_connection(config):
 
 def saved_connection(config):
     value = normalize_connection(config)
-    for key in ("environment", "transport", "unified_webhook_mode", "logo_token"):
+    for key in ("environment", "transport", "unified_webhook_mode", "logo_token", "onebot"):
         value.pop(key, None)
     return value
 

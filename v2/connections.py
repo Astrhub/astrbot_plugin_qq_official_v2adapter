@@ -20,16 +20,12 @@ from .connection_config import (
 )
 from .errors import V2Error
 from .models import InstanceKey, RobotKey, text_id
-from .network_config import DEFAULT_NETWORK, NETWORK_FIELDS, network_config
 
 EDITABLE = {"appid", "use_markdown", "type", "intents", "shard_mode", "shard", "enable"}
 LEGACY_FIELDS = {"transport"}
-IGNORED_FIELDS = {"is_sandbox", "environment"}
+IGNORED_FIELDS = {"is_sandbox", "environment", "onebot"}
 DEFAULT_CONNECTION = {"type": PLATFORM_TYPE, "enable": False, "appid": "", "secret": "",
                       "use_markdown": True, "intents": DEFAULT_INTENTS, "shard_mode": "auto"}
-EDITABLE |= {"onebot"}
-DEFAULT_CONNECTION["onebot"] = dict(DEFAULT_NETWORK)
-
 
 class Connections:
     def __init__(self, owner):
@@ -58,7 +54,6 @@ class Connections:
         existing_ids = {p.get("id") for p in self._config().get("platform", [])}
         self.reload_results = {k: v for k, v in self.reload_results.items() if k in existing_ids}
         value = normalize_connection(config if config is not None else {**DEFAULT_CONNECTION, "id": platform_id})
-        network = network_config(value.get("onebot"))
         instance = next((i for i in self.owner.instances if i.identity.platform_id == platform_id), None)
         runtime = instance.runtime_status() if instance else {"state": "configured" if config else "not_configured", "online": False}
         reload_state = self.reload_results.get(platform_id, "not_requested")
@@ -71,12 +66,9 @@ class Connections:
                 reload_state = "webhook_ready_unverified"
         return {"platform_id": platform_id, "exists": config is not None,
                 "fingerprint": self.fingerprint(platform_id, config),
-                "fields": {**{k: value[k] for k in EDITABLE - {"onebot"} if k in value},
-                           **{k: value[k] for k in INTENT_BOOL_FIELDS},
-                           "onebot": {k: network[k] for k in NETWORK_FIELDS}},
-                "network_token_configured": bool(network["token"]),
-                "network_global_enabled": self.owner.config.get("onebot_network_enabled") is True,
-                "capabilities": instance.client.capabilities() if instance else {**__import__(__package__ + ".client", fromlist=["V2Client"]).V2Client(InstanceKey(platform_id, RobotKey(value.get("appid") or "unconfigured"))).capabilities(), "network_api": {"state": "not_loaded"}},
+                "fields": {**{k: value[k] for k in EDITABLE if k in value},
+                           **{k: value[k] for k in INTENT_BOOL_FIELDS}},
+                "capabilities": instance.client.capabilities() if instance else __import__(__package__ + ".client", fromlist=["V2Client"]).V2Client(InstanceKey(platform_id, RobotKey(value.get("appid") or "unconfigured"))).capabilities(),
                 "credentials_configured": bool(value.get("secret")),
                 "webhook_path": f"/api/platform/webhook/{value['webhook_uuid']}" if value["transport"] == "webhook" and value.get("webhook_uuid") else None,
                 "runtime": runtime, "reload": reload_state,
@@ -119,9 +111,6 @@ class Connections:
             raise V2Error("invalid_credentials", "Credentials have an invalid shape.")
         if secret and (all(c in "*•●…" for c in secret) or secret in {"[REDACTED]", "已配置"}):
             raise V2Error("invalid_credentials", "A credential mask is not a replacement secret.")
-        candidate["onebot"] = network_config(candidate.get("onebot"))
-        if candidate["onebot"]["token"] and candidate["onebot"]["token"] == secret:
-            raise V2Error("invalid_network_token", "OneBot must not reuse the QQ secret.")
         if candidate["enable"] and (not appid or not secret):
             raise V2Error("missing_credentials", "An enabled platform requires AppID and secret.")
         if identity.transport == "webhook":
@@ -146,8 +135,7 @@ class Connections:
                     raise V2Error("duplicate_receiver", "Another enabled V2 configuration conflicts with this robot's receiving mode or shard.", status=409)
 
     async def save(self, platform_id, fingerprint, patch, *, secret_action="keep", secret=None, confirm=False,
-                   confirm_identity=False, confirm_secret=False, guard=lambda: None,
-                   network_token_action="keep", network_token=None, confirm_network_token=False, confirm_network_writes=False):
+                   confirm_identity=False, confirm_secret=False, guard=lambda: None):
         async with self.lock:
             if self.owner.stopping:
                 raise V2Error("service_stopped", "Plugin is stopped.", status=503)
@@ -178,24 +166,6 @@ class Connections:
             if custom_intents and "intents" in patch:
                 candidate["intents"] = (candidate["intents"] & KNOWN_INTENTS) | custom_intents
                 candidate = saved_connection(candidate)
-            previous_network = network_config((old or {}).get("onebot"))
-            network_patch = patch.get("onebot", {})
-            if not isinstance(network_patch, dict) or network_patch.keys() - NETWORK_FIELDS:
-                raise V2Error("invalid_network_config", "Edit the network token through its dedicated confirmed operation.")
-            candidate["onebot"] = {**previous_network, **network_patch}
-            if network_token_action not in {"keep", "replace", "clear"}:
-                raise V2Error("invalid_network_config", "Unknown network token operation.")
-            if network_token_action == "keep":
-                if network_token not in (None, ""):
-                    raise V2Error("network_token_confirmation_required", "Select token replacement explicitly.")
-            else:
-                if confirm_network_token is not True:
-                    raise V2Error("network_token_confirmation_required", "Confirm network token replacement or clearing.")
-                if network_token_action == "replace" and (not isinstance(network_token, str) or not network_token):
-                    raise V2Error("invalid_network_token", "Replacement token must be nonempty.")
-                candidate["onebot"]["token"] = network_token if network_token_action == "replace" else ""
-            if candidate["onebot"]["writes"] is True and previous_network["writes"] is not True and confirm_network_writes is not True:
-                raise V2Error("network_write_confirmation_required", "Confirm granting this dedicated token network write access.")
             if old and old.get("appid") and any(normalize_connection(candidate).get(k) != normalize_connection(old).get(k) for k in ("appid",)) and confirm_identity is not True:
                 raise V2Error("identity_confirmation_required", "Confirm rebinding the robot identity.")
             if secret_action not in {"keep", "replace", "clear"}:

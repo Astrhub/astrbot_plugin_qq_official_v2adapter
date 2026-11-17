@@ -22,7 +22,7 @@ from .panels import routed_configs
 from .settings import DEFAULTS, merge_patch, validate_settings
 from .transport.webhook import bounded_body
 
-FLAGS = {"webui_enabled": True, "remote_menu_sync": False, "onebot_network_enabled": False}
+FLAGS = {"webui_enabled": True, "remote_menu_sync": False}
 
 
 def log_control_error(operation, code, status, *, unexpected=False, error_type=None):
@@ -202,9 +202,7 @@ class ControlAPI:
                 self.owner.store.validate_runtime_policy(previous_identity.settings_key, body.get("settings_revision"), runtime_policy)
             result = await connections.save(platform_id, body.get("fingerprint"), body.get("patch", {}),
                 secret_action=body.get("secret_action", "keep"), secret=body.get("secret"), confirm=body.get("confirm"),
-                confirm_identity=body.get("confirm_identity"), confirm_secret=body.get("confirm_secret"),
-                network_token_action=body.get("network_token_action", "keep"), network_token=body.get("network_token"),
-                confirm_network_token=body.get("confirm_network_token"), confirm_network_writes=body.get("confirm_network_writes"))
+                confirm_identity=body.get("confirm_identity"), confirm_secret=body.get("confirm_secret"))
             if runtime_policy is None:
                 return result
             _, current_identity, _ = self.platform(platform_id)
@@ -283,9 +281,6 @@ class ControlAPI:
                 self.owner.config.clear()
                 self.owner.config.update(old)
                 raise V2Error("config_save_failed", "Host switch save failed; reload to verify disk state.", status=503) from exc
-            if patch.get("onebot_network_enabled") is False:
-                for instance in self.owner.instances:
-                    instance.network.revoke()
             return {"flags": self.flags(), "revision": self.fingerprint(self.flags())}
         platform_id = body.get("platform_id") if request.method == "POST" else request.query.get("platform_id")
         config, identity, fingerprint = self.platform(platform_id)

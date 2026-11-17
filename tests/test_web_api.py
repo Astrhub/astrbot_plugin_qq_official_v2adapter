@@ -30,7 +30,7 @@ def make_api(monkeypatch):
     holder = {"body": b"{}"}
     owner = SimpleNamespace(
         stopping=False,
-        config={"webui_enabled": True, "remote_menu_sync": False, "onebot_network_enabled": False},
+        config={"webui_enabled": True, "remote_menu_sync": False},
         context=object(),
     )
     api = ControlAPI(owner)

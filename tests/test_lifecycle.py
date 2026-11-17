@@ -100,7 +100,7 @@ async def test_platform_form_uses_chinese_labels_without_changing_config(plugin_
         platform_meta = data["metadata"]["platform_group"]["metadata"]["platform"]
         items = platform_meta["items"]
         assert items["is_sandbox"] == sandbox_metadata and items["is_sandbox"]["type"] == "bool"
-        for key in ("environment", "transport", "intents", "shard", "shard_mode", "onebot"):
+        for key in ("environment", "transport", "intents", "shard", "shard_mode"):
             assert items[key]["invisible"] is True
         for name in INTENT_BOOL_FIELDS:
             assert items[name]["type"] == "bool" and not items[name].get("invisible")
@@ -117,7 +117,7 @@ async def test_platform_form_uses_chinese_labels_without_changing_config(plugin_
             assert items["logo_token"]["invisible"] is True
         else:
             assert template["logo_url"] == f"/api/v1/logos/platform/{PLATFORM_TYPE}"
-        assert platform_meta["config_template"][PLATFORM_TYPE]["onebot"]["enable"] is False
+        assert "onebot" not in items and "onebot" not in platform_meta["config_template"][PLATFORM_TYPE]
         assert platform_meta["config_template"][PLATFORM_TYPE]["shard_mode"] == "auto"
         assert "shard" not in platform_meta["config_template"][PLATFORM_TYPE]
     finally:

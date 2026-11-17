@@ -15,7 +15,7 @@ class Endpoint:
     permission: str = "qq_response_required"
 
 
-# One method+path per line, independent of OneBot network action allowlists.
+# One method+path per line, independent of OneBot compatibility action lists.
 _TARGETS = """
 A001 GET /gateway M4
 A002 GET /gateway/bot M4

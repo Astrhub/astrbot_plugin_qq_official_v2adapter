@@ -6,7 +6,7 @@ import sqlite3
 from ..errors import V2Error
 from ..messaging.convert import convert_chat
 from ..profiles.observations import merge_chat
-from ..protocol import CHAT_EVENTS, NOTICE_EVENTS, RawEnvelope
+from ..protocol import CHAT_EVENTS, RawEnvelope
 from .catalog import EVENT_NAMES
 from .events import EventContext, NativeEvent, validate_event
 from .identifiers import text_id
@@ -193,15 +193,10 @@ class CoreConsumer:
                 event = NativeEvent(payload, context, client=self.adapter.client.qq, reply_context=reply)
                 bus.publish(event, raw_only=not event.schema_valid)
                 self.published.add(receipt)
-            if name in NOTICE_EVENTS:
-                if network := getattr(self.adapter, "network", None):
-                    network.observe_notice(name, data)
             self.inbox.core_done(self.owner_key, receipt, state="degraded" if error else "done", error=error)
             if name not in CHAT_EVENTS:
                 if name not in EVENT_NAMES:
                     self.inbox.retain(self.owner_key, receipt, "unknown_event")
-                    if network := getattr(self.adapter, "network", None):
-                        network.events.retained(name)
                 else:
                     self.inbox.acknowledge(self.owner_key, receipt, host=False)
             self.published.discard(receipt)

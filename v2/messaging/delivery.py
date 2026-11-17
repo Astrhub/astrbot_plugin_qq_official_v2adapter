@@ -5,7 +5,7 @@ import sqlite3
 from ..errors import V2Error
 from ..models import text_id
 from ..profiles.display import enrich_chat
-from ..protocol import CHAT_EVENTS, NOTICE_EVENTS, RawEnvelope
+from ..protocol import CHAT_EVENTS, RawEnvelope
 from .convert import convert_chat
 
 
@@ -94,10 +94,6 @@ class ChatConsumer:
                         return True
                 self.inbox.retain(self.owner_key, receipt, "non_chat_event")
                 self.state = "extension_retained"
-                if (payload.get("op") == 0 and isinstance(payload.get("d"), dict)
-                        and payload.get("t") not in NOTICE_EVENTS
-                        and (network := getattr(self.adapter, "network", None))):
-                    network.events.retained(payload.get("t"))
                 return True
             try:
                 chat = convert_chat(self.adapter.identity, RawEnvelope(payload, item["received_at"]),
@@ -139,8 +135,6 @@ class ChatConsumer:
             self.adapter.session_sources.record(chat, self.store.now())
             self.inbox.acknowledge(self.owner_key, receipt)
             self.enqueued.discard(receipt)
-            if network := getattr(self.adapter, "network", None):
-                network.observe_chat(chat)
             self.state, self.last_error = "delivered_to_host", None
             return True
         self.state = "idle"
