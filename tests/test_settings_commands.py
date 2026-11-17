@@ -64,6 +64,25 @@ def test_draft_apply_conflict_recovery(tmp_path):
         second.close()
 
 
+
+def test_runtime_policy_applies_without_applying_command_draft(tmp_path):
+    store = SettingsStore(tmp_path / "config.db")
+    try:
+        saved = store.mutate("a", 0, "alice", operation="save", patch={"title": "pending command"})
+        applied = store.apply_runtime_policy(
+            "a", saved["revision"], "alice", {"media_max_bytes": 12345, "management_writes": True}
+        )
+        assert applied["draft"]["title"] == "pending command"
+        assert applied["applied"]["title"] != "pending command"
+        assert applied["draft"]["extensions"]["media_max_bytes"] == 12345
+        assert applied["applied"]["extensions"]["management_writes"] is True
+        assert applied["state"] == "draft"
+        with pytest.raises(V2Error) as error:
+            store.apply_runtime_policy("a", saved["revision"], "bob", {"typing_enabled": True})
+        assert error.value.code == "config_conflict"
+    finally:
+        store.close()
+
 @pytest.mark.parametrize("patch", [{"secret": "not-storable"}, {"schema_version": 3}, {"layout": {"home": {"page_size": 0}}},
                                      {"layout": {"home": {"columns": 6}}}, {"layout": {"home": {"style": "<script>"}}},
                                      {"scene_overrides": {"evil": {}}}, {"title": ""}, {"layout": {"home": {"show_description": 1}}}])

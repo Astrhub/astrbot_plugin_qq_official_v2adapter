@@ -23,6 +23,10 @@ def test_control_view_singlefile_artifact_and_i18n_metadata():
     assert 'src="' not in html and 'href="' not in html
     assert "localStorage" not in html and "media_roots" not in html and "onebot_network_enabled" not in html
     assert "配置事件订阅" in html and "Configure Event Subscriptions" in html
+    assert "管理确认已过期，已刷新，请再点击一次。" in html
+    assert "Management confirmation expired and was refreshed. Click again to continue." in html
+    assert "管理确认已过期且刷新失败，请点击「刷新」后重试。" in html
+    assert "Management confirmation expired and refresh failed. Click Refresh, then retry." in html
     for src_file in (ROOT / "dash" / "src").glob("*"):
         src_text = src_file.read_text(encoding="utf-8")
         assert "fetch(" not in src_text and "localStorage" not in src_text and "window.confirm" not in src_text
@@ -55,6 +59,28 @@ def test_connection_panel_intents_dialog_cancel_and_apply_contract():
     assert re.search(r"watch\(\s*\(\) => props\.state\.view", src)
 
 
+def test_runtime_policy_placement_and_shared_draft_actions():
+    connection = (ROOT / "dash" / "src" / "ConnectionPanel.vue").read_text(encoding="utf-8")
+    command = (ROOT / "dash" / "src" / "CommandPanel.vue").read_text(encoding="utf-8")
+
+    for field in (
+        "media_max_bytes",
+        "stream_fallback",
+        "stream_max_chars",
+        "stream_timeout",
+        "typing_enabled",
+        "management_writes",
+    ):
+        assert f"state.extensions.{field}" in connection
+        assert f"state.extensions.{field}" not in command
+
+    for field in ("ticket_ttl", "keyboard_enabled", "keyboard_execute"):
+        assert f"state.extensions.{field}" in command
+    assert "<DraftActions" not in connection and "<DraftActions" in command
+    assert "runtimePolicyFields" in connection and "runtime_policy" in connection
+    assert "draftPatch(props.state)" in (ROOT / "dash" / "src" / "DraftActions.vue").read_text(encoding="utf-8")
+
+
 def test_control_view_api_state_machine_and_i18n_theme_sync():
     node = os.environ.get("V2_NODE")
     assert node, "Node is required for the Vue control view state-machine test."
@@ -62,7 +88,7 @@ def test_control_view_api_state_machine_and_i18n_theme_sync():
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import { applyHostContext, isDark, locale, t, tError, tScanHint, tState } from "/plugin/dash/src/i18n.js";
-import { changed, connectionFields, createIntentsEditor, createApi, KNOWN_INTENT_BITS, toUint32, unknownIntentBits, withIntentBit } from "/plugin/dash/src/api.js";
+import { changed, connectionFields, createIntentsEditor, createApi, draftPatch, KNOWN_INTENT_BITS, toUint32, unknownIntentBits, withIntentBit } from "/plugin/dash/src/api.js";
 
 const payload = JSON.parse(fs.readFileSync(0, "utf8"));
 const defaults = payload.defaults;
@@ -104,6 +130,8 @@ assert.equal(t("nav.connection"), "Connection");
 assert.equal(t("nav.sdk"), "SDK Capabilities");
 assert.equal(tState("waiting_identify"), "Waiting Identify");
 assert.equal(tState("online"), "Online");
+assert.equal(tError({ code: "csrf_expired" }), "Management confirmation expired and was refreshed. Click again to continue.");
+assert.equal(tError({ code: "csrf_refresh_failed" }), "Management confirmation expired and refresh failed. Click Refresh, then retry.");
 
 applyHostContext({ locale: "zh-CN", isDark: false }, bridge);
 assert.equal(locale.value, "zh-CN");
@@ -114,12 +142,22 @@ assert.equal(t("nav.sdk"), "SDK 能力清单");
 assert.equal(tState("waiting_identify"), "等待鉴权握手");
 assert.equal(tState("online"), "在线");
 assert.equal(tError(new Error("Confirm creating a QQ binding task.")), "请确认创建 QQ 扫码绑定任务。");
+assert.equal(tError({ code: "csrf_expired" }), "管理确认已过期，已刷新，请再点击一次。");
+assert.equal(tError(new Error("Reload the page to obtain a management confirmation token.")), "管理确认已过期，请再点击一次。");
+assert.equal(tError({ response: { data: { code: "csrf_expired" } } }), "管理确认已过期，已刷新，请再点击一次。");
 assert.equal(tScanHint({ state: "pending" }), "请使用手机 QQ 扫描二维码。");
 
 assert.deepEqual(
   changed({ a: 1, nested: { keep: true, drop: "x" } }, { a: 1, nested: { keep: true } }),
   { nested: { drop: null } }
 );
+
+const draftState = {
+  current: { draft: { title: "Menu", extensions: { media_max_bytes: 100, keyboard_enabled: false } } },
+  draft: { title: "Menu", extensions: { media_max_bytes: 100, keyboard_enabled: false } },
+  extensions: { media_max_bytes: 200, keyboard_enabled: true },
+};
+assert.deepEqual(draftPatch(draftState), { extensions: { keyboard_enabled: true } });
 
 assert.throws(() => connectionFields({ type: "qq_official_v2", shard_mode: "manual", shardIndex: 2, shardCount: 2 }), /分片/);
 assert.deepEqual(connectionFields({ type: "qq_official_v2_webhook", shard_mode: "manual", shardIndex: 1, shardCount: 2 }).shard, [0, 1]);
@@ -228,6 +266,80 @@ assert.equal(enableCall[2].confirm, true);
 await api.setFlag("remote_menu_sync", true);
 assert.equal(state.boot.flags_revision, "flags-2");
 assert.equal(state.boot.flags.remote_menu_sync, true);
+
+function csrfState(nextBridge, csrf) {
+  return {
+    bridge: nextBridge,
+    boot: { csrf, flags: { remote_menu_sync: false }, flags_revision: "flags-1" },
+    view: { platform_id: "qq_v2", fingerprint: "conn-fp" },
+    current: { platform_id: "qq_v2", revision: 3, fingerprint: "cfg-fp", draft: structuredClone(defaults) },
+    scene: "group",
+    platformId: "qq_v2",
+    confirmBindings: false,
+    scan: null,
+  };
+}
+
+const expiredCalls = [];
+const expiredBridge = {
+  async apiGet(endpoint) {
+    expiredCalls.push(["GET", endpoint]);
+    assert.equal(endpoint, "bootstrap");
+    return { csrf: "fresh-csrf", flags: {}, flags_revision: "flags-1" };
+  },
+  async apiPost(endpoint, body = {}) {
+    expiredCalls.push(["POST", endpoint, body.csrf]);
+    if (body.csrf !== "fresh-csrf") {
+      throw {
+        code: "csrf_expired",
+        csrf: "attacker-csrf",
+        token: "attacker-token",
+        secret: "attacker-secret",
+        message: "Reload the page to obtain a management confirmation token.",
+      };
+    }
+    return { ok: true, endpoint };
+  },
+};
+const expiredState = csrfState(expiredBridge, "stale-csrf");
+const expiredApi = createApi(expiredState);
+await assert.rejects(() => expiredApi.mutate("save", { title: "once" }), (err) => {
+  assert.equal(err.code, "csrf_expired");
+  assert.equal(err.message, t("msg.csrfExpiredRetry"));
+  return true;
+});
+assert.equal(expiredState.boot.csrf, "fresh-csrf");
+assert.deepEqual(expiredCalls, [["POST", "config/mutate", "stale-csrf"], ["GET", "bootstrap"]]);
+expiredCalls.length = 0;
+const saved = await expiredApi.mutate("save", { title: "once" });
+assert.equal(saved.ok, true);
+assert.deepEqual(expiredCalls, [["POST", "config/mutate", "fresh-csrf"]]);
+
+const otherCalls = [];
+const otherBridge = {
+  async apiGet(endpoint) { otherCalls.push(["GET", endpoint]); return {}; },
+  async apiPost() { otherCalls.push(["POST"]); throw new Error("Confirm creating a QQ binding task."); },
+};
+await assert.rejects(() => createApi(csrfState(otherBridge, "csrf-1")).mutate("save", { title: "x" }), /Confirm creating/);
+assert.deepEqual(otherCalls, [["POST"]]);
+
+const failCalls = [];
+const failState = csrfState({
+  async apiGet() { failCalls.push("GET"); throw new Error("bootstrap down"); },
+  async apiPost() {
+    failCalls.push("POST");
+    const err = new Error("Reload the page to obtain a management confirmation token.");
+    err.code = "csrf_expired";
+    throw err;
+  },
+}, "stale-csrf");
+await assert.rejects(() => createApi(failState).saveConnection({ confirm: true }), (err) => {
+  assert.equal(err.code, "csrf_refresh_failed");
+  assert.equal(err.message, t("msg.csrfRefreshFailed"));
+  return true;
+});
+assert.equal(failState.boot.csrf, "stale-csrf");
+assert.deepEqual(failCalls, ["POST", "GET"]);
 """
     result = subprocess.run(
         [node, "--input-type=module", "-e", script],

@@ -9,6 +9,7 @@ import sqlite3
 import time
 from types import SimpleNamespace
 
+from astrbot.api import logger
 from astrbot.api.web import json_response, request
 
 from . import PLATFORM_TYPES, PLUGIN_NAME
@@ -22,6 +23,14 @@ from .settings import DEFAULTS, merge_patch, validate_settings
 from .transport.webhook import bounded_body
 
 FLAGS = {"webui_enabled": True, "remote_menu_sync": False, "onebot_network_enabled": False}
+
+
+def log_control_error(operation, code, status, *, unexpected=False, error_type=None):
+    if unexpected:
+        logger.error("qq-v2 control unexpected operation=%s code=%s status=%s type=%s",
+                     operation, code, status, error_type or "Exception")
+        return
+    logger.warning("qq-v2 control error operation=%s code=%s status=%s", operation, code, status)
 
 
 class ControlAPI:
@@ -106,6 +115,7 @@ class ControlAPI:
 
     async def handle(self, operation):
         if self.active >= 16:
+            log_control_error(operation, "control_capacity", 429)
             return json_response({"status": "error", "code": "control_capacity"}, status_code=429)
         self.active += 1
         try:
@@ -132,13 +142,20 @@ class ControlAPI:
                     result = self.dispatch(operation, username, body)
             return json_response(result, headers={"Cache-Control": "no-store"})
         except V2Error as exc:
+            log_control_error(operation, exc.code, exc.status)
             return json_response({**exc.as_dict(), "status": "error"}, status_code=exc.status)
         except sqlite3.Error:
+            log_control_error(operation, "storage_unavailable", 503)
             return json_response({"status": "error", "code": "storage_unavailable", "message": "Local storage is unavailable; inspect retained operation state before retrying any write."}, status_code=503)
         except (ValueError, TypeError, RecursionError):
+            log_control_error(operation, "invalid_request", 400)
             return json_response({"status": "error", "code": "invalid_request", "message": "Invalid request data."}, status_code=400)
         except TimeoutError:
+            log_control_error(operation, "control_timeout", 503)
             return json_response({"status": "error", "code": "control_timeout", "message": "Management request timed out; read current state before retrying."}, status_code=503)
+        except Exception as exc:
+            log_control_error(operation, "control_internal_error", 500, unexpected=True, error_type=type(exc).__name__)
+            return json_response({"status": "error", "code": "control_internal_error", "message": "Management request failed; inspect current state before retrying."}, status_code=500)
         finally:
             self.active -= 1
 
@@ -175,11 +192,33 @@ class ControlAPI:
         if operation == "connection":
             return connections.view(platform_id)
         if operation == "connection_save":
-            return await connections.save(platform_id, body.get("fingerprint"), body.get("patch", {}),
+            runtime_policy = body.get("runtime_policy")
+            previous_identity = None
+            if runtime_policy is not None:
+                current_config, previous_identity, _ = self.platform(platform_id)
+                patch = body.get("patch", {})
+                if isinstance(patch, dict) and patch.get("appid", current_config.get("appid")) != current_config.get("appid"):
+                    raise V2Error("runtime_policy_rebind_required", "Save the new identity and reload before saving runtime policy.", status=409)
+                self.owner.store.validate_runtime_policy(previous_identity.settings_key, body.get("settings_revision"), runtime_policy)
+            result = await connections.save(platform_id, body.get("fingerprint"), body.get("patch", {}),
                 secret_action=body.get("secret_action", "keep"), secret=body.get("secret"), confirm=body.get("confirm"),
                 confirm_identity=body.get("confirm_identity"), confirm_secret=body.get("confirm_secret"),
                 network_token_action=body.get("network_token_action", "keep"), network_token=body.get("network_token"),
                 confirm_network_token=body.get("confirm_network_token"), confirm_network_writes=body.get("confirm_network_writes"))
+            if runtime_policy is None:
+                return result
+            _, current_identity, _ = self.platform(platform_id)
+            try:
+                settings = self.owner.store.apply_runtime_policy(
+                    previous_identity.settings_key, body.get("settings_revision"), username, runtime_policy)
+            except Exception as exc:
+                logger.error("qq-v2 connection save partial platform=%s code=%s type=%s",
+                             platform_id, getattr(exc, "code", "unknown"), type(exc).__name__)
+                raise V2Error("settings_save_partial", "Connection saved but runtime policy was not applied; reload state before retrying.", status=503) from exc
+            for instance in self.owner.instances:
+                if instance.identity.settings_key == previous_identity.settings_key:
+                    instance.local_settings = settings["applied"]
+            return {**result, "settings": settings}
         if operation == "connection_reload":
             return await connections.reload(platform_id, body.get("fingerprint"), confirm=body.get("confirm"))
         if operation == "onboarding_start":

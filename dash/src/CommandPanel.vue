@@ -1,7 +1,8 @@
 <script setup>
 import { computed, nextTick, onMounted, ref } from "vue";
 import AbSelect from "./AbSelect.vue";
-import { changed } from "./api.js";
+import DraftActions from "./DraftActions.vue";
+import { draftPatch } from "./api.js";
 import { t } from "./i18n.js";
 
 const props = defineProps({
@@ -44,10 +45,6 @@ const styleOptions = computed(() => [
   { value: "heading", label: t("cmd.styleHeading") },
   { value: "quote", label: t("cmd.styleQuote") },
 ]);
-const streamFallbackOptions = computed(() => [
-  { value: "aggregate", label: t("cmd.streamAggregate") },
-  { value: "reject", label: t("cmd.streamReject") },
-]);
 const layerOptions = computed(() => layers.map(l => ({ value: l, label: t(`cmd.layer.${l}`) })));
 const sceneSelectOptions = computed(() => scenes.map(s => ({ value: s, label: t(`scene.${s}`) })));
 const nodeOptions = computed(() => {
@@ -67,9 +64,6 @@ const nodeOptions = computed(() => {
 });
 const overrideNodeOptions = computed(() =>
   (props.state.catalog?.nodes || []).map(n => ({ value: n.id, label: `${n.name} (${n.plugin})` }))
-);
-const versionOptions = computed(() =>
-  (props.state.current?.versions || []).map(v => ({ value: v, label: t("cmd.versionItem", { v }) }))
 );
 
 const sceneOverrideRows = computed(() => {
@@ -135,15 +129,7 @@ function move(index, delta) {
   }
 }
 function readPatch() {
-  props.state.draft.extensions = { ...props.state.draft.extensions, ...props.state.extensions };
-  return changed(props.state.current.draft, props.state.draft);
-}
-async function mutate(operation) {
-  const patch = readPatch();
-  if (operation === "apply" && Object.keys(patch).length) throw new Error(t("cmd.errSaveBeforeApply"));
-  if (operation !== "save" && !(await props.confirm(t("cmd.confirmMutate")))) return;
-  await props.api.mutate(operation, patch, Number(props.state.restoreRevision));
-  emit("reload");
+  return draftPatch(props.state);
 }
 function onLayerChange(nextLayer) {
   props.state.layer = nextLayer;
@@ -275,29 +261,12 @@ onMounted(() => {
 
       <details>
         <summary>{{ t("cmd.extSummary") }}</summary>
-        <div class="form-grid">
-          <label>{{ t("cmd.mediaMaxBytes") }}<input v-model.number="state.extensions.media_max_bytes" type="number" min="1" max="200000000"></label>
-          <label>{{ t("cmd.streamFallback") }}<AbSelect v-model="state.extensions.stream_fallback" :options="streamFallbackOptions" /></label>
-          <label>{{ t("cmd.streamMaxChars") }}<input v-model.number="state.extensions.stream_max_chars" type="number" min="1" max="4096"></label>
-          <label>{{ t("cmd.streamTimeout") }}<input v-model.number="state.extensions.stream_timeout" type="number" min="1" max="180"></label>
-          <label>{{ t("cmd.ticketTtl") }}<input v-model.number="state.extensions.ticket_ttl" type="number" min="30" max="300"></label>
-        </div>
-        <label class="check-row"><input v-model="state.extensions.typing_enabled" type="checkbox"> {{ t("cmd.typingEnabled") }}</label>
+        <label>{{ t("cmd.ticketTtl") }}<input v-model.number="state.extensions.ticket_ttl" type="number" min="30" max="300"></label>
         <label class="check-row"><input v-model="state.extensions.keyboard_enabled" type="checkbox"> {{ t("cmd.keyboardEnabled") }}</label>
         <label class="check-row"><input v-model="state.extensions.keyboard_execute" type="checkbox"> {{ t("cmd.keyboardExecute") }}</label>
-        <label class="check-row"><input v-model="state.extensions.management_writes" type="checkbox"> {{ t("cmd.managementWrites") }}</label>
       </details>
 
-      <div class="actions" style="margin-top: 14px;">
-        <button type="button" :disabled="busy" @click="emit('run', () => mutate('save'))">{{ t("cmd.saveDraft") }}</button>
-        <button type="button" class="secondary" :disabled="busy" @click="emit('run', () => mutate('apply'))">{{ t("cmd.applyLocal") }}</button>
-        <button type="button" class="secondary" :disabled="busy" @click="emit('run', () => mutate('discard'))">{{ t("cmd.discardDraft") }}</button>
-        <button type="button" class="secondary" :disabled="busy" @click="emit('run', () => mutate('defaults'))">{{ t("cmd.restoreDefaults") }}</button>
-      </div>
-      <div v-if="versionOptions.length" class="form-grid" style="align-items: end; margin-top: 12px;">
-        <label>{{ t("cmd.retainedVersions") }}<AbSelect v-model="state.restoreRevision" :options="versionOptions" /></label>
-        <button type="button" class="secondary" :disabled="busy" @click="emit('run', () => mutate('restore'))">{{ t("cmd.restoreBtn") }}</button>
-      </div>
+      <DraftActions :api="api" :state="state" :busy="busy" :confirm="confirm" @run="emit('run', $event)" @reload="emit('reload')" />
     </article>
 
     <article class="card preview-card">

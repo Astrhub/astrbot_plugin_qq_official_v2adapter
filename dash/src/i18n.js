@@ -35,6 +35,9 @@ export const MESSAGES = {
     "msg.loadedNewTarget": "新实例（尚未保存）",
     "msg.loadedScene": "已切换至{scene}",
     "msg.actionFailed": "操作未完成",
+    "msg.csrfExpiredRetry": "管理确认已过期，已刷新，请再点击一次。",
+    "msg.csrfRefreshFailed": "管理确认已过期且刷新失败，请点击「刷新」后重试。",
+    "msg.controlInternalError": "管理请求失败，请先查看当前状态再重试。",
     "msg.readConnectionFirst": "请先加载连接配置。",
     "msg.invalidShard": "分片必须是有效的 [片号, 总片数]。",
     "msg.webhookShardOnly": "Webhook 仅支持 [0, 1] 分片。",
@@ -79,6 +82,16 @@ export const MESSAGES = {
     "conn.intentsDecimal": "十进制事件掩码 (Intents)",
     "conn.intentsInvalid": "请输入 0 到 4294967295 之间的整数。",
     "conn.intentsApply": "应用",
+    "conn.runtimePolicyTitle": "实例运行策略",
+    "conn.runtimePolicyDesc": "媒体、流式、输入状态和管理写操作在此保存并立即应用；连接字段变化后仍需重载实例。",
+    "conn.mediaMaxBytes": "单文件字节上限",
+    "conn.streamFallback": "流式降级策略",
+    "conn.streamAggregate": "有界聚合",
+    "conn.streamReject": "直接拒绝",
+    "conn.streamMaxChars": "流式字符上限",
+    "conn.streamTimeout": "流式超时 (秒)",
+    "conn.typingEnabled": "启用单聊输入状态提示",
+    "conn.managementWrites": "允许管理与撤回写操作",
     "conn.shardLegend": "WebSocket 分片",
     "conn.shardMode": "分片模式",
     "conn.shardAuto": "自动（按官方建议）",
@@ -93,10 +106,11 @@ export const MESSAGES = {
     "conn.newSecretPlaceholder": "保留现有凭据时留空",
     "conn.confirmSecret": "确认替换或清空 AppSecret",
     "conn.confirmIdentity": "确认修改已绑定的 AppID",
-    "conn.saveBtn": "保存配置",
+    "conn.saveBtn": "保存并应用配置",
     "conn.reloadInstanceBtn": "重载实例",
     "conn.errSecretReplace": "输入新 AppSecret 时请将操作设为「替换凭据」。",
-    "conn.savedStatus": "配置已保存，点击「重载实例」后生效。",
+    "conn.runtimeIdentityRequired": "修改 AppID 后请先保存并重载实例，再保存运行策略。",
+    "conn.savedStatus": "连接配置已保存，运行策略已应用；连接字段变化后请点击「重载实例」。",
     "conn.confirmReload": "按已保存的配置重载当前实例？",
     "conn.reloadedStatus": "已提交实例重载",
     "conn.webhookPath": "Webhook 回调路径",
@@ -108,7 +122,7 @@ export const MESSAGES = {
     "cmd.catalogTitle": "指令目录",
     "cmd.catalogSearch": "搜索指令、插件或说明…",
     "cmd.disabledSuffix": "（未启用）",
-    "cmd.configTitle": "菜单与策略配置",
+    "cmd.configTitle": "命令菜单配置",
     "cmd.menuTitle": "菜单标题",
     "cmd.selectMode": "指令范围",
     "cmd.modeDefault": "全部适用系统指令",
@@ -135,18 +149,10 @@ export const MESSAGES = {
     "cmd.addOverride": "添加覆盖",
     "cmd.removeOverride": "移除",
     "cmd.noOverrides": "未设置覆盖规则",
-    "cmd.extSummary": "扩展与媒体策略",
-    "cmd.mediaMaxBytes": "单文件字节上限",
-    "cmd.streamFallback": "流式降级策略",
-    "cmd.streamAggregate": "有界聚合",
-    "cmd.streamReject": "直接拒绝",
-    "cmd.streamMaxChars": "流式字符上限",
-    "cmd.streamTimeout": "流式超时 (秒)",
+    "cmd.extSummary": "回调命令策略",
     "cmd.ticketTtl": "回调票据有效期 (秒)",
-    "cmd.typingEnabled": "启用单聊输入状态提示",
     "cmd.keyboardEnabled": "启用回调按钮键盘",
     "cmd.keyboardExecute": "允许无参指令二次确认执行",
-    "cmd.managementWrites": "允许管理与撤回写操作",
     "cmd.saveDraft": "保存草稿",
     "cmd.applyLocal": "应用草稿",
     "cmd.discardDraft": "放弃修改",
@@ -280,6 +286,9 @@ export const MESSAGES = {
     "msg.loadedNewTarget": "New instance (unsaved)",
     "msg.loadedScene": "Switched to {scene}",
     "msg.actionFailed": "Action failed",
+    "msg.csrfExpiredRetry": "Management confirmation expired and was refreshed. Click again to continue.",
+    "msg.csrfRefreshFailed": "Management confirmation expired and refresh failed. Click Refresh, then retry.",
+    "msg.controlInternalError": "Management request failed; inspect current state before retrying.",
     "msg.readConnectionFirst": "Load connection settings first.",
     "msg.invalidShard": "Shard must be a valid [index, count] pair.",
     "msg.webhookShardOnly": "Webhook only supports shard [0, 1].",
@@ -324,6 +333,16 @@ export const MESSAGES = {
     "conn.intentsDecimal": "Decimal intents bitmask",
     "conn.intentsInvalid": "Enter an integer between 0 and 4294967295.",
     "conn.intentsApply": "Apply",
+    "conn.runtimePolicyTitle": "Instance Runtime Policy",
+    "conn.runtimePolicyDesc": "Media, streaming, typing, and management writes are saved and applied here; reload the instance after changing connection fields.",
+    "conn.mediaMaxBytes": "Max Media Bytes",
+    "conn.streamFallback": "Stream Fallback",
+    "conn.streamAggregate": "Bounded Aggregate",
+    "conn.streamReject": "Reject",
+    "conn.streamMaxChars": "Stream Max Chars",
+    "conn.streamTimeout": "Stream Timeout (s)",
+    "conn.typingEnabled": "Enable C2C typing indicator",
+    "conn.managementWrites": "Allow admin and recall write operations",
     "conn.shardLegend": "WebSocket Sharding",
     "conn.shardMode": "Shard Mode",
     "conn.shardAuto": "Auto (recommended)",
@@ -337,11 +356,12 @@ export const MESSAGES = {
     "conn.newSecret": "New AppSecret",
     "conn.newSecretPlaceholder": "Leave blank to keep existing secret",
     "conn.confirmSecret": "Confirm replacing or clearing AppSecret",
+    "conn.runtimeIdentityRequired": "Save and reload the new AppID before saving runtime policy.",
     "conn.confirmIdentity": "Confirm changing bound AppID",
-    "conn.saveBtn": "Save Configuration",
+    "conn.saveBtn": "Save and Apply Configuration",
     "conn.reloadInstanceBtn": "Reload Instance",
     "conn.errSecretReplace": "Select 'Replace secret' when entering a new AppSecret.",
-    "conn.savedStatus": "Saved. Click 'Reload Instance' to apply.",
+    "conn.savedStatus": "Connection saved and runtime policy applied; reload the instance after changing connection fields.",
     "conn.confirmReload": "Reload instance with saved configuration?",
     "conn.reloadedStatus": "Instance reload requested",
     "conn.webhookPath": "Webhook Callback Path",
@@ -353,7 +373,7 @@ export const MESSAGES = {
     "cmd.catalogTitle": "Command Catalog",
     "cmd.catalogSearch": "Search commands, plugins, or descriptions…",
     "cmd.disabledSuffix": " (disabled)",
-    "cmd.configTitle": "Menu & Policy Draft",
+    "cmd.configTitle": "Command Menu Draft",
     "cmd.menuTitle": "Menu Title",
     "cmd.selectMode": "Selection Mode",
     "cmd.modeDefault": "All eligible system commands",
@@ -380,18 +400,10 @@ export const MESSAGES = {
     "cmd.addOverride": "Add Override",
     "cmd.removeOverride": "Remove",
     "cmd.noOverrides": "No overrides configured",
-    "cmd.extSummary": "Extensions & Media Policy",
-    "cmd.mediaMaxBytes": "Max Media Bytes",
-    "cmd.streamFallback": "Stream Fallback",
-    "cmd.streamAggregate": "Bounded Aggregate",
-    "cmd.streamReject": "Reject",
-    "cmd.streamMaxChars": "Stream Max Chars",
-    "cmd.streamTimeout": "Stream Timeout (s)",
+    "cmd.extSummary": "Callback Command Policy",
     "cmd.ticketTtl": "Callback Ticket TTL (s)",
-    "cmd.typingEnabled": "Enable C2C typing indicator",
     "cmd.keyboardEnabled": "Enable callback button keyboards",
     "cmd.keyboardExecute": "Allow confirmed zero-arg command execution",
-    "cmd.managementWrites": "Allow admin and recall write operations",
     "cmd.saveDraft": "Save Draft",
     "cmd.applyLocal": "Apply Draft",
     "cmd.discardDraft": "Discard",
@@ -653,6 +665,14 @@ export function tScanHint(scan) {
 }
 
 const BACKEND_ERRORS = {
+  "Reload the page to obtain a management confirmation token.": {
+    "zh-CN": "管理确认已过期，请再点击一次。",
+    "en-US": "Management confirmation expired. Click again to continue.",
+  },
+  "Management request failed; inspect current state before retrying.": {
+    "zh-CN": "管理请求失败，请先查看当前状态再重试。",
+    "en-US": "Management request failed; inspect current state before retrying.",
+  },
   "Confirm creating a QQ binding task.": {
     "zh-CN": "请确认创建 QQ 扫码绑定任务。",
     "en-US": "Confirm creating a QQ binding task.",
@@ -727,10 +747,31 @@ const BACKEND_ERRORS = {
   },
 };
 
+export function errorFields(error) {
+  if (typeof error === "string") return { code: "", message: error };
+  if (!error || typeof error !== "object") return { code: "", message: error == null ? "" : String(error) };
+  const nested = (error.data && typeof error.data === "object" && error.data)
+    || (error.response && error.response.data && typeof error.response.data === "object" && error.response.data)
+    || null;
+  const pick = (...values) => {
+    for (const value of values) {
+      if (typeof value === "string" && value) return value;
+    }
+    return "";
+  };
+  return {
+    code: pick(error.code, nested && nested.code),
+    message: pick(error.message, error.error, nested && nested.message, nested && nested.error),
+  };
+}
+
 export function tError(error) {
-  const raw = typeof error === "string" ? error : error?.message || "";
-  if (!raw) return t("msg.actionFailed");
+  const { code, message } = errorFields(error);
+  if (code === "csrf_refresh_failed") return t("msg.csrfRefreshFailed");
+  if (code === "csrf_expired") return t("msg.csrfExpiredRetry");
+  if (code === "control_internal_error") return t("msg.controlInternalError");
+  if (!message) return t("msg.actionFailed");
   const lang = locale.value in MESSAGES ? locale.value : "zh-CN";
-  if (BACKEND_ERRORS[raw]?.[lang]) return BACKEND_ERRORS[raw][lang];
-  return raw;
+  if (BACKEND_ERRORS[message]?.[lang]) return BACKEND_ERRORS[message][lang];
+  return message;
 }

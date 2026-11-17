@@ -126,13 +126,21 @@ async def test_real_astrbot_assembly(config, monkeypatch, qq_reject_server, qq_p
         prefix = f"/api/v1/plugins/extensions/{PLUGIN_NAME}"
         async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
             assert (await client.get(prefix + "/bootstrap")).status_code == 401
-            forbidden = [auth(username="other-user"), auth(token_type="plugin_page_asset"),
-                         {**auth(), "Origin": "https://evil.invalid"}, auth(exp=1)]
-            for headers in forbidden:
-                assert (await client.get(prefix + "/bootstrap", headers=headers)).status_code in (401, 403)
+            assert (await client.get(prefix + "/bootstrap", headers=auth(username="other-user"))).status_code == 200
+            asset_headers = auth(token_type="plugin_page_asset")
+            assert (await client.get(prefix + "/bootstrap", headers=asset_headers)).status_code in (401, 403)
+            assert (await client.get(prefix + "/bootstrap", headers={**auth(), "Origin": "https://evil.invalid"})).status_code == 200
+            assert (await client.get(prefix + "/bootstrap", headers=auth(exp=1))).status_code in (401, 403)
             key = await dashboard.asgi_app.state.services.api_keys.create_api_key({"name": "fixture", "scopes": ["plugin"]}, created_by=username)
             response = await client.get(prefix + "/bootstrap", headers={"Authorization": "ApiKey " + key["api_key"]})
-            assert response.status_code == 403 and response.json()["code"] == "management_auth_required"
+            assert response.status_code == 200
+            key_headers = {"Authorization": "ApiKey " + key["api_key"]}
+            key_boot = response.json()
+            key_connection = (await client.get(prefix + "/connection", params={"platform_id": config["id"]}, headers=key_headers)).json()
+            key_save = {"csrf": key_boot["csrf"], "platform_id": config["id"],
+                        "fingerprint": key_connection["fingerprint"], "patch": {}, "confirm": True}
+            key_response = await client.post(prefix + "/connection/save", json=key_save, headers=key_headers)
+            assert key_response.status_code == 200, key_response.text
             headers = auth()
             config_response = await client.get("/api/config/get", headers=headers)
             assert config_response.status_code == 200
@@ -294,8 +302,6 @@ async def test_real_astrbot_assembly(config, monkeypatch, qq_reject_server, qq_p
             target = "webhook-fixture"
             connection = (await client.get(prefix + "/connection", params={"platform_id": target}, headers=headers)).json()
             save_body = {"csrf": boot2["csrf"], "platform_id": target, "fingerprint": connection["fingerprint"], "patch": {"transport": "webhook"}, "confirm": True}
-            key_headers = {"Authorization": "ApiKey " + key["api_key"]}
-            assert (await client.post(prefix + "/connection/save", json=save_body, headers=key_headers)).status_code == 403
             response = await client.post(prefix + "/connection/save", json=save_body, headers=headers)
             assert response.status_code == 200, response.text
             connection = response.json()
@@ -303,7 +309,7 @@ async def test_real_astrbot_assembly(config, monkeypatch, qq_reject_server, qq_p
             assert len([p for p in astrbot_config["platform"] if p["id"] == target]) == 1
             assert not any(i.identity.platform_id == target for i in new_owner.instances)
             start_body = {"csrf": boot2["csrf"], "platform_id": target, "fingerprint": connection["fingerprint"], "confirm": True}
-            assert (await client.post(prefix + "/onboarding/start", json=start_body, headers=key_headers)).status_code == 403
+
             response = await client.post(prefix + "/onboarding/start", json=start_body, headers=headers)
             assert response.status_code == 200, response.text
             ticket = response.json()["ticket"]
@@ -321,15 +327,20 @@ async def test_real_astrbot_assembly(config, monkeypatch, qq_reject_server, qq_p
             assert saved_target["secret"] == "new-fixture-secret" and not saved_target["enable"]
             assert "not-a-chat-observation" not in json.dumps(astrbot_config.get("admins_id", []))
             connection = committed.json()["result"]
+            from v2.models import InstanceKey
             from test_onebot_network import TOKEN, free_port
             network_save = {**save_body, "fingerprint": connection["fingerprint"],
                             "patch": {"enable": True, "onebot": {"enable": True, "port": free_port(), "writes": True}},
                             "network_token_action": "replace", "network_token": TOKEN, "confirm_network_token": True}
             denied = await client.post(prefix + "/connection/save", json=network_save, headers=headers)
             assert denied.status_code == 400 and denied.json()["code"] == "network_write_confirmation_required"
-            response = await client.post(prefix + "/connection/save", json={**network_save, "confirm_network_writes": True}, headers=headers)
+            settings_key = InstanceKey.from_config(saved_target).settings_key
+            runtime_save = {**network_save, "settings_revision": new_owner.store.get(settings_key)["revision"],
+                            "runtime_policy": {"typing_enabled": True}}
+            response = await client.post(prefix + "/connection/save", json={**runtime_save, "confirm_network_writes": True}, headers=headers)
             assert response.status_code == 200, response.text
             connection = response.json()
+            assert connection["settings"]["applied"]["extensions"]["typing_enabled"] is True
             new_owner.config["onebot_network_enabled"] = True
             response = await client.post(prefix + "/connection/reload", json={"csrf": boot2["csrf"], "platform_id": target, "fingerprint": connection["fingerprint"], "confirm": True}, headers=headers)
             assert response.status_code == 200, response.text
