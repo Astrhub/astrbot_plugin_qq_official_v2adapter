@@ -234,6 +234,47 @@ def test_get_msg_and_forward_nodes(config, tmp_path):
     store.close()
 
 
+def test_replacing_message_removes_stale_forward_rows(config, tmp_path):
+    store, _ = history_store(tmp_path)
+    payload = chat_payload(message_id="replace-me", text="with forward")
+    payload["d"]["message_type"] = 102
+    payload["d"]["msg_elements"] = [{"content": "node", "author": {"member_openid": "forward-user"}}]
+    first = convert_chat(InstanceKey.from_config(config), RawEnvelope(payload, NOW))
+    assert store.record(first) is True
+    assert store.db.execute("SELECT count(*) FROM forwards").fetchone()[0] == 1
+
+    replacement = observed(config, message_id="replace-me", text="without forward")
+    assert store.record(replacement) is True
+    assert store.db.execute("SELECT count(*) FROM forwards").fetchone()[0] == 0
+    store.close()
+
+
+def test_history_lookup_rejects_scene_only_route_ambiguity(config, tmp_path):
+    store, _ = history_store(tmp_path)
+
+    def forward_chat(target):
+        payload = chat_payload(message_id="shared", target=target, text=target)
+        payload["d"]["message_type"] = 102
+        payload["d"]["msg_elements"] = [{"content": target, "author": {"member_openid": "forward-user"}}]
+        return convert_chat(InstanceKey.from_config(config), RawEnvelope(payload, NOW))
+
+    first = forward_chat("group-one")
+    second = forward_chat("group-two")
+    assert store.record(first) is True
+    assert store.record(second) is True
+    owner = owner_key(first)
+
+    with pytest.raises(V2Error) as message_error:
+        store.get_msg(owner, "shared", scene="group")
+    assert message_error.value.code == "message_route_unavailable"
+    with pytest.raises(V2Error) as forward_error:
+        store.get_forward(owner, "fwd:shared", scene="group")
+    assert forward_error.value.code == "message_route_unavailable"
+    assert store.get_msg(owner, "shared", scene="group", target="group-two")["group_id"] == "group-two"
+    assert store.get_forward(owner, "fwd:shared", scene="group", target="group-two")["messages"][0]["content"][0]["data"]["text"] == "group-two"
+    store.close()
+
+
 def test_sanitize_official_strips_secrets(config, tmp_path):
     store, _ = history_store(tmp_path)
     payload = chat_payload()

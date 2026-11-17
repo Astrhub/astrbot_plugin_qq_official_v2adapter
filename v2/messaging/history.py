@@ -888,6 +888,10 @@ class HistoryStore:
                      chat.message.sender.user_id, chat.source.sent_at, chat.source.received_at,
                      event_json, official_json, media_json, chat.source.ref_idx, chat.source.event_id, size),
                 )
+                self.db.execute(
+                    "DELETE FROM forwards WHERE owner=? AND scene=? AND target=? AND source_message_id=?",
+                    (owner, scene, target, message_id),
+                )
                 for forward_id, nodes, forward_media in forwards:
                     self.db.execute(
                         """INSERT INTO forwards(owner, scene, target, forward_id, source_message_id, generation,
@@ -960,7 +964,7 @@ class HistoryStore:
                         failure("message_route_unavailable", "This message does not belong to the bound chat route.")
                     self._raise_missing(key, message_id, scene, target)
                 self._raise_missing(key, message_id)
-            if scene is None and target is None and len({(row["scene"], row["target"]) for row in rows}) > 1:
+            if len({(row["scene"], row["target"]) for row in rows}) > 1:
                 failure("message_route_unavailable", "Bind a chat route to disambiguate this message ID.")
             return load(rows[0]["event_json"])
 
@@ -1011,7 +1015,7 @@ class HistoryStore:
                 params.append(target)
             rows = self.db.execute(sql, params).fetchall()
             if rows:
-                if scene is None and target is None and len({(row["scene"], row["target"]) for row in rows}) > 1:
+                if len({(row["scene"], row["target"]) for row in rows}) > 1:
                     failure("message_route_unavailable", "Bind a chat route to disambiguate this forward ID.")
                 return {"messages": load(rows[0]["nodes_json"])}
             if scene is not None and target is not None:
