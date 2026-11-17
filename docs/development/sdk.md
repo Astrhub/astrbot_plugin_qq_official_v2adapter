@@ -7,7 +7,7 @@ client = event.bot
 native = client.qq       # 官方 V2 具名 API，保留官方字段和响应
 ```
 
-插件优先使用 `event.send(...)`、`event.bot.qq` 和 `event.bot.qq.events`。`client.api`、`event.bot.api` 与 `client.call_action()` 保留给已有兼容代码；独立 OneBot 网络入口与进程内 SDK 都是正式公共入口。网络调用到 SDK 的对应关系见 [迁移指南](sdk-migration.md)。
+插件优先使用 `event.send(...)`、`event.bot.qq` 和 `event.bot.qq.events`。`event.bot` 是 `V2Client`，`event.bot.api` 是同一实例。`client.api.call_action` 是 AstrBot 进程内 Bot API（例如 `delete_msg`），不是 NapCat/Lagrange HTTP。对应关系见 [迁移指南](sdk-migration.md)。
 
 `client.qq.get_group_member_info(group, member)` 返回 QQ 原始响应。兼容调用仍接受 OneBot 风格的参数和投影，调用入口不会扩大权限。
 
@@ -22,6 +22,8 @@ member = await event.bot.qq.get_group_member_info(event.route.target, "成员 Op
 推荐在收到事件后使用 `event.send(...)`；需要明确场景和目标时使用 `event.bot.qq.send(...)`。主动发送必须遵守 QQ 的观察/权限规则。原生 API 也可以通过 `with_options(operation_id="...", owner=self)` 固定本地操作 ID 和 owner 生命周期。
 
 只读接口返回官方 JSON；带 `cursor`/`after` 的方法只返回一页。`iter_*` 便利方法有 200 页、5000 项、4 MiB 和 120 秒上限，途中失败会抛错，不能把已 yield 的部分当成原子快照。
+
+`get_msg` / `get_forward_msg` 查询本实例 `history.sqlite3`（默认 unlimited），无记录时明确失败，不请求频道 `get_message`。`get_forward_msg` 只返回真实本地节点。
 
 ## API 分组
 

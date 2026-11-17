@@ -15,12 +15,14 @@
   <rect x="10" y="67.7" width="3" height="22" rx="1.5" fill="rgb(60, 150, 202)"/>
   <svg x="24" y="70.7" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="rgb(60, 150, 202)" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>
   <text x="46" y="81.7" font-size="11.9" font-weight="720" fill="rgb(60, 150, 202)">连接与接入</text>
-  <svg x="144" y="70.7" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="rgba(27, 28, 29, 0.68)" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h10"></path></svg>
-  <text x="166" y="81.7" font-size="11.9" font-weight="640" fill="rgba(27, 28, 29, 0.68)">本地菜单与策略</text>
-  <svg x="292" y="70.7" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="rgba(27, 28, 29, 0.68)" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2"></rect><path d="M7 8h10M7 12h6M7 16h8"></path></svg>
-  <text x="314" y="81.7" font-size="11.9" font-weight="640" fill="rgba(27, 28, 29, 0.68)">QQ 面板与恢复</text>
-  <svg x="433.8" y="70.7" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="rgba(27, 28, 29, 0.68)" stroke-width="2"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg>
-  <text x="455.8" y="81.7" font-size="11.9" font-weight="640" fill="rgba(27, 28, 29, 0.68)">SDK 能力清单</text>
+  <svg x="136" y="70.7" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="rgba(27, 28, 29, 0.68)" stroke-width="2"><ellipse cx="12" cy="5" rx="9" ry="3"></ellipse><path d="M3 5v6c0 1.66 4.03 3 9 3s9-1.34 9-3V5"></path><path d="M3 11v6c0 1.66 4.03 3 9 3s9-1.34 9-3v-6"></path></svg>
+  <text x="158" y="81.7" font-size="11.9" font-weight="640" fill="rgba(27, 28, 29, 0.68)">消息与存储</text>
+  <svg x="280" y="70.7" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="rgba(27, 28, 29, 0.68)" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h10"></path></svg>
+  <text x="302" y="81.7" font-size="11.9" font-weight="640" fill="rgba(27, 28, 29, 0.68)">本地菜单与策略</text>
+  <svg x="428" y="70.7" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="rgba(27, 28, 29, 0.68)" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2"></rect><path d="M7 8h10M7 12h6M7 16h8"></path></svg>
+  <text x="450" y="81.7" font-size="11.9" font-weight="640" fill="rgba(27, 28, 29, 0.68)">QQ 面板与恢复</text>
+  <svg x="568" y="70.7" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="rgba(27, 28, 29, 0.68)" stroke-width="2"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg>
+  <text x="590" y="81.7" font-size="11.9" font-weight="640" fill="rgba(27, 28, 29, 0.68)">SDK 能力清单</text>
   <rect x="0" y="112.7" width="680" height="134.1" fill="rgb(255, 255, 255)"/>
   <line x1="0" y1="246.8" x2="680" y2="246.8" stroke="rgba(17, 24, 39, 0.09)" stroke-width="1"/>
   <rect x="20" y="124.7" width="164.5" height="23.8" rx="6" fill="rgb(248, 250, 252)" stroke="rgba(17, 24, 39, 0.13)" stroke-width="1"/>

@@ -23,6 +23,12 @@ def test_control_view_singlefile_artifact_and_i18n_metadata():
     assert 'src="' not in html and 'href="' not in html
     assert "localStorage" not in html and "media_roots" not in html and "onebot_network_enabled" not in html
     assert "配置事件订阅" in html and "Configure Event Subscriptions" in html
+    assert "消息与存储" in html and "Messages & Storage" in html
+    assert "保存并应用存储策略" in html and "Save and apply storage policy" in html
+    assert "全文检索" in html and "Full-text search" in html
+    assert "LIKE 降级" in html and "LIKE fallback" in html
+    assert "资料库" in html and "Profile store" in html
+    assert "保存并应用资料库设置" in html and "Save and apply profile store settings" in html
     assert "管理确认已过期，已刷新，请再点击一次。" in html
     assert "Management confirmation expired and was refreshed. Click again to continue." in html
     assert "管理确认已过期且刷新失败，请点击「刷新」后重试。" in html
@@ -36,6 +42,8 @@ def test_control_view_singlefile_artifact_and_i18n_metadata():
 
     schema = json.loads((ROOT / "_conf_schema.json").read_text(encoding="utf-8"))
     assert "onebot_network_enabled" not in schema
+    for key in ("profile_max_records", "profile_max_bytes", "profile_stale_seconds", "profile_cooldown_seconds"):
+        assert key not in schema
 
     for lang, expected_title in (("zh-CN", "QQ 官方 V2 控制台"), ("en-US", "QQ Official V2 Console")):
         locale_path = ROOT / ".astrbot-plugin" / "i18n" / f"{lang}.json"
@@ -43,6 +51,8 @@ def test_control_view_singlefile_artifact_and_i18n_metadata():
         assert data["views"]["control"]["title"] == expected_title
         assert data["pages"]["control"]["title"] == expected_title
         assert "webui_enabled" in data["config"] and "onebot_network_enabled" not in data["config"]
+        for key in ("profile_max_records", "profile_max_bytes", "profile_stale_seconds", "profile_cooldown_seconds"):
+            assert key not in data["config"]
         assert "display_name" in data["metadata"]
 
 def test_connection_panel_intents_dialog_cancel_and_apply_contract():
@@ -79,6 +89,27 @@ def test_runtime_policy_placement_and_shared_draft_actions():
     assert "<DraftActions" not in connection and "<DraftActions" in command
     assert "runtimePolicyFields" in connection and "runtime_policy" in connection
     assert "draftPatch(props.state)" in (ROOT / "dash" / "src" / "DraftActions.vue").read_text(encoding="utf-8")
+    storage = (ROOT / "dash" / "src" / "MessageStoragePanel.vue").read_text(encoding="utf-8")
+    assert "savePolicy" in storage and "DraftActions" not in storage
+    assert "connection/save" not in storage and "saveConnection" not in storage
+    assert "canDeleteRange" in storage and "deleteNeedsFilter" in storage
+    assert "rangeParams" in storage
+    i18n_src = (ROOT / "dash" / "src" / "i18n.js").read_text(encoding="utf-8")
+    assert "storage.savePolicy" in i18n_src and "nav.storage" in i18n_src
+    app = (ROOT / "dash" / "src" / "App.vue").read_text(encoding="utf-8")
+    assert "storageDirty" in app and "tab === 'storage'" in app
+    assert "defaultStoragePolicy" in app and "MessageStoragePanel" in app
+    assert 't("nav.storage")' in app
+    api_src = (ROOT / "dash" / "src" / "api.js").read_text(encoding="utf-8")
+    assert "saveHistoryPolicy" in api_src
+    assert "max_age_seconds: null" in api_src
+    assert "86400" not in api_src and "86400" not in app and "86400" not in storage
+    assert "saveProfile" in storage and "saveProfilePolicy" in api_src
+    assert "profileDirty" in app and "defaultProfilePolicy" in app
+    assert "storage.saveProfile" in i18n_src and "storage.profileTitle" in i18n_src
+    assert 'v-model="query.q"' in storage
+    assert "storage.search" in i18n_src and "storage.searchModeLike" in i18n_src
+    assert "profile/status" in api_src and "profile/policy" in api_src
 
 
 def test_control_view_api_state_machine_and_i18n_theme_sync():
@@ -88,7 +119,7 @@ def test_control_view_api_state_machine_and_i18n_theme_sync():
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import { applyHostContext, isDark, locale, t, tError, tScanHint, tState } from "/plugin/dash/src/i18n.js";
-import { changed, connectionFields, createIntentsEditor, createApi, draftPatch, KNOWN_INTENT_BITS, toUint32, unknownIntentBits, withIntentBit } from "/plugin/dash/src/api.js";
+import { changed, connectionFields, createIntentsEditor, createApi, defaultStoragePolicy, draftPatch, KNOWN_INTENT_BITS, normalizeStoragePolicy, toUint32, unknownIntentBits, withIntentBit } from "/plugin/dash/src/api.js";
 
 const payload = JSON.parse(fs.readFileSync(0, "utf8"));
 const defaults = payload.defaults;
@@ -127,6 +158,8 @@ assert.equal(isDark.value, true);
 assert.equal(attrs.get("data-theme"), "dark");
 assert.equal(document.title, "QQ Official V2 Console");
 assert.equal(t("nav.connection"), "Connection");
+assert.equal(t("nav.storage"), "Messages & Storage");
+assert.equal(t("storage.deleteNeedsFilter"), "Range delete needs a scene, target, or time filter. Use the confirmation phrase to purge everything.");
 assert.equal(t("nav.sdk"), "SDK Capabilities");
 assert.equal(tState("waiting_identify"), "Waiting Identify");
 assert.equal(tState("online"), "Online");
@@ -138,6 +171,16 @@ assert.equal(locale.value, "zh-CN");
 assert.equal(isDark.value, false);
 assert.equal(attrs.get("data-theme"), "light");
 assert.equal(t("nav.connection"), "连接与接入");
+assert.equal(t("nav.storage"), "消息与存储");
+assert.equal(t("storage.deleteNeedsFilter"), "删除当前筛选需要先指定场景、目标或时间范围。全量清空请使用确认词。");
+const unlimited = defaultStoragePolicy();
+assert.equal(unlimited.mode, "unlimited");
+assert.equal(unlimited.max_age_seconds, null);
+assert.equal(unlimited.max_count, null);
+assert.equal(unlimited.max_bytes, null);
+assert.deepEqual(normalizeStoragePolicy({ mode: "unlimited", max_age_seconds: 86400, max_count: 1 }), unlimited);
+assert.equal(normalizeStoragePolicy({ mode: "max_count", max_count: 1 }).max_count, 1);
+assert.equal(normalizeStoragePolicy({ mode: "max_count", max_count: 1 }).max_age_seconds, null);
 assert.equal(t("nav.sdk"), "SDK 能力清单");
 assert.equal(tState("waiting_identify"), "等待鉴权握手");
 assert.equal(tState("online"), "在线");
@@ -227,7 +270,12 @@ const state = {
   scan: { state: "pending", platform_id: "qq_v2", ticket: "old-ticket", commit_handle: "h1" },
 };
 const api = createApi(state);
-
+assert.equal(typeof api.historyStatus, "function");
+assert.equal(typeof api.saveHistoryPolicy, "function");
+assert.equal(typeof api.profileStatus, "function");
+assert.equal(typeof api.saveProfilePolicy, "function");
+assert.equal(t("storage.profileTitle"), "资料库");
+assert.equal(t("storage.saveProfile"), "保存并应用资料库设置");
 await api.startScan();
 assert.equal(calls[0][1], "onboarding/cancel");
 assert.equal(calls[0][2].ticket, "old-ticket");

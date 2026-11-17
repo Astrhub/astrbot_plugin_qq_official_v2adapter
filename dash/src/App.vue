@@ -5,7 +5,8 @@ import ConnectionPanel from "./ConnectionPanel.vue";
 import CommandPanel from "./CommandPanel.vue";
 import RemotePanel from "./RemotePanel.vue";
 import SdkPanel from "./SdkPanel.vue";
-import { changed, clone, connectionFields, createApi, runtimePolicyFields } from "./api.js";
+import MessageStoragePanel from "./MessageStoragePanel.vue";
+import { changed, clone, connectionFields, createApi, defaultProfilePolicy, defaultStoragePolicy, runtimePolicyFields } from "./api.js";
 import { applyHostContext, t, tError, tState } from "./i18n.js";
 import "./styles.css";
 
@@ -82,6 +83,12 @@ const state = reactive({
   confirmSecret: false,
   confirmIdentity: false,
   panelTargetType: "all",
+  storagePolicy: defaultStoragePolicy(),
+  storagePolicySnapshot: JSON.stringify(defaultStoragePolicy()),
+  storageStatus: null,
+  profilePolicy: defaultProfilePolicy(),
+  profilePolicySnapshot: JSON.stringify(defaultProfilePolicy()),
+  profileStatus: null,
   panelTargets: "",
   menuOnly: false,
   form: {
@@ -137,7 +144,15 @@ const draftDirty = computed(() => {
   const runtimeDirty = JSON.stringify(runtimePolicyFields(state.extensions)) !== JSON.stringify(runtimePolicyFields(state.current.draft.extensions));
   return commandDirty || runtimeDirty;
 });
-const dirty = computed(() => connectionDirty.value || draftDirty.value);
+const storageDirty = computed(() => {
+  if (!state.storagePolicySnapshot) return false;
+  return JSON.stringify(state.storagePolicy) !== state.storagePolicySnapshot;
+});
+const profileDirty = computed(() => {
+  if (!state.profilePolicySnapshot) return false;
+  return JSON.stringify(state.profilePolicy) !== state.profilePolicySnapshot;
+});
+const dirty = computed(() => connectionDirty.value || draftDirty.value || storageDirty.value || profileDirty.value);
 const remoteAttention = computed(() => {
   const remote = state.current?.remote_state?.[state.scene];
   return Boolean(remote?.pending || remote?.state === "unknown");
@@ -164,6 +179,9 @@ function fillConnection(value) {
   state.confirmSecret = false;
   state.confirmIdentity = false;
   state.scan = null;
+  state.storageStatus = null;
+  state.storagePolicy = defaultStoragePolicy();
+  state.storagePolicySnapshot = JSON.stringify(state.storagePolicy);
 }
 
 function fillConfig(value, catalog) {
@@ -268,6 +286,16 @@ onBeforeUnmount(() => {
           <span v-if="connectionDirty" class="nav-badge" aria-hidden="true"></span>
         </button>
 
+        <button :class="{ active: tab === 'storage' }" @click="tab = 'storage'">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <ellipse cx="12" cy="6" rx="8" ry="3" />
+            <path d="M4 6v6c0 1.7 3.6 3 8 3s8-1.3 8-3V6" />
+            <path d="M4 12v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6" />
+          </svg>
+          <span>{{ t("nav.storage") }}</span>
+          <span v-if="storageDirty || profileDirty" class="nav-badge" aria-hidden="true"></span>
+        </button>
+
         <button :class="{ active: tab === 'commands' }" :disabled="!state.current" @click="tab = 'commands'">
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
             <path d="M4 6h16M4 12h16M4 18h10" />
@@ -340,6 +368,7 @@ onBeforeUnmount(() => {
 
       <main class="workspace-main">
         <ConnectionPanel v-if="tab === 'connection'" :api="api" :state="state" :busy="busy" :confirm="askConfirm" @status="status = $event" @run="run" @reload="reload" />
+        <MessageStoragePanel v-else-if="tab === 'storage'" :api="api" :state="state" :busy="busy" :confirm="askConfirm" @status="status = $event" @run="run" @reload="reload" />
         <CommandPanel v-else-if="tab === 'commands'" :api="api" :state="state" :busy="busy" :confirm="askConfirm" @status="status = $event" @run="run" @reload="reload" />
         <RemotePanel v-else-if="tab === 'remote'" :api="api" :state="state" :busy="busy" :confirm="askConfirm" @status="status = $event" @run="run" />
         <SdkPanel v-else :state="state" @status="status = $event" />

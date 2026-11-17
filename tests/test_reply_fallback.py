@@ -214,22 +214,6 @@ def test_restart_during_mode_conversion_preserves_fence_and_diagnostics(config, 
         restored.close()
 
 
-async def test_onebot_context_uses_active_fallback_but_expired_ticket_is_not_revived(sending):
-    from test_onebot_network import listener
-    s = sending
-    chat, _ = s.observe()
-    async with listener(s) as n:
-        key = n.server.events.context(chat.source)
-        s.modes.append(40034128)
-        for index in range(2):
-            async with n.http.post(n.base + "/send_group_msg", headers=n.headers, json={"group_id": "group-one", "message": "reply", "_qq_reply_context": key, "_qq_operation_id": f"network-{index}"}) as r:
-                data = await r.json()
-                assert data["status"] == "ok" and data["data"]["delivery"]["mode"] == "active"
-        assert len(s.calls) == 3 and all("msg_id" not in b for _, b in s.calls[1:])
-        s.clock[0] = chat.source.expires + 1
-        async with n.http.post(n.base + "/send_group_msg", headers=n.headers, json={"group_id": "group-one", "message": "expired", "_qq_reply_context": key}) as r:
-            assert (await r.json())["code"] == "reply_context_unavailable"
-        assert len(s.calls) == 3
 
 
 @pytest.mark.parametrize("event", ["GROUP_AT_MESSAGE_CREATE", "AT_MESSAGE_CREATE", "C2C_MESSAGE_CREATE"])

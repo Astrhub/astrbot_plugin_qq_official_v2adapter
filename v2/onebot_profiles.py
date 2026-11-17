@@ -73,6 +73,25 @@ def official_member(group, row, *, source="official_query", current=True, at=Non
     return result
 
 
+def project_group_info(data):
+    result = {"group_id": data["group_openid"], "group_name": data["group_name"],
+              "member_count": data["group_member_num"], "partial": True, "permission": "unknown",
+              "_qq": {"source": "official_query"}}
+    if isinstance(data.get("union_group_openid"), str) and data["union_group_openid"]:
+        result["_qq"]["union_group_openid"] = data["union_group_openid"]
+    return result
+
+
+def project_login_info(data):
+    if (not isinstance(data, dict) or data.get("bot") is not True
+            or not isinstance(data.get("username"), str) or not data["username"]):
+        raise V2Error("invalid_management_response", "A complete real bot ID and username are required for login_info.",
+                      status=502)
+    return {"user_id": text_id(data.get("id")), "nickname": data["username"],
+            "id_kind": "channel_user_id", "source": "official_profile"}
+
+
+
 class OneBotProfiles:
     def __init__(self, client):
         self.client = client

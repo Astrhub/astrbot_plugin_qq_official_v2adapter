@@ -1,6 +1,6 @@
-# 从 OneBot 网络入口迁移到进程内 SDK
+# 从 OneBot 兼容调用迁到原生 SDK
 
-独立 OneBot 网络入口与进程内 SDK 都是正式公共入口。前者提供 OneBot v11 到 QQ 官方 V2 的直接翻译，后者提供原生字段和更细的生命周期控制；两者复用当前事件身份、场景、权限检查和发送账本，调用方不需要另写 QQ V2 适配器。
+同一进程内 `V2Client` 同时提供 OneBot v11 风格投影和官方 V2 原生字段。前者方便已有 `call_action` / `event.bot.api` 代码；后者提供原生字段和更细的生命周期控制。两者复用当前事件身份、场景、权限检查和发送账本，调用方不需要另写 QQ V2 适配器，也不启动独立网络服务。
 
 
 ## 接入 SDK
@@ -37,12 +37,13 @@ state = event.bot.qq.send_status(result["operation_id"])
 
 ## 常用调用对应关系
 
-| OneBot 网络 action | 进程内 SDK |
+| OneBot 兼容 action | 进程内 SDK |
 | --- | --- |
 | `send_group_msg` | 事件内使用 `await event.send(message)`；明确目标时使用 `await event.bot.qq.send("group", group_openid, message)` |
 | `send_private_msg` | `await event.bot.qq.send("c2c", user_openid, message)` |
 | `send_msg` | 根据 `group_id` 或 `user_id` 选择 `group` 或 `c2c`，再调用 `event.bot.qq.send(...)` |
-| `get_login_info` | `await event.bot.qq.login_info()` |
+| `get_login_info` | `await event.bot.qq.me()` |
+| `get_msg` / `get_forward_msg` | 查询本实例 `history.sqlite3`；无记录返回 `message_not_found` / `message_expired` / `message_deleted` / `forward_nodes_unavailable`，不请求频道 `get_message`。`get_forward_msg` 只返回真实本地节点 |
 | `get_group_info` | `await event.bot.qq.get_group_info(group_openid)` |
 | `get_group_member_info` | `await event.bot.qq.get_group_member_info(group_openid, member_openid)` |
 | `get_group_member_list` | 获取一页使用 `await event.bot.qq.get_group_member_list(group_openid, cursor)`；完整遍历使用 `async for row in event.bot.qq.iter_group_members(group_openid)` |
@@ -50,7 +51,7 @@ state = event.bot.qq.send_status(result["operation_id"])
 | `set_group_ban` | 使用 `await event.bot.qq.group_ban(group, member, duration, operation_id=...)`；原生管理方法见 [SDK 指南](sdk.md) |
 | `set_group_kick` | 使用 `await event.bot.qq.group_kick(group, [member], blacklist=..., operation_id=...)` |
 | `set_group_add_request` | 使用 `await event.bot.qq.approve(flag, approve=..., reason=..., blacklist=...)`；需要原生参数时使用 `approve_group_join_request(...)` |
-| `delete_msg` | 使用 `await event.bot.qq.delete_message(message_id, operation_id=...)`，或按场景调用对应 `recall_*` 方法 |
+| `delete_msg` | 进程内 `await event.bot.api.call_action("delete_msg", message_id=event.message_obj.message_id)` 进入 `management.delete_message`；原生用 `event.bot.qq.delete_message(...)` 或按场景 `recall_*`。只撤回已发送且未过期的消息 |
 | `_qq_get_send_status` | `event.bot.qq.send_status(operation_id)` |
 | `_qq_get_extension_status` | `event.bot.qq.extension_status(operation_id)` |
 | `_qq_get_capabilities` | `event.bot.capabilities()` |
@@ -75,9 +76,7 @@ subscription = event.bot.qq.events.subscribe(
 
 ## 兼容调用的边界
 
-`client.api`、`client.call_action` 和 `event.bot.api` 仍保留在进程内，用于已有插件逐步迁移。新代码使用具名 SDK 方法；兼容 action 的参数和返回值仍按 OneBot OpenID 子集处理。两类调用共用发送账本、权限门控和来源检查，调用入口不会扩大 QQ 账号的权限。
-
-独立网络入口的 `writes`、`management_writes`、token、HTTP 路由和 WebSocket peer 限制只影响旧外部客户端。迁移完成后可以关闭全局 `onebot_network_enabled`，并移除实例中的 `onebot` 监听配置。
+`event.bot` 是 `V2Client`，`event.bot.api` 是同一实例。`client.api`、`client.call_action` 和 `event.bot.api` 是 AstrBot 进程内 Bot API 兼容面，不是 NapCat/Lagrange HTTP 入口。新代码使用具名 SDK 方法；兼容 action 的参数和返回值仍按 OneBot OpenID 子集处理。两类调用共用发送账本、权限门控和来源检查。独立 OneBot HTTP/WebSocket 入口已经移除。
 
 ## 生命周期
 

@@ -36,14 +36,58 @@ def observation_time(value):
     return None
 
 
+DEFAULT_PROFILE_POLICY = {
+    "max_records": 32768,
+    "max_bytes": 67108864,
+    "stale_seconds": 300,
+    "cooldown_seconds": 600,
+}
+PROFILE_POLICY_BOUNDS = {
+    "max_records": (1, 65536),
+    "max_bytes": (1048576, 268435456),
+    "stale_seconds": (1, 86400),
+    "cooldown_seconds": (1, 86400),
+}
+LEGACY_PROFILE_KEYS = {
+    "profile_max_records": "max_records",
+    "profile_max_bytes": "max_bytes",
+    "profile_stale_seconds": "stale_seconds",
+    "profile_cooldown_seconds": "cooldown_seconds",
+}
+
+
+def validate_profile_policy(policy, *, complete=False):
+    if not isinstance(policy, dict) or policy.keys() - DEFAULT_PROFILE_POLICY.keys():
+        raise V2Error("invalid_profile_config", "Unknown profile policy fields.")
+    if complete and DEFAULT_PROFILE_POLICY.keys() - policy.keys():
+        raise V2Error("invalid_profile_config", "Profile policy is incomplete.")
+    result = {}
+    for key, (low, high) in PROFILE_POLICY_BOUNDS.items():
+        value = policy.get(key, DEFAULT_PROFILE_POLICY[key])
+        if type(value) is not int or not low <= value <= high:
+            raise V2Error("invalid_profile_config", f"Invalid {key} profile setting.")
+        result[key] = value
+    return result
+
+
+def compose_profile_policy(legacy=None, overrides=None):
+    policy = dict(DEFAULT_PROFILE_POLICY)
+    getter = getattr(legacy, "get", None)
+    if callable(getter):
+        for old, new in LEGACY_PROFILE_KEYS.items():
+            value = getter(old)
+            if value is not None:
+                policy[new] = value
+    if isinstance(overrides, dict):
+        for key, value in overrides.items():
+            if value is not None:
+                policy[key] = value
+    return validate_profile_policy(policy)
+
 class ProfileStore:
-    def __init__(self, path, *, max_profiles=32768, max_bytes=64 * 1024 * 1024, stale_seconds=300, clock=time.time):
-        if (type(max_profiles) is not int or not 1 <= max_profiles <= 65536
-                or type(max_bytes) is not int or not 1048576 <= max_bytes <= 268435456
-                or type(stale_seconds) is not int or not 1 <= stale_seconds <= 86400):
-            raise V2Error("invalid_profile_config", "Profile capacity or stale settings are invalid.")
-        self.clock, self.stale_seconds = clock, stale_seconds
-        self.max_profiles, self.max_bytes = max_profiles, max_bytes
+    def __init__(self, path, *, max_profiles=None, max_bytes=None, stale_seconds=None,
+                 cooldown_seconds=None, clock=time.time, legacy=None):
+        self.clock = clock
         self.closed = False
         self.last_error = None
         self._scope_errors = {}
@@ -55,14 +99,13 @@ class ProfileStore:
         fd = os.open(path, os.O_CREAT | os.O_RDWR | getattr(os, "O_NOFOLLOW", 0), 0o600)
         os.close(fd)
         path.chmod(0o600)
+        self.path = path
         self.db = sqlite3.connect(path, timeout=0.1)
         self.db.row_factory = sqlite3.Row
         try:
             if self.db.execute("PRAGMA user_version").fetchone()[0] not in (0, 1):
                 raise V2Error("profile_schema_corrupt", "Unsupported profile schema; restore a matching backup.", status=503)
             self.db.execute("PRAGMA synchronous=FULL")
-            page = self.db.execute("PRAGMA page_size").fetchone()[0]
-            self.db.execute(f"PRAGMA max_page_count={max_bytes // page}")
             self.db.executescript("""
                 CREATE TABLE IF NOT EXISTS profiles (robot TEXT, scene TEXT, scope TEXT, kind TEXT, subject TEXT,
                     fields TEXT NOT NULL, updated REAL NOT NULL, PRIMARY KEY(robot,scene,scope,kind,subject));
@@ -76,8 +119,23 @@ class ProfileStore:
                     count INTEGER NOT NULL, PRIMARY KEY(robot,scene,scope));
                 CREATE TABLE IF NOT EXISTS refresh_state (robot TEXT, scene TEXT, scope TEXT, kind TEXT, subject TEXT,
                     code TEXT, until REAL NOT NULL, PRIMARY KEY(robot,scene,scope,kind,subject));
+                CREATE TABLE IF NOT EXISTS profile_policy (
+                    id INTEGER PRIMARY KEY CHECK (id = 1),
+                    max_records INTEGER NOT NULL,
+                    max_bytes INTEGER NOT NULL,
+                    stale_seconds INTEGER NOT NULL,
+                    cooldown_seconds INTEGER NOT NULL,
+                    updated REAL NOT NULL
+                );
                 PRAGMA user_version=1;
             """)
+            policy = self._load_or_migrate_policy(legacy, {
+                "max_records": max_profiles,
+                "max_bytes": max_bytes,
+                "stale_seconds": stale_seconds,
+                "cooldown_seconds": cooldown_seconds,
+            })
+            self._install_policy(policy)
             self.db.execute("UPDATE scopes SET continuity=0,reason='process_restart'")
             self.db.execute("UPDATE rosters SET continuous=0")
             self.db.commit()
@@ -88,6 +146,90 @@ class ProfileStore:
     def _checked(self):
         if self.closed:
             raise V2Error("service_stopped", "Profiles store has closed.", status=503)
+
+
+    def _install_policy(self, policy):
+        self.max_profiles = policy["max_records"]
+        self.max_bytes = policy["max_bytes"]
+        self.stale_seconds = policy["stale_seconds"]
+        self.cooldown_seconds = policy["cooldown_seconds"]
+        page = self.db.execute("PRAGMA page_size").fetchone()[0]
+        self.db.execute(f"PRAGMA max_page_count={policy['max_bytes'] // page}")
+
+    def _load_or_migrate_policy(self, legacy, overrides):
+        row = self.db.execute("SELECT * FROM profile_policy WHERE id=1").fetchone()
+        if row is not None:
+            return validate_profile_policy({
+                "max_records": row["max_records"],
+                "max_bytes": row["max_bytes"],
+                "stale_seconds": row["stale_seconds"],
+                "cooldown_seconds": row["cooldown_seconds"],
+            })
+        policy = compose_profile_policy(legacy, overrides)
+        self.db.execute(
+            """INSERT INTO profile_policy(id, max_records, max_bytes, stale_seconds, cooldown_seconds, updated)
+               VALUES(1,?,?,?,?,?)""",
+            (policy["max_records"], policy["max_bytes"], policy["stale_seconds"],
+             policy["cooldown_seconds"], self.clock()),
+        )
+        return policy
+
+    def used_bytes(self):
+        self._checked()
+        pages = self.db.execute("PRAGMA page_count").fetchone()[0]
+        page = self.db.execute("PRAGMA page_size").fetchone()[0]
+        size = pages * page
+        total = self.path.stat().st_size if self.path.exists() else 0
+        for suffix in ("-wal", "-shm"):
+            extra = self.path.with_name(self.path.name + suffix)
+            if extra.exists():
+                total += extra.stat().st_size
+        return max(size, total)
+
+    def policy(self):
+        self._checked()
+        return {
+            "max_records": self.max_profiles,
+            "max_bytes": self.max_bytes,
+            "stale_seconds": self.stale_seconds,
+            "cooldown_seconds": self.cooldown_seconds,
+        }
+
+    def policy_status(self):
+        self._checked()
+        return {
+            "plugin_scoped": True,
+            "policy": self.policy(),
+            "bounds": {key: {"min": low, "max": high} for key, (low, high) in PROFILE_POLICY_BOUNDS.items()},
+            "used_bytes": self.used_bytes(),
+            "used_records": self.db.execute("SELECT count(*) FROM profiles").fetchone()[0],
+            "path": str(self.path),
+        }
+
+    def save_policy(self, policy):
+        self._checked()
+        policy = validate_profile_policy(policy, complete=True)
+        used = self.used_bytes()
+        if policy["max_bytes"] < used:
+            raise V2Error(
+                "profile_limit_below_usage",
+                f"New profile byte limit is below current usage of {used} bytes.",
+                status=409,
+                details={"used_bytes": used, "max_bytes": policy["max_bytes"]},
+            )
+        with self.db:
+            self.db.execute(
+                """INSERT INTO profile_policy(id, max_records, max_bytes, stale_seconds, cooldown_seconds, updated)
+                   VALUES(1,?,?,?,?,?)
+                   ON CONFLICT(id) DO UPDATE SET
+                     max_records=excluded.max_records, max_bytes=excluded.max_bytes,
+                     stale_seconds=excluded.stale_seconds, cooldown_seconds=excluded.cooldown_seconds,
+                     updated=excluded.updated""",
+                (policy["max_records"], policy["max_bytes"], policy["stale_seconds"],
+                 policy["cooldown_seconds"], self.clock()),
+            )
+            self._install_policy(policy)
+        return {"policy": policy, "used_bytes": used}
 
     def _scope(self, robot, scene, scope):
         self._checked()

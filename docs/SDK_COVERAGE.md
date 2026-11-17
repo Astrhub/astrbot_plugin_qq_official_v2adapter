@@ -25,8 +25,8 @@
 
 群/C2C `post_*_message` 与 Json 卡片发送支持官方 `msg_type=8` 图文卡片（`card.type=tuwen`，`title`/`description`/`url`/`pic_url` 按当前官方长度和 HTTPS 约束校验，可与 keyboard、message_reference 并用）。群聊 `<qqbot-at-everyone />` 仍需群管理员且每群每天 1 次。这些是现有发送接口的字段，不是新增 HTTP target。
 
-## OneBot 网络入口的覆盖边界
+## OneBot 兼容调用的覆盖边界
 
-OneBot 网络 action 表保持有限范围，也不会因为 SDK 新增具名方法而自动扩大。独立 OneBot 网络入口与进程内 SDK 都是正式公共入口。当前明确不提供完整好友列表、完整历史 `get_msg`、反向 WebSocket、HTTP POST 事件、quick operations、跨实例路由、数字 ID 语义和业务重放。
+标准 OneBot action 只映射等价原生能力；公开原生方法可通过 `client.qq` 使用，也可由兼容 dispatcher 按方法名转发。`get_msg` / `get_forward_msg` 在历史库已挂载时条件支持，查询实例 `settings_key` 下的本地消息历史（默认 unlimited，与 delivery/operation 账本隔离）；无记录时明确失败。完整好友列表、合并转发发送、跨实例路由、数字 ID 语义和业务重放仍明确 `unsupported`。频道原生 `get_message` 不是 OneBot `get_msg`。
 
 需要逐条核对路径、参数或事件形状时，直接查看 `v2/sdk/http_catalog.py`、`v2/sdk/event_types.py` 和对应测试；不要从方法名猜测 QQ API 行为。

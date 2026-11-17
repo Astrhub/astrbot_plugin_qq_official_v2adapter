@@ -5,8 +5,9 @@ import sqlite3
 from ..errors import V2Error
 from ..models import text_id
 from ..profiles.display import enrich_chat
-from ..protocol import CHAT_EVENTS, NOTICE_EVENTS, RawEnvelope
+from ..protocol import CHAT_EVENTS, RawEnvelope
 from .convert import convert_chat
+from .history import apply_reply_time, record_chat
 
 
 class DeliverySlots:
@@ -94,14 +95,12 @@ class ChatConsumer:
                         return True
                 self.inbox.retain(self.owner_key, receipt, "non_chat_event")
                 self.state = "extension_retained"
-                if (payload.get("op") == 0 and isinstance(payload.get("d"), dict)
-                        and payload.get("t") not in NOTICE_EVENTS
-                        and (network := getattr(self.adapter, "network", None))):
-                    network.events.retained(payload.get("t"))
                 return True
             try:
                 chat = convert_chat(self.adapter.identity, RawEnvelope(payload, item["received_at"]),
                                     isolated=self.adapter.session_isolated, bot_id=self.adapter.bot_id, store=self.store)
+                apply_reply_time(self.adapter.owner.history, chat)
+                record_chat(self.adapter.owner.history, chat)
                 if self.store.delivered(chat) or receipt in self.enqueued:
                     if not self.store.delivered(chat):
                         self.store.mark_delivered(chat)
@@ -139,8 +138,6 @@ class ChatConsumer:
             self.adapter.session_sources.record(chat, self.store.now())
             self.inbox.acknowledge(self.owner_key, receipt)
             self.enqueued.discard(receipt)
-            if network := getattr(self.adapter, "network", None):
-                network.observe_chat(chat)
             self.state, self.last_error = "delivered_to_host", None
             return True
         self.state = "idle"

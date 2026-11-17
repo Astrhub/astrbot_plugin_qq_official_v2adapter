@@ -9,7 +9,6 @@ from v2.client import ClientState, V2Client
 from v2.errors import V2Error
 from v2.messaging.convert import convert_chat
 from v2.models import InstanceKey, RobotKey
-from v2.network_events import LiveEvents
 from v2.onebot_profiles import OneBotProfiles, official_member
 from v2.protocol import RawEnvelope
 from v2.sdk.api.reads import native_user_info
@@ -151,45 +150,3 @@ async def test_stranger_live_c2c_and_group_use_official_reads():
     group = await compat.stranger_live("001", "member_openid", "group:g")
     assert group["nickname"] == "群员" and group["_qq"]["union_openid"] == "U2"
     assert group["scope"] == "group:g" and group["source"] == "official_query"
-
-
-def test_network_message_and_notice_only_emit_proven_fields():
-    payload = chat_payload("GROUP_MESSAGE_CREATE", sender="member-one", target="group-one")
-    payload["d"]["author"]["member_nickname"] = "群名片"
-    payload["d"]["author"]["avatar"] = "https://thirdqq.example/a.png"
-    payload["d"]["author"]["union_openid"] = "UNION-USER"
-    payload["d"]["union_group_openid"] = "UNION-GROUP"
-    chat = convert_chat(identity(), RawEnvelope(payload, NOW))
-    published = []
-    events = LiveEvents(SimpleNamespace(
-        observed=lambda: True,
-        adapter=SimpleNamespace(
-            identity=SimpleNamespace(platform_id="p", generation="gen"),
-            bot_id="bot",
-            owner=SimpleNamespace(messages=SimpleNamespace(now=lambda: NOW)),
-        ),
-        publish=published.append,
-    ))
-    events.chat(chat)
-    frame = published[0]
-    assert frame["sender"]["nickname"] == "群名片"
-    assert frame["_qq"]["avatar"] == "https://thirdqq.example/a.png"
-    assert frame["_qq"]["union_openid"] == "UNION-USER"
-    assert frame["_qq"]["union_group_openid"] == "UNION-GROUP"
-    assert frame["group_id"] == "group-one"
-    assert "operator_id" not in frame and "notice_type" not in frame
-
-    published.clear()
-    events.notice("GROUP_MEMBER_ADD", {"timestamp": 11, "group_openid": "g", "member_openid": "u",
-                                       "union_group_openid": "UG"})
-    notice = published[0]
-    assert notice["qq_type"] == "notice" and notice["group_id"] == "g" and notice["user_id"] == "u"
-    assert notice["time"] == 11 and notice["_qq"]["union_group_openid"] == "UG"
-    assert "operator_id" not in notice and "sub_type" not in notice and "notice_type" not in notice
-
-    published.clear()
-    events.notice("GROUP_ADD_ROBOT", {"timestamp": 12, "group_openid": "g", "op_member_openid": "admin"})
-    added = published[0]
-    assert added["group_id"] == "g" and "user_id" not in added
-    assert added["_qq"]["op_member_openid"] == "admin"
-    assert "operator_id" not in added

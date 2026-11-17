@@ -9,15 +9,18 @@ from ..sdk.identifiers import text_id
 
 
 class Profiles:
-    def __init__(self, identity, store, reads, *, cooldown=600, continuity_check=lambda: False, guard=lambda: None):
+    def __init__(self, identity, store, reads, *, continuity_check=lambda: False, guard=lambda: None):
         self.identity, self.store, self.reads = identity, store, reads
         self.continuity_check, self.guard = continuity_check, guard
-        self.cooldown = cooldown
         self.pending = {}
         self.roster_pending = {}
         self.pending_callers = {}
         self.roster_callers = {}
         self.closed = False
+
+    @property
+    def cooldown(self):
+        return self.store.cooldown_seconds
 
     def _check(self):
         if self.closed:

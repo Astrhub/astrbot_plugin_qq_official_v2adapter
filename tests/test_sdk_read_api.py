@@ -134,14 +134,20 @@ async def test_native_read_routes_reach_literal_https_destination_and_preserve_r
         await transport.close()
 
 
-async def test_native_reads_stay_outside_network_onebot_action_list_and_propagate_errors(client):
-    async def no_request(spec):
-        raise AssertionError("network-only action must not run")
+async def test_native_reads_are_forwarded_by_compat_dispatcher_and_propagate_errors(client):
+    captured = []
 
-    client._state.http = SimpleNamespace(request=no_request)
-    with pytest.raises(V2Error) as exc:
-        await client.call_action("get_guild", guild_id="g")
-    assert exc.value.code == "unsupported"
+    async def request(spec, before_send=None):
+        if before_send is not None:
+            before_send()
+        captured.append((spec.method, spec.url))
+        return SimpleNamespace(data={"id": "g", "name": "Guild"})
+
+    client._state.http = SimpleNamespace(request=request)
+    native = await client.qq.get_guild("g")
+    forwarded = await client.call_action("get_guild", guild_id="g")
+    assert native == forwarded == {"id": "g", "name": "Guild"}
+    assert captured == [("GET", "https://api.bot.qq.com/guilds/g")] * 2
     assert "get_guild" not in client.capabilities()["actions"]
 
     for status, code, phase in (
