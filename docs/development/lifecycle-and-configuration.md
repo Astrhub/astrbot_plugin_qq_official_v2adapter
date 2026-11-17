@@ -55,7 +55,7 @@ Webhook 只接受 POST。`Webhook` 在进入 `RawInbox` 前检查：
 
 ## Pages 设置
 
-插件设置由 `_conf_schema.json` 声明：`webui_enabled`、`remote_menu_sync` 和四个资料库限制。Pages 本地设置的 schema version 当前为 2，`draft` 与 `applied` 分离，支持 save/discard/defaults/restore/apply 和乐观 revision；最近保留 20 个版本。
+插件设置由 `_conf_schema.json` 声明：`webui_enabled` 和 `remote_menu_sync`。资料库记录上限、字节上限、过时秒数和失败冷却保存在 `profiles.sqlite3` 的 `profile_policy`，由「消息与存储」页保存并立即生效，不写入 `settings.sqlite3` 实例代次。Pages 本地设置的 schema version 当前为 2，`draft` 与 `applied` 分离，支持 save/discard/defaults/restore/apply 和乐观 revision；最近保留 20 个版本。
 
 高级默认值：
 

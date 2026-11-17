@@ -18,6 +18,15 @@
 | `subscription_gap` | SDK 订阅队列/字节预算超限，或回调任务被取消而关闭 | 重新订阅并处理背压；owner 失效另按 `stale_owner`/`stale_generation` 处理 |
 | `stale_owner` | owner 已卸载 | 释放旧句柄，使用当前实例重新获取视图 |
 | `panel_drift` | 远端面板与账本基线不一致 | 暂停同步，人工核对 QQ 实际状态 |
+| `message_not_found` / `message_expired` / `message_deleted` | 本地历史没有该消息 | 不要伪造正文或改查频道 `get_message` |
+| `forward_nodes_unavailable` | 只有引用索引没有真实节点 | 不要用摘要拼转发 |
+| `history_storage_unavailable` | 历史库写入失败 | 入站继续；检查磁盘与 `last_error`，不要删账本 |
+| `invalid_history_range` | 范围删除没有筛选条件 | 补 scene/target/since/until，或走 purge 确认词 |
+| `history_search_unavailable` | FTS5 不可用或查询失败 | 页面显示 LIKE 降级；关键词仍可按 LIKE 查 |
+| `history_search_index_failed` | 单条索引写入失败 | 消息已入库；待补索引，不改发送账本 |
+| `profile_limit_below_usage` | 新的资料库字节上限低于当前占用 | 提高上限或先清理资料后再保存 |
+| `profile_not_ready` | 资料库未挂载或已关闭 | 检查插件初始化，不要改 settings.sqlite3 |
+| `invalid_profile_config` | 资料库策略字段非法或不完整 | 按页面显示的上下限提交四个整数 |
 
 ## 不要做的事
 

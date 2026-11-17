@@ -19,6 +19,7 @@ const REQUIRED_TOKENS = [
   t("nav.commands"),
   t("nav.remote"),
   t("nav.sdk"),
+  t("nav.storage"),
   t("conn.statusTitle"),
   t("conn.gatewayTitle"),
   t("conn.scanTitle"),

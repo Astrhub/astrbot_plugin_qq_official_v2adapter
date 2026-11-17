@@ -24,6 +24,37 @@ export const RUNTIME_POLICY_KEYS = [
 
 export const COMMAND_EXTENSION_KEYS = ["ticket_ttl", "keyboard_enabled", "keyboard_execute"];
 
+
+export function defaultStoragePolicy() {
+  return { enabled: true, mode: "unlimited", max_age_seconds: null, max_count: null, max_bytes: null };
+}
+
+export function normalizeStoragePolicy(policy) {
+  const mode = policy && policy.mode ? policy.mode : "unlimited";
+  const next = defaultStoragePolicy();
+  next.enabled = !policy || policy.enabled !== false;
+  next.mode = mode;
+  if (mode === "max_age") next.max_age_seconds = policy.max_age_seconds ?? null;
+  else if (mode === "max_count") next.max_count = policy.max_count ?? null;
+  else if (mode === "max_bytes") next.max_bytes = policy.max_bytes ?? null;
+  return next;
+}
+
+export function defaultProfilePolicy() {
+  return { max_records: 32768, max_bytes: 67108864, stale_seconds: 300, cooldown_seconds: 600 };
+}
+
+export function normalizeProfilePolicy(policy) {
+  const fallback = defaultProfilePolicy();
+  if (!policy || typeof policy !== "object") return fallback;
+  const next = { ...fallback };
+  for (const key of Object.keys(fallback)) {
+    const value = Number(policy[key]);
+    if (Number.isInteger(value)) next[key] = value;
+  }
+  return next;
+}
+
 export function runtimePolicyFields(extensions = {}) {
   return Object.fromEntries(RUNTIME_POLICY_KEYS.map(key => [key, extensions[key]]));
 }
@@ -259,6 +290,72 @@ export function createApi(state) {
     },
     async discardRetained(payload) {
       return post("inbox/discard", payload);
+    },
+    async historyStatus() {
+      needView();
+      return get("history/status", { platform_id: state.platformId });
+    },
+    async historyQuery(params = {}) {
+      needView();
+      return get("history/query", { platform_id: state.platformId, ...params });
+    },
+    async saveHistoryPolicy(policy) {
+      needView();
+      return post("history/policy", {
+        platform_id: state.view.platform_id,
+        fingerprint: state.view.fingerprint,
+        confirm: true,
+        policy,
+      });
+    },
+    async historyIntegrity() {
+      needView();
+      return post("history/integrity", {
+        platform_id: state.view.platform_id,
+        fingerprint: state.view.fingerprint,
+      });
+    },
+    async historyCheckpoint() {
+      needView();
+      return post("history/checkpoint", {
+        platform_id: state.view.platform_id,
+        fingerprint: state.view.fingerprint,
+        confirm: true,
+      });
+    },
+    async historyExport(params = {}) {
+      needView();
+      return post("history/export", {
+        platform_id: state.view.platform_id,
+        fingerprint: state.view.fingerprint,
+        confirm: true,
+        ...params,
+      });
+    },
+    async historyDelete(params = {}) {
+      needView();
+      return post("history/delete", {
+        platform_id: state.view.platform_id,
+        fingerprint: state.view.fingerprint,
+        confirm: true,
+        confirm_delete: true,
+        ...params,
+      });
+    },
+    async historyPurge(confirmText) {
+      needView();
+      return post("history/purge", {
+        platform_id: state.view.platform_id,
+        fingerprint: state.view.fingerprint,
+        confirm: true,
+        confirm_text: confirmText,
+      });
+    },
+    async profileStatus() {
+      return get("profile/status");
+    },
+    async saveProfilePolicy(policy) {
+      return post("profile/policy", { confirm: true, policy });
     },
   };
 }

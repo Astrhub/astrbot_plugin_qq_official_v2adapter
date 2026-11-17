@@ -33,8 +33,8 @@
 | 发送与来源 | `v2/messaging/outbound.py`, `v2/messaging/reply.py`, `v2/messaging/store.py` |
 | 原生 SDK 与事件 | `v2/sdk/`, `v2/client.py`, `v2/event.py` |
 | 媒体与扩展 | `v2/media/`, `v2/extensions/`, `v2/panels.py` |
-| 管理页面 | `pages/control/`, `dash/`, `v2/web_api.py`, `v2/connections.py`, `v2/settings.py` |
-| OneBot v11 兼容调用 | `v2/client.py`, `v2/onebot_profiles.py` |
+| 管理页面 | `pages/control/`、`dash/`、`v2/web_api.py`、`v2/connections.py`、`v2/settings.py`、`v2/messaging/history.py` |
+| OneBot v11 兼容调用 | `v2/client.py`、`v2/onebot_profiles.py`、本地 `get_msg`/`get_forward_msg` |
 | 测试入口 | `tests/`, `scripts/test-isolated.sh`, `.github/workflows/tests.yml` |
 
 ## 稳定性边界

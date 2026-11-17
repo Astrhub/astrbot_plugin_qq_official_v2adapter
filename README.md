@@ -22,7 +22,7 @@
 - 流式与输入状态：C2C 使用 QQ 原生流；其他场景可配置有界聚合或明确拒绝，C2C typing 受 `typing_enabled` 控制。
 - 管理能力：群成员、禁言、踢出、黑名单、入群申请、频道管理、撤回、菜单和面板。
 - 原生 SDK：`event.bot.qq` 提供具名 API、事件订阅、媒体上传、管理 API 和操作状态查询。
-- 管理页面：Plugin Pages 的 `control` 页面提供连接、扫码、菜单草稿、预览、托管面板和保留事件管理；Vue 源码位于 `dash/`。
+- 管理页面：Plugin Pages 的 `control` 页面提供连接、扫码、菜单草稿、预览、托管面板、消息与存储和保留事件管理；Vue 源码位于 `dash/`。
 
 ## 页面预览
 
@@ -92,10 +92,8 @@ WebSocket 支持自动分片和手动分片。自动模式按 QQ 网关返回的
 | --- | --- | ---: | --- |
 | `webui_enabled` | bool | `true` | 提供 V2 Pages 管理接口 |
 | `remote_menu_sync` | bool | `false` | 允许托管面板同步到 QQ |
-| `profile_max_records` | int | `32768` | 资料库记录上限 |
-| `profile_max_bytes` | int | `64 MiB` | 资料库字节上限 |
-| `profile_stale_seconds` | int | `300` | 资料标记为过时前的秒数 |
-| `profile_cooldown_seconds` | int | `600` | 资料查询失败后的冷却时间 |
+
+资料库记录上限、字节上限、过时秒数和失败冷却改在 Pages「消息与存储」的资料库分区保存，保存后立即生效，不写入实例配置代次。
 
 ### 高级设置
 

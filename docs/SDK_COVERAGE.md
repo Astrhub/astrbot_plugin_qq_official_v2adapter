@@ -27,6 +27,6 @@
 
 ## OneBot 兼容调用的覆盖边界
 
-标准 OneBot action 只映射等价原生能力；公开原生方法可通过 `client.qq` 使用，也可由兼容 dispatcher 按方法名转发。当前明确不提供完整好友列表、完整历史 `get_msg`/`get_forward_msg`、合并转发、跨实例路由、数字 ID 语义和业务重放。频道原生 `get_message` 不是 OneBot `get_msg`。
+标准 OneBot action 只映射等价原生能力；公开原生方法可通过 `client.qq` 使用，也可由兼容 dispatcher 按方法名转发。`get_msg` / `get_forward_msg` 在历史库已挂载时条件支持，查询实例 `settings_key` 下的本地消息历史（默认 unlimited，与 delivery/operation 账本隔离）；无记录时明确失败。完整好友列表、合并转发发送、跨实例路由、数字 ID 语义和业务重放仍明确 `unsupported`。频道原生 `get_message` 不是 OneBot `get_msg`。
 
 需要逐条核对路径、参数或事件形状时，直接查看 `v2/sdk/http_catalog.py`、`v2/sdk/event_types.py` 和对应测试；不要从方法名猜测 QQ API 行为。

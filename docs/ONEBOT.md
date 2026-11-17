@@ -33,8 +33,8 @@ via_attr = await client.get_group_info(group_id=group_openid)
 
 ## 不支持的能力
 
-不提供完整好友列表、完整历史消息、合并转发、跨实例路由、数字 ID 语义和业务重放。`get_friend_list`、`get_group_list`、`get_msg`、`get_forward_msg`、`send_group_forward_msg`、`send_private_forward_msg`、`set_group_whole_ban` 等非等价 action 返回 `unsupported`。
+不提供完整好友列表、合并转发发送、跨实例路由、数字 ID 语义和业务重放。`get_friend_list`、`get_group_list`、`send_group_forward_msg`、`send_private_forward_msg`、`set_group_whole_ban` 等非等价 action 返回 `unsupported`。
 
-AstrBot 引用解析会调用 `event.bot.api.call_action("get_msg")` 和 `get_forward_msg`。V2 入站已把官方引用转成消息链中的 `Reply`，不通过这些 action 补历史。频道原生 `get_message(channel_id, message_id)` 不是 OneBot `get_msg`。
+`get_msg` / `get_forward_msg` 在历史库已挂载时条件支持，按实例 `settings_key`（platform_id + AppID + environment）隔离。无记录时返回 `message_not_found`、`message_expired`、`message_deleted` 或 `forward_nodes_unavailable`，不伪造正文，也不请求频道 `get_message`。频道原生 `get_message(channel_id, message_id)` 不是 OneBot `get_msg`。
 
 对应关系见 [SDK 迁移指南](development/sdk-migration.md)。

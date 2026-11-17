@@ -23,6 +23,8 @@ member = await event.bot.qq.get_group_member_info(event.route.target, "成员 Op
 
 只读接口返回官方 JSON；带 `cursor`/`after` 的方法只返回一页。`iter_*` 便利方法有 200 页、5000 项、4 MiB 和 120 秒上限，途中失败会抛错，不能把已 yield 的部分当成原子快照。
 
+`get_msg` / `get_forward_msg` 查询本实例 `history.sqlite3`（默认 unlimited），无记录时明确失败，不请求频道 `get_message`。`get_forward_msg` 只返回真实本地节点。
+
 ## API 分组
 
 原生 API 位于 `v2/sdk/api/`：

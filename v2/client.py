@@ -34,7 +34,6 @@ UNSUPPORTED_ACTIONS = {
     "get_friend_list", "get_group_list", "set_group_whole_ban", "set_friend_add_request",
     "set_group_card", "set_group_admin", "set_group_name", "set_group_leave",
     "send_like", "send_group_forward_msg", "send_private_forward_msg", "upload_group_file",
-    "get_msg", "get_forward_msg",
 }
 NATIVE_READ_ALIASES = frozenset(name for name in vars(NativeReadMixin) if not name.startswith("_")) - COMPAT_ACTIONS | {"iter_group_members"}
 NATIVE_WRITE_ALIASES = frozenset(name for name in vars(NativeMessageMixin) if not name.startswith("_")) - COMPAT_ACTIONS
@@ -44,7 +43,8 @@ NATIVE_WRITE_ALIASES |= frozenset(name for mixin in (NativeGroupAdminMixin, Nati
                                 for name in vars(mixin) if not name.startswith("_"))
 
 LOCAL_ACTIONS = {"get_status", "get_version_info", "get_stranger_info", "_qq_get_avatar",
-                 "_qq_get_capabilities", "can_send_image", "can_send_record"}
+                 "_qq_get_capabilities", "can_send_image", "can_send_record",
+                 "get_msg", "get_forward_msg"}
 SEND_ACTIONS = {"send_group_msg", "send_private_msg", "send_msg"}
 WRITE_ACTIONS = SEND_ACTIONS | {"delete_msg", "set_group_ban", "set_group_kick", "set_group_add_request",
                                 "set_group_kick_members", "_qq_set_group_blacklist"}
@@ -69,6 +69,8 @@ ACTION_PARAMS = {
     "_qq_set_group_blacklist": {"group_id": "id", "op": "str", "user_ids": "list", "_qq_operation_id": "id"},
     "_qq_get_join_approval_strategies": {"cursor": "str", "limit": "int"},
     "delete_msg": {"message_id": "id", "_qq_operation_id": "id"},
+    "get_msg": {"message_id": "id"},
+    "get_forward_msg": {"id": "id", "message_id": "id"},
     "_qq_get_send_status": {"operation_id": "id"}, "_qq_get_extension_status": {"operation_id": "id"},
 }
 ACTION_RETURNS = {
@@ -84,6 +86,8 @@ ACTION_RETURNS = {
     "_qq_get_send_status": ["op_id", "scene", "target", "source", "state", "seq", "result", "error"],
     "_qq_get_extension_status": ["op_id", "kind", "state", "updated", "error"],
     "_qq_get_capabilities": ["actions", "network_api", "compatibility"],
+    "get_msg": ["time", "message_type", "message_id", "sender", "message", "raw_message", "user_id", "group_id?", "_qq?"],
+    "get_forward_msg": ["messages"],
     "set_group_ban": ["state"], "delete_msg": ["state"], "set_group_add_request": ["state"],
     "set_group_kick": ["state", "removed"],
     "set_group_kick_members": ["state", "removed", "blacklist_failed?"],
@@ -134,6 +138,7 @@ class ClientState:
         self.panels = None
         self.revoked_owners = []
         self.events = None
+        self.history = None
         self.profiles = None
         self.reads = None
 
@@ -441,6 +446,12 @@ class V2Client:
                     "account_permission": "unverified"},
             "identity_cache": "durable, robot/kind/scene/target-scoped chat observations" if self._state.cache is not None else "not_ready",
         }
+        history_ready = self._state.history is not None and not getattr(self._state.history, "closed", True)
+        for name in ("get_msg", "get_forward_msg"):
+            result["actions"][name].update({
+                "support": "conditional" if history_ready else "unsupported",
+                "reason": "local_observed_history_only" if history_ready else "history_not_ready",
+            })
         for name, entry in result["actions"].items():
             entry.update({"parameters": dict(ACTION_PARAMS.get(name, {})),
                           "returns": list(ACTION_RETURNS.get(name, [])),
@@ -558,6 +569,22 @@ class V2Client:
         return await self._state.management.onebot(action, params)
 
 
+    def _local_history(self, action, params):
+        history = self._state.history
+        if history is None or history.closed:
+            raise V2Error("history_not_ready", "Local message history is not attached.", status=503)
+        scene = target = None
+        if self._route:
+            scene, target = self._route.scene, self._route.target
+        if action == "get_msg":
+            return history.get_msg(self.identity.settings_key, params.get("message_id"), scene=scene, target=target)
+        forward_id = params.get("id", params.get("message_id"))
+        if params.get("id") and params.get("message_id") and params["id"] != params["message_id"]:
+            raise V2Error("invalid_params", "Forward id and message_id disagree.")
+        if forward_id is None:
+            raise V2Error("invalid_params", "Forward id is required.")
+        return history.get_forward(self.identity.settings_key, forward_id, scene=scene, target=target)
+
     async def call_action(self, action, **params):
         self.check()
         if not isinstance(action, str) or not action:
@@ -573,6 +600,8 @@ class V2Client:
         allowed = ACTION_PARAMS.get(action, {})
         if params.keys() - allowed:
             raise V2Error("invalid_params", "Unsupported action parameters.")
+        if action in {"get_msg", "get_forward_msg"}:
+            return self._local_history(action, params)
         if action == "_qq_get_send_status":
             return self.qq.send_status(params.get("operation_id"))
         if action == "_qq_get_extension_status":

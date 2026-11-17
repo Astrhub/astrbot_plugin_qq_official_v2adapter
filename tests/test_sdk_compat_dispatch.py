@@ -93,7 +93,13 @@ async def test_get_msg_is_not_channel_get_message():
     assert captured == ["/channels/c/messages/m"] * 4
     with pytest.raises(V2Error) as history:
         await client.call_action("get_msg", message_id="m")
-    assert history.value.code == "unsupported"
+    assert history.value.code == "history_not_ready"
+    with pytest.raises(V2Error) as forward:
+        await client.api.call_action("get_forward_msg", id="m")
+    assert forward.value.code == "history_not_ready"
+    assert client.capabilities()["actions"]["get_msg"]["support"] == "unsupported"
+    assert client.capabilities()["actions"]["get_msg"]["reason"] == "history_not_ready"
+    assert client.capabilities()["actions"]["get_forward_msg"]["reason"] == "history_not_ready"
 
 
 async def test_unsupported_private_and_removed_network_params():
@@ -104,17 +110,9 @@ async def test_unsupported_private_and_removed_network_params():
     with pytest.raises(V2Error) as missing:
         await client.call_action("get_friend_list")
     assert missing.value.code == "unsupported"
-    with pytest.raises(V2Error) as history:
-        await client.call_action("get_msg", message_id="m")
-    assert history.value.code == "unsupported"
-    with pytest.raises(V2Error) as forward:
-        await client.api.call_action("get_forward_msg", id="m")
-    assert forward.value.code == "unsupported"
     with pytest.raises(V2Error) as private_forward:
         await client.send_private_forward_msg(user_id="u", messages=[])
     assert private_forward.value.code == "unsupported"
-    assert client.capabilities()["actions"]["get_msg"]["support"] == "unsupported"
-    assert client.capabilities()["actions"]["get_forward_msg"]["support"] == "unsupported"
     assert client.capabilities()["actions"]["send_private_forward_msg"]["support"] == "unsupported"
     with pytest.raises(V2Error) as private:
         await client.call_action("_check")

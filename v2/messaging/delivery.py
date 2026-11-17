@@ -7,6 +7,7 @@ from ..models import text_id
 from ..profiles.display import enrich_chat
 from ..protocol import CHAT_EVENTS, RawEnvelope
 from .convert import convert_chat
+from .history import apply_reply_time, record_chat
 
 
 class DeliverySlots:
@@ -98,6 +99,8 @@ class ChatConsumer:
             try:
                 chat = convert_chat(self.adapter.identity, RawEnvelope(payload, item["received_at"]),
                                     isolated=self.adapter.session_isolated, bot_id=self.adapter.bot_id, store=self.store)
+                apply_reply_time(self.adapter.owner.history, chat)
+                record_chat(self.adapter.owner.history, chat)
                 if self.store.delivered(chat) or receipt in self.enqueued:
                     if not self.store.delivered(chat):
                         self.store.mark_delivered(chat)

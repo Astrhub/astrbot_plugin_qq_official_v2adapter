@@ -5,6 +5,7 @@ import sqlite3
 
 from ..errors import V2Error
 from ..messaging.convert import convert_chat
+from ..messaging.history import apply_reply_time, record_chat
 from ..profiles.observations import merge_chat
 from ..protocol import CHAT_EVENTS, RawEnvelope
 from .catalog import EVENT_NAMES
@@ -95,6 +96,8 @@ class CoreConsumer:
                     chat = convert_chat(self.adapter.identity, RawEnvelope(payload, item["received_at"]),
                         isolated=self.adapter.session_isolated, bot_id=self.adapter.bot_id, store=self.adapter.owner.messages)
                     self.adapter.owner.messages.observe(chat)
+                    apply_reply_time(self.adapter.owner.history, chat)
+                    record_chat(self.adapter.owner.history, chat)
                     if receipt > self.recovered_through and chat.source.expires > self.adapter.owner.messages.now():
                         reply = chat.source
                     try:

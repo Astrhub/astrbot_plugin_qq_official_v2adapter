@@ -33,6 +33,18 @@ def log_control_error(operation, code, status, *, unexpected=False, error_type=N
     logger.warning("qq-v2 control error operation=%s code=%s status=%s", operation, code, status)
 
 
+def history_time(value, name):
+    if value in (None, ""):
+        return None
+    if isinstance(value, str):
+        try:
+            value = float(value)
+        except ValueError:
+            raise V2Error("invalid_request", f"{name} must be a unix timestamp.")
+    if type(value) not in (int, float):
+        raise V2Error("invalid_request", f"{name} must be a unix timestamp.")
+    return float(value)
+
 class ControlAPI:
     def __init__(self, owner):
         self.owner = owner
@@ -70,6 +82,15 @@ class ControlAPI:
                                        ("panels/sync", "POST", "panel_sync"), ("panels/disable", "POST", "panel_disable"),
                                        ("panels/status", "GET", "panel_status"),
                                        ("inbox/retained", "GET", "inbox_retained"), ("inbox/discard", "POST", "inbox_discard"),
+                                       ("history/status", "GET", "history_status"), ("history/query", "GET", "history_query"),
+                                       ("history/message", "GET", "history_message"), ("history/policy", "POST", "history_policy"),
+                                       ("history/integrity", "POST", "history_integrity"),
+                                       ("history/checkpoint", "POST", "history_checkpoint"),
+                                       ("history/export", "POST", "history_export"),
+                                       ("history/delete", "POST", "history_delete"),
+                                       ("history/purge", "POST", "history_purge"),
+                                       ("profile/status", "GET", "profile_status"),
+                                       ("profile/policy", "POST", "profile_policy"),
                                        ("onboarding/start", "POST", "onboarding_start"), ("onboarding/status", "POST", "onboarding_status"),
                                        ("onboarding/cancel", "POST", "onboarding_cancel"), ("onboarding/commit", "POST", "onboarding_commit")):
             route = f"/{PLUGIN_NAME}/{path}"
@@ -258,6 +279,102 @@ class ControlAPI:
         discarded = inbox.discard_retained(owner_key, selected)
         return {"discarded": discarded, "counts": inbox.diagnostics(owner_key)}
 
+    def dispatch_profile(self, operation, username, body):
+        store = getattr(self.owner, "profiles", None)
+        if store is None or getattr(store, "closed", True):
+            raise V2Error("profile_not_ready", "Profile store is not attached.", status=503)
+        if operation == "profile_status":
+            return store.policy_status()
+        if body.get("confirm") is not True:
+            raise V2Error("confirmation_required", "Confirm saving profile store settings.")
+        result = store.save_policy(body.get("policy") or {})
+        return {**result, **store.policy_status()}
+
+
+    def _history_store(self):
+        history = getattr(self.owner, "history", None)
+        if history is None or history.closed:
+            raise V2Error("history_not_ready", "Local message history is not attached.", status=503)
+        return history
+
+    def dispatch_history(self, operation, username, body, identity, fingerprint):
+        history = self._history_store()
+        owner = identity.settings_key
+        scene = (body if request.method == "POST" else request.query).get("scene") if operation in {"history_query", "history_message"} else body.get("scene")
+        if scene in ("", None):
+            scene = None
+        elif scene not in SCENES:
+            raise V2Error("invalid_scene", "Unknown scene.")
+        if operation == "history_status":
+            return {"platform_id": identity.platform_id, "fingerprint": fingerprint, **history.status(owner)}
+        if operation == "history_query":
+            params = body if request.method == "POST" else request.query
+            limit = params.get("limit", 50)
+            if isinstance(limit, str) and limit.isdigit():
+                limit = int(limit)
+            since = history_time(params.get("since"), "since")
+            until = history_time(params.get("until"), "until")
+            q = params.get("q")
+            if q in (None, ""):
+                q = params.get("keyword")
+            rows = history.query(
+                owner,
+                message_id=params.get("message_id") or None,
+                scene=scene,
+                target=params.get("target") or None,
+                since=since,
+                until=until,
+                q=q or None,
+                limit=limit,
+            )
+            return {
+                "platform_id": identity.platform_id,
+                "entries": rows,
+                "search_mode": history.last_query_mode(),
+                "search_pending": history.search_pending(owner),
+            }
+        if operation == "history_message":
+            params = body if request.method == "POST" else request.query
+            event = history.get_msg(owner, params.get("message_id"), scene=scene, target=params.get("target") or None)
+            return {"platform_id": identity.platform_id, "event": event}
+        if body.get("fingerprint") != fingerprint:
+            raise V2Error("config_conflict", "Platform identity changed; reload first.", status=409)
+        if operation == "history_integrity":
+            return history.integrity()
+        if body.get("confirm") is not True:
+            raise V2Error("confirmation_required", "Confirm this message-history maintenance action.")
+        if operation == "history_policy":
+            result = history.save_policy(owner, body.get("policy") or {})
+            return {"platform_id": identity.platform_id, **result, **history.status(owner)}
+        if operation == "history_checkpoint":
+            return history.checkpoint()
+        if operation == "history_export":
+            return history.export_rows(
+                owner,
+                scene=scene,
+                target=body.get("target") or None,
+                since=history_time(body.get("since"), "since"),
+                until=history_time(body.get("until"), "until"),
+                limit=body.get("limit", 1000) if type(body.get("limit", 1000)) is int else 1000,
+            )
+        if operation == "history_delete":
+            if body.get("confirm_delete") is not True:
+                raise V2Error("confirmation_required", "Confirm deletion of the selected message history range.")
+            result = history.delete_range(
+                owner,
+                scene=scene,
+                target=body.get("target") or None,
+                since=history_time(body.get("since"), "since"),
+                until=history_time(body.get("until"), "until"),
+            )
+            return {**result, **history.status(owner)}
+        if operation == "history_purge":
+            if body.get("confirm_text") != "DELETE_MESSAGE_HISTORY":
+                raise V2Error("confirmation_required", "Type DELETE_MESSAGE_HISTORY to purge local message history.")
+            result = history.purge(owner)
+            return {**result, **history.status(owner)}
+        raise unsupported()
+
     def dispatch(self, operation, username, body):
         if operation == "bootstrap":
             configs = self.owner.context.get_config().get("platform", [])
@@ -282,8 +399,12 @@ class ControlAPI:
                 self.owner.config.update(old)
                 raise V2Error("config_save_failed", "Host switch save failed; reload to verify disk state.", status=503) from exc
             return {"flags": self.flags(), "revision": self.fingerprint(self.flags())}
+        if operation in {"profile_status", "profile_policy"}:
+            return self.dispatch_profile(operation, username, body)
         platform_id = body.get("platform_id") if request.method == "POST" else request.query.get("platform_id")
         config, identity, fingerprint = self.platform(platform_id)
+        if operation.startswith("history_"):
+            return self.dispatch_history(operation, username, body, identity, fingerprint)
         if operation in {"inbox_retained", "inbox_discard"}:
             return self.dispatch_inbox(operation, username, body, identity, fingerprint)
         if operation == "get":

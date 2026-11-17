@@ -23,6 +23,7 @@ from .v2.group_tools import GroupTools
 from .v2.help import send_help
 from .v2.media.io import BlobPool
 from .v2.messaging.delivery import DeliverySlots
+from .v2.messaging.history import HistoryStore
 from .v2.messaging.store import MessageStore
 from .v2.onboarding import Onboarding
 from .v2.panels import PanelService
@@ -85,6 +86,7 @@ class QQOfficialV2(Star):
         self.inbox = None
         self.messages = None
         self.extension_state = None
+        self.history = None
         self.profiles = None
         self.media_pool = None
         self.panels = None
@@ -101,17 +103,10 @@ class QQOfficialV2(Star):
             self.store = SettingsStore(StarTools.get_data_dir(PLUGIN_NAME) / "settings.sqlite3")
             self.inbox = RawInbox(StarTools.get_data_dir(PLUGIN_NAME) / "transport.sqlite3")
             self.messages = MessageStore(StarTools.get_data_dir(PLUGIN_NAME) / "messaging.sqlite3")
+            self.history = HistoryStore(StarTools.get_data_dir(PLUGIN_NAME) / "history.sqlite3")
             self.extension_state = ExtensionStore(self.messages)
-            for name, low, high in (("profile_max_records", 1, 65536), ("profile_max_bytes", 1048576, 268435456),
-                                    ("profile_stale_seconds", 1, 86400), ("profile_cooldown_seconds", 1, 86400)):
-                value = self.config.get(name, {"profile_max_records": 32768, "profile_max_bytes": 67108864,
-                                               "profile_stale_seconds": 300, "profile_cooldown_seconds": 600}[name])
-                if type(value) is not int or not low <= value <= high:
-                    raise V2Error("invalid_profile_config", f"Invalid {name} profile setting")
             self.profiles = ProfileStore(StarTools.get_data_dir(PLUGIN_NAME) / "profiles.sqlite3",
-                max_profiles=self.config.get("profile_max_records", 32768),
-                max_bytes=self.config.get("profile_max_bytes", 67108864),
-                stale_seconds=self.config.get("profile_stale_seconds", 300))
+                legacy=self.config)
             self.profiles.migrate_identities(self.messages)
             self.media_pool = BlobPool(StarTools.get_data_dir(PLUGIN_NAME) / "media-spool")
             for kind in PLATFORM_TYPES:
@@ -355,6 +350,8 @@ class QQOfficialV2(Star):
             self.inbox.close()
         if self.extension_state:
             await self.extension_state.close()
+        if self.history:
+            self.history.close()
         if self.profiles:
             self.profiles.close()
         if self.media_pool:

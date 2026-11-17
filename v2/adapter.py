@@ -85,6 +85,7 @@ class V2Adapter(Platform):
         self.client._state.events = EventBus(self.check_generation,
             owner_guard=self.client._state.check_owner,
             progress=lambda receipt: self.owner.inbox.progress(identity.settings_key, receipt))
+        self.client._state.history = self.owner.history
         self.consumer = ChatConsumer(self)
         self.client._state.guard = self.check_generation
         self.client._state.status = self.runtime_status
@@ -93,7 +94,6 @@ class V2Adapter(Platform):
         self.reads = GroupReads(identity, self.http, RequestSpec)
         self.client._state.reads = self.reads
         self.profiles = Profiles(identity, self.owner.profiles, self.reads,
-                                 cooldown=self.owner.config.get("profile_cooldown_seconds", 600),
                                  continuity_check=lambda: (tuple((g.shard, g.session_id) for g in self.gateway.gateways)
                                      if self.gateway and self.gateway.online and identity.intents & (1 << 24) else None),
                                  guard=self.check_generation)

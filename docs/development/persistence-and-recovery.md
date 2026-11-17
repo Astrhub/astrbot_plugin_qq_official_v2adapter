@@ -9,7 +9,8 @@ owner 初始化以下自有资源：
 | Pages 设置 | `settings.sqlite3` | draft/applied、revision、版本历史和命令绑定 |
 | 原始收件 | `transport.sqlite3` | receipt、pending、delivered、retained/quarantine |
 | 消息账本 | `messaging.sqlite3` | identity、去重、reply source、sequence、operation、扩展状态 |
-| 资料缓存 | `profiles.sqlite3` | 当前/历史成员资料和名单连续性 |
+| 资料缓存 | `profiles.sqlite3` | 当前/历史成员资料、名单连续性和插件级 `profile_policy` |
+| 消息历史 | `history.sqlite3` | 本地观测消息、转发节点、FTS5 检索索引和保留策略；默认 unlimited，与发送账本隔离 |
 | 媒体临时区 | `media-spool/` | 受界限保护的本地媒体副本 |
 
 凭据仍由 AstrBot 平台配置持有。按钮票据、QQ presigned URL 和正文不应写入日志；presigned URL 只在上传流程中短暂存在。
@@ -37,3 +38,5 @@ reserved -> in_flight -> sent
 - 发送 unknown 只允许查询原账本；服务端是否已经产生副作用仍需由业务确认。
 - 资料缓存带 `source`、`as_of`、`received` 和成员状态；历史资料不能直接恢复为当前管理员权限。
 - 数据库损坏、容量耗尽或锁失败应让当前实例进入明确降级/失败状态，不应静默新建空库覆盖旧数据。
+- 消息历史按实例 `settings_key` 隔离；范围删除必须带 scene、target、since 或 until，全量清空只走 purge。
+- 消息查询用 FTS5（宿主 jieba 预分词）检索 `history.sqlite3`；FTS5 不可用时降级为 `event_json` 的 LIKE，并在状态与查询结果中标明 `search_mode`。存量库按批补索引。索引写入失败不影响消息入库和发送账本。

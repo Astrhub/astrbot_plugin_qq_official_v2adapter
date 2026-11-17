@@ -43,7 +43,7 @@ state = event.bot.qq.send_status(result["operation_id"])
 | `send_private_msg` | `await event.bot.qq.send("c2c", user_openid, message)` |
 | `send_msg` | 根据 `group_id` 或 `user_id` 选择 `group` 或 `c2c`，再调用 `event.bot.qq.send(...)` |
 | `get_login_info` | `await event.bot.qq.me()` |
-| `get_msg` / `get_forward_msg` | 无等价完整历史；入站引用见消息链中的 `Reply`。频道单条读取使用 `get_message(channel_id, message_id)` |
+| `get_msg` / `get_forward_msg` | 查询本实例 `history.sqlite3`；无记录返回 `message_not_found` / `message_expired` / `message_deleted` / `forward_nodes_unavailable`，不请求频道 `get_message`。`get_forward_msg` 只返回真实本地节点 |
 | `get_group_info` | `await event.bot.qq.get_group_info(group_openid)` |
 | `get_group_member_info` | `await event.bot.qq.get_group_member_info(group_openid, member_openid)` |
 | `get_group_member_list` | 获取一页使用 `await event.bot.qq.get_group_member_list(group_openid, cursor)`；完整遍历使用 `async for row in event.bot.qq.iter_group_members(group_openid)` |
