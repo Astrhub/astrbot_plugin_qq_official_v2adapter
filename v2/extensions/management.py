@@ -27,7 +27,7 @@ NATIVE_ACTIONS = {"group_info", "bot_state", "group_member", "group_members", "g
 NATIVE_READ_ACTIONS = frozenset({"group_info", "bot_state", "group_member", "group_members", "group_mutes",
                                  "join_requests", "login_info", "guild_info", "channels", "channel_info",
                                  "guild_member", "guild_members"})
-ROLE_TTL_SECONDS, ROLE_RETRY_SECONDS, ROLE_MEMBER_SECONDS = 300, 60, 60
+ROLE_TTL_SECONDS, ROLE_RETRY_SECONDS = 300, 60
 ROLE_DENIED_CODES = frozenset({11253, 11282})
 
 
@@ -145,8 +145,8 @@ class Management:
             invalid()
         return data
 
-    async def _role(self, group, *, refresh=False, guard=None):
-        """Return one cached-or-read role plus whether the cache answered it."""
+    async def bot_state(self, group, *, refresh=False, guard=None):
+        """Robot role in one group, cached per group so repeated reads stay inside the quota."""
         key = text_id(group)
         now = self.store.now()
         for stale in [k for k, entry in self._roles.items() if entry.expires <= now]:
@@ -157,7 +157,7 @@ class Management:
         if cached is not None:
             if cached.denial is not None:
                 raise role_denial(cached.denial)
-            return copy.deepcopy(cached.data), True
+            return copy.deepcopy(cached.data)
         epoch = self._role_epoch[key] = self._role_epoch.get(key, 0) + 1
         self._role_pending.add(key)
         try:
@@ -173,28 +173,15 @@ class Management:
         finally:
             self._role_pending.discard(key)
         if self._role_epoch.get(key) == epoch:
-            # A newer read or invalidation wins, and a plain member role is only remembered briefly.
-            ttl = ROLE_MEMBER_SECONDS if data["member_role"] == "member" else ROLE_TTL_SECONDS
-            self._roles[key] = RoleEntry(now + ttl, data=data)
-        return copy.deepcopy(data), False
-
-    async def bot_state(self, group, *, refresh=False, guard=None):
-        """Robot role in one group, cached per group so repeated admin checks stay inside the quota."""
-        data, _ = await self._role(group, refresh=refresh, guard=guard)
-        return data
+            # A newer read or an invalidated cache wins over this late result.
+            self._roles[key] = RoleEntry(now + ROLE_TTL_SECONDS, data=data)
+        return copy.deepcopy(data)
 
     def _invalidate_role(self, key):
         self._roles.pop(key, None)
         # Reads already in flight are older than this invalidation and must not repopulate the cache.
         self._role_epoch[key] = self._role_epoch.get(key, 0) + 1
 
-    async def _admin(self, group, *, guard=None):
-        data, cached = await self._role(group, guard=guard)
-        if cached and data["member_role"] not in {"admin", "owner"}:
-            # A promotion may postdate the cached role; confirm against QQ once instead of denying locally.
-            data, _ = await self._role(group, refresh=True, guard=guard)
-        if data["member_role"] not in {"admin", "owner"}:
-            raise V2Error("group_admin_required", "The current bot-state response does not grant an administrator role.", status=403)
 
     async def _confirm_role(self, group, error, *, guard=None):
         """Refresh the cached role once when QQ denies a permission; the write itself is never replayed."""
@@ -261,7 +248,6 @@ class Management:
         if type(duration) is not int or not 0 <= duration <= 30 * 86400:
             raise V2Error("invalid_duration", "Group mute duration must be 0..2592000 seconds.")
         self.check(write=True)
-        await self._admin(group, guard=guard)
         binding = digest(["group_ban", group, user, duration])
         path = f"/v2/groups/{ident(group)}/restrict_chat_setting"
         if operation_id is not None:
@@ -311,7 +297,6 @@ class Management:
             raise unsupported("QQ no longer accepts a blacklist choice on group removal; use the member blacklist action instead.")
         users = list(users)
         self.check(write=True)
-        await self._admin(group, guard=guard)
         def validate(data):
             if not isinstance(data, dict) or data.get("remove_members_result") != "success":
                 invalid()
@@ -364,7 +349,6 @@ class Management:
         row = self.store.db.execute("SELECT * FROM join_flags WHERE robot=? AND flag_hash=?", (robot, hashlib.sha256(flag.encode()).hexdigest())).fetchone()
         if not row or row["expires"] <= self.store.now() or row["state"] != "pending":
             raise V2Error("request_flag_invalid", "Use an observed, unexpired, unused request flag for this robot.", status=404)
-        await self._admin(row["target"], guard=guard)
         op_id = "approve-" + row["flag_hash"]
         body = {"op": "approve" if approve else "decline", "join_request_id": row["request_id"]}
         if not approve:

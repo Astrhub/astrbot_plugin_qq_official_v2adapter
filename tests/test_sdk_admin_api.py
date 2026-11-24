@@ -321,7 +321,7 @@ async def test_revoked_legacy_write_waiting_for_token_never_starts_business_wire
         assert p.calls == []
         rows = p.instance.client._state.extension_state.db.execute(
             "SELECT state FROM extension_ops WHERE op_id=?", (op_id,)).fetchall()
-        if name in {"group_ban", "approve"}:
+        if name == "group_ban":
             assert not rows
         else:
             assert [row[0] for row in rows] == ["not_sent"]
@@ -369,7 +369,7 @@ async def test_legacy_owner_unloaded_after_wire_or_prequery_and_partial_kick(leg
         with pytest.raises(RuntimeError) as stopped:
             await ban_task
         assert stopped.value.code == "stale_owner" and [path for _, path, _ in p.calls] == [
-            "/v2/groups/g/bot_state", "/v2/groups/g/members/u"]
+            "/v2/groups/g/members/u"]
         assert not p.instance.client._state.extension_state.db.execute(
             "SELECT 1 FROM extension_ops WHERE op_id='prequery-ban'").fetchone()
     finally:
@@ -377,30 +377,6 @@ async def test_legacy_owner_unloaded_after_wire_or_prequery_and_partial_kick(leg
         monkeypatch.setattr(p.manager, "group_member", original_member)
 
     p.calls.clear()
-    (flag,), kwargs, op_id = prepare_legacy_call(p, "approve", (), "-rev")
-    entered2, release2 = asyncio.Event(), asyncio.Event()
-    original_admin = p.manager._admin
-
-    async def delayed_admin(*args, **options):
-        await original_admin(*args, **options)
-        entered2.set()
-        await release2.wait()
-
-    monkeypatch.setattr(p.manager, "_admin", delayed_admin)
-    plugin3 = object()
-    approve_task = asyncio.create_task(p.instance.client.qq.with_options(owner=plugin3).approve(flag, **kwargs))
-    try:
-        await asyncio.wait_for(entered2.wait(), 2)
-        await p.owner.catalog_unloaded(SimpleNamespace(star_cls=plugin3))
-        release2.set()
-        with pytest.raises(RuntimeError) as stopped:
-            await approve_task
-        assert stopped.value.code == "stale_owner" and stopped.value.phase == "not_sent"
-        assert p.instance.client._state.extension_state.operation(p.instance.identity.robot, op_id)["state"] == "not_sent"
-        assert p.manager.store.db.execute("SELECT state FROM join_flags WHERE flag_hash=?", (hashlib.sha256(flag.encode()).hexdigest(),)).fetchone()[0] == "retryable"
-    finally:
-        release2.set()
-        monkeypatch.setattr(p.manager, "_admin", original_admin)
 
     p.calls.clear()
     p.write_entered.clear()
@@ -422,3 +398,5 @@ async def test_legacy_owner_unloaded_after_wire_or_prequery_and_partial_kick(leg
     finally:
         p.partial_blacklist[0] = p.hold_write[0] = False
         p.write_release.set()
+
+

@@ -305,23 +305,21 @@ async def test_bot_state_permission_denial_is_remembered_briefly(management):
     assert bot_state_calls(m.calls) == 2
 
 
-async def test_admin_write_reuses_cached_role_and_confirms_once_after_denial(management):
+async def test_admin_write_skips_the_local_role_check_and_confirms_once_after_denial(management):
     m = management
-    await m.service.group_kick("g", ["u"], operation_id="kick-cached")
-    assert bot_state_calls(m.calls) == 1
     def writes():
         return sum(1 for call in m.calls if call[0] == "POST" and call[1].endswith("batch_remove_members"))
-    assert writes() == 1
+    await m.service.group_kick("g", ["u"], operation_id="kick-cached")
+    assert bot_state_calls(m.calls) == 0 and writes() == 1
     m.modes[:] = ["admin_denied"]
     with pytest.raises(V2Error) as error:
         await m.service.group_kick("g", ["v"], operation_id="kick-denied")
     assert error.value.business_code == 11282
     assert writes() == 2
-    assert bot_state_calls(m.calls) == 2
+    assert bot_state_calls(m.calls) == 1
     m.modes[:] = []
     await m.service.group_kick("g", ["w"], operation_id="kick-after")
-    assert bot_state_calls(m.calls) == 2 and writes() == 3
-
+    assert bot_state_calls(m.calls) == 1 and writes() == 3
 
 async def test_unrelated_write_failure_keeps_the_cached_role(management):
     m = management
@@ -333,24 +331,14 @@ async def test_unrelated_write_failure_keeps_the_cached_role(management):
     assert bot_state_calls(m.calls) == 1
 
 
-async def test_cached_member_role_is_reconfirmed_before_a_write_is_denied(management):
+async def test_admin_denied_write_reaches_qq_and_is_recorded_rejected(management):
     m = management
-    roles = ["member", "admin"]
-    reads = []
-
-    async def read_role(path, *, params=None, guard=None):
-        reads.append(path)
-        return {"member_openid": "real-bot", "member_role": roles.pop(0) if roles else "admin"}
-
-    m.service._read = read_role
-    with pytest.raises(V2Error):
-        await m.service._admin("g")
-    assert len(reads) == 1
-    await m.service._admin("g")
-    assert len(reads) == 2
-    await m.service._admin("g")
-    assert len(reads) == 2
-
+    m.modes[:] = ["admin_denied"]
+    with pytest.raises(V2Error) as error:
+        await m.service.group_kick("g", ["u"], operation_id="kick-denied")
+    assert error.value.business_code == 11282 and error.value.phase == "rejected"
+    assert m.state.operation(m.http.identity.robot, "kick-denied")["state"] == "rejected"
+    assert bot_state_calls(m.calls) == 1
 
 async def test_older_bot_state_read_cannot_overwrite_a_newer_role(management):
     m = management
