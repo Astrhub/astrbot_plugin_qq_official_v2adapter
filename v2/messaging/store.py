@@ -592,6 +592,11 @@ class MessageStore:
                     (key[0], key[1], key[2], legacy_source)).fetchone()[0] or 0
             seq = requested if requested is not None else max(high, observed, retained) + 1
             if source_kind == "message":
+                claimed = self.db.execute("SELECT 1 FROM sdk_sequences WHERE robot=? AND source_kind='message' AND source_id=? AND seq=?",
+                                          (key[0], source_id, seq)).fetchone()
+                if claimed:
+                    # A sequence already used for this message stays used, whichever scene claimed it.
+                    failure("sequence_conflict", "This source sequence is already claimed.")
                 occupied = self.db.execute("""SELECT 1 FROM operations WHERE robot=? AND source=? AND seq=?
                     AND state IN ('reserved','in_flight','unknown','sent','rejected','history_evicted')""",
                     (key[0], legacy_source, seq)).fetchone()

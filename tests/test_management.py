@@ -297,7 +297,7 @@ async def test_bot_state_permission_denial_is_remembered_briefly(management):
     assert error.value.business_code == 11253
     with pytest.raises(V2Error) as cached:
         await m.service.bot_state("g")
-    assert cached.value.business_code == 11253
+    assert cached.value.business_code == 11253 and cached.value.http_status == error.value.http_status
     assert bot_state_calls(m.calls) == 1
     m.modes[:] = []
     m.clock[0] += 60

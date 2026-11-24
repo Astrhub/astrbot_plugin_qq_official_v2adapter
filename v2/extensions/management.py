@@ -4,6 +4,7 @@ import copy
 import hashlib
 import json
 import secrets
+from collections import Counter
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -42,7 +43,7 @@ def role_denial(fields):
     """Rebuild a cached denial so repeated cache hits never share one traceback."""
     return V2Error(fields["code"], fields["message"], retcode=fields["retcode"], status=fields["status"],
                    business_code=fields["business_code"], trace_id=fields["trace_id"],
-                   retry_after=fields["retry_after"], phase=fields["phase"],
+                   retry_after=fields["retry_after"], http_status=fields["http_status"], phase=fields["phase"],
                    operation_id=fields["operation_id"], details=copy.deepcopy(fields.get("details")))
 
 
@@ -84,7 +85,7 @@ class Management:
         self.identity, self.http, self.state, self.store = identity, http, state, store
         self.settings = settings
         self.tasks, self.closed = set(), False
-        self._roles, self._role_epoch, self._role_pending = {}, {}, set()
+        self._roles, self._role_epoch, self._role_pending = {}, {}, Counter()
         self.store.db.execute("""CREATE TABLE IF NOT EXISTS join_flags(robot TEXT,target TEXT,member TEXT,request_id TEXT,
             flag_hash TEXT,expires REAL,observed REAL,state TEXT,op_id TEXT,
             PRIMARY KEY(robot,target,member,request_id))""")
@@ -159,7 +160,7 @@ class Management:
                 raise role_denial(cached.denial)
             return copy.deepcopy(cached.data)
         epoch = self._role_epoch[key] = self._role_epoch.get(key, 0) + 1
-        self._role_pending.add(key)
+        self._role_pending[key] += 1
         try:
             data = await self._read(f"/v2/groups/{ident(group)}/bot_state", guard=guard)
             if not isinstance(data, dict) or data.get("member_role") not in ("member", "admin", "owner"):
@@ -171,7 +172,9 @@ class Management:
                 self._roles[key] = RoleEntry(now + ROLE_RETRY_SECONDS, denial=error.as_dict())
             raise
         finally:
-            self._role_pending.discard(key)
+            self._role_pending[key] -= 1
+            if not self._role_pending[key]:
+                del self._role_pending[key]
         if self._role_epoch.get(key) == epoch:
             # A newer read or an invalidated cache wins over this late result.
             self._roles[key] = RoleEntry(now + ROLE_TTL_SECONDS, data=data)

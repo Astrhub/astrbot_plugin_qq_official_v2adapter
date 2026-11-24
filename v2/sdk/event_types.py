@@ -330,7 +330,8 @@ add("MESSAGE_CREATE AT_MESSAGE_CREATE DIRECT_MESSAGE_CREATE", "channel_message",
 add("MESSAGE_DELETE PUBLIC_MESSAGE_DELETE DIRECT_MESSAGE_DELETE", "channel_message",
     "botpy 1.2.1 connection.py; current dedicated payload page not confirmed", (), Message.__annotations__, False)
 add("GROUP_MESSAGE_CREATE GROUP_AT_MESSAGE_CREATE", "group_message",
-    _AUTO + "group_message_create.md", ("id", "author", "group_openid"), GroupMessage.__annotations__)
+    _AUTO + "group_message_create.md", ("id", "author", "group_openid"),
+    {**Message.__annotations__, **GroupMessage.__annotations__})
 add("C2C_MESSAGE_CREATE", "c2c_message", _AUTO + "c2c_message_create.md",
     ("id", "author"), Message.__annotations__)
 add("GROUP_MEMBER_ADD GROUP_MEMBER_REMOVE", "group_member", _AUTO + "group_member_add.md",

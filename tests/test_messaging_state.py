@@ -280,3 +280,15 @@ def test_c2c_passive_source_reuses_the_group_observation_only_across_scenes(stat
     assert mismatch.value.code == "identity_mismatch"
     state.block_source(chat.source, 40034128)
     assert state.db.execute("SELECT blocked FROM sources WHERE message_id='group-msg'").fetchone()[0] == "40034128"
+
+
+def test_sdk_sequence_claim_is_unique_for_one_message_across_scenes(state, config):
+    chat = observed(config, "GROUP_MESSAGE_CREATE", message_id="group-msg", sender="member-one")
+    state.observe(chat)
+    assert state.claim_sequence(chat.route, "message", "group-msg", "op-group", lane="send", binding="binding-a") == 1
+    c2c = SessionRoute(chat.route.robot, "c2c", "user-one")
+    with pytest.raises(V2Error) as taken:
+        state.claim_sequence(c2c, "message", "group-msg", "op-c2c", requested=1, lane="send", binding="binding-b")
+    assert taken.value.code == "sequence_conflict"
+
+

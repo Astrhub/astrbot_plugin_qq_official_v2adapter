@@ -134,3 +134,8 @@ def test_group_mentions_keep_the_documented_fields_in_the_typed_view():
             "mentions": [{"member_openid": "u2", "is_you": True, "scope": "single"}]}
     notice = make_event("GROUP_MESSAGE_CREATE", body)
     assert notice.schema_valid and notice.typed["d"]["mentions"][0]["is_you"] is True
+
+
+def test_group_message_still_validates_inherited_field_types():
+    malformed = make_event("GROUP_MESSAGE_CREATE", {"id": 1, "author": {"member_openid": "u"}, "group_openid": "g"})
+    assert malformed.known and not malformed.schema_valid and malformed.typed is None
