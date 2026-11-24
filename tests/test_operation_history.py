@@ -6,7 +6,7 @@ from test_messaging_send import sending as sending
 from test_messaging_state import NOW, observed
 
 from v2.errors import V2Error
-from v2.messaging.store import MessageStore, robot_key
+from v2.messaging.store import MESSAGE_POLICY_DEFAULTS, MessageStore, robot_key
 
 
 @pytest.fixture
@@ -121,7 +121,7 @@ def test_nonterminal_budget_and_restart_keep_unknown_and_compacted_fences(ledger
         with pytest.raises(V2Error) as exc:
             restored.reserve(chat.route, None, "digest", "done-0")
         assert exc.value.code == "operation_history_evicted"
-        clock[0] += 86401
+        clock[0] += MESSAGE_POLICY_DEFAULTS["retention_seconds"] + 1
         restored.prune()
         assert restored.operation(chat.route.robot, "unknown")["state"] == "unknown"
         assert restored.db.execute("SELECT count(*) FROM operations WHERE state='history_evicted'").fetchone()[0] == 0

@@ -24,7 +24,7 @@ from v2.extensions.events import ExtensionEvent
 from v2.extensions.projection import CommandProjection
 from v2.messaging.convert import convert_chat
 from v2.messaging.session_sources import SessionSourceIndex
-from v2.messaging.store import MessageStore
+from v2.messaging.store import MESSAGE_POLICY_DEFAULTS, MessageStore
 from v2.models import InstanceKey, RobotKey, SessionRoute
 from v2.protocol import RawEnvelope
 
@@ -131,7 +131,7 @@ async def test_session_route_rejections_precede_http(sending, adapter, case):
     elif case == "unknown_type":
         mt = MessageType.OTHER_MESSAGE
     else:
-        sending.clock[0] += 86401
+        sending.clock[0] += MESSAGE_POLICY_DEFAULTS["retention_seconds"] + 1
     with pytest.raises(V2Error):
         await adapter.send_by_session(MessageSession(platform, mt, sid), MessageChain([Plain("no")]))
     assert not sending.calls

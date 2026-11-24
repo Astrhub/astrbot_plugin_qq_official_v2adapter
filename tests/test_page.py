@@ -110,6 +110,10 @@ def test_runtime_policy_placement_and_shared_draft_actions():
     assert 'v-model="query.q"' in storage
     assert "storage.search" in i18n_src and "storage.searchModeLike" in i18n_src
     assert "profile/status" in api_src and "profile/policy" in api_src
+    assert "state/status" in api_src and "state/policy" in api_src
+    assert "saveStatePolicy" in api_src and "defaultStatePolicy" in app and "stateDirty" in app
+    assert "storage.stateTitle" in i18n_src and "storage.saveState" in i18n_src
+    assert "statePolicy" in storage and "stateBounds" in storage
 
 
 def test_control_view_api_state_machine_and_i18n_theme_sync():
@@ -274,6 +278,10 @@ assert.equal(typeof api.historyStatus, "function");
 assert.equal(typeof api.saveHistoryPolicy, "function");
 assert.equal(typeof api.profileStatus, "function");
 assert.equal(typeof api.saveProfilePolicy, "function");
+assert.equal(typeof api.stateStatus, "function");
+assert.equal(typeof api.saveStatePolicy, "function");
+assert.equal(t("storage.stateTitle"), "运行时状态库");
+assert.equal(t("storage.saveState"), "保存并应用状态库设置");
 assert.equal(t("storage.profileTitle"), "资料库");
 assert.equal(t("storage.saveProfile"), "保存并应用资料库设置");
 await api.startScan();

@@ -12,7 +12,7 @@ from v2.errors import V2Error
 from v2.extensions.management import Management
 from v2.extensions.state import ExtensionStore
 from v2.messaging.convert import convert_chat
-from v2.messaging.store import robot_key
+from v2.messaging.store import MESSAGE_POLICY_DEFAULTS, robot_key
 from v2.models import InstanceKey, RobotKey
 from v2.panels import PanelService
 from v2.protocol import RawEnvelope
@@ -148,7 +148,7 @@ async def test_confirmed_quiet_targets_keep_sync_without_refreshing_identity(pan
     options = {"target_type": "specific", "targets": [target]}
     plan = e.service.plan(e.instance, scene, **options)
     await e.service.enable(e.instance, scene, plan["fingerprint"], confirm=True, **options)
-    e.clock[0] += 86401
+    e.clock[0] += MESSAGE_POLICY_DEFAULTS["retention_seconds"] + 1
     with pytest.raises(V2Error, match="observation"):
         e.owner.messages.target(chat.route)
     e.handlers[0].desc = "updated after quiet day"
@@ -174,7 +174,7 @@ async def test_confirmed_scope_cannot_authorize_unobserved_alternatives(panel_en
     e = panel_env
     e.owner.messages.observe(convert_chat(e.instance.identity, RawEnvelope(chat_payload(), NOW)))
     await enable(e, target_type="specific", targets=["group-one"])
-    e.clock[0] += 86401
+    e.clock[0] += MESSAGE_POLICY_DEFAULTS["retention_seconds"] + 1
     target, instance = "group-one", e.instance
     if changed == "target":
         target = "unobserved"

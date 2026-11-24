@@ -55,6 +55,22 @@ export function normalizeProfilePolicy(policy) {
   return next;
 }
 
+
+export function defaultStatePolicy() {
+  return { retention_seconds: 604800, identity_capacity: 4096, source_capacity: 16384, operation_capacity: 32768 };
+}
+
+export function normalizeStatePolicy(policy) {
+  const fallback = defaultStatePolicy();
+  if (!policy || typeof policy !== "object") return fallback;
+  const next = { ...fallback };
+  for (const key of Object.keys(fallback)) {
+    const value = Number(policy[key]);
+    if (Number.isInteger(value)) next[key] = value;
+  }
+  return next;
+}
+
 export function runtimePolicyFields(extensions = {}) {
   return Object.fromEntries(RUNTIME_POLICY_KEYS.map(key => [key, extensions[key]]));
 }
@@ -356,6 +372,12 @@ export function createApi(state) {
     },
     async saveProfilePolicy(policy) {
       return post("profile/policy", { confirm: true, policy });
+    },
+    async stateStatus() {
+      return get("state/status");
+    },
+    async saveStatePolicy(policy) {
+      return post("state/policy", { confirm: true, policy });
     },
   };
 }

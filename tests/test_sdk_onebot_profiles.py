@@ -12,7 +12,7 @@ from v2.client import (
     V2Client,
 )
 from v2.errors import V2Error
-from v2.messaging.store import IdentityView, MessageStore, robot_key
+from v2.messaging.store import MESSAGE_POLICY_DEFAULTS, IdentityView, MessageStore, robot_key
 from v2.models import InstanceKey, RobotKey
 from v2.profiles.service import Profiles
 from v2.profiles.store import ProfileStore
@@ -135,7 +135,7 @@ async def test_stranger_chat_fields_survive_profile_overlay_and_historical_fallb
     assert (live["source"], live["nickname"], live["source_message_id"], live["first_seen"], live["last_seen"]) == (
         "chat_cache", "Profile", "chat-message", 9990, 9991)
     assert live["_qq"]["profile_fields"]["nickname"]["source"] == "official_query"
-    h.now[0] += 86401
+    h.now[0] += MESSAGE_POLICY_DEFAULTS["retention_seconds"] + 1
     historical = await h.client.call_action("get_stranger_info", user_id="001", id_kind="member_openid", scope="group:g")
     assert historical["source"] == "profile_cache" and historical["nickname"] == "Profile"
     assert "source_message_id" not in historical and "first_seen" not in historical and "last_seen" not in historical

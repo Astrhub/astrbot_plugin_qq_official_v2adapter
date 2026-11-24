@@ -6,7 +6,7 @@ from test_messaging_state import NOW, chat_payload
 from v2.client import V2Client
 from v2.errors import V2Error
 from v2.messaging.convert import convert_chat
-from v2.messaging.store import IdentityView, MessageStore
+from v2.messaging.store import MESSAGE_POLICY_DEFAULTS, IdentityView, MessageStore
 from v2.models import InstanceKey, RobotKey, SessionRoute
 from v2.protocol import (
     ExpiringSet,
@@ -119,7 +119,7 @@ def test_identity_isolation_expiry_eviction(config, tmp_path):
                 store.lookup(robot, kind, scope, "user-one")
             assert exc.value.code == "identity_not_observed"
         assert cache.lookup(app, "member_openid", "group:group-one", "user-one")["source_message_id"] == "msg-one"
-        now[0] += 86400
+        now[0] += MESSAGE_POLICY_DEFAULTS["retention_seconds"] + 1
         with pytest.raises(V2Error) as exc:
             cache.lookup(app, "member_openid", "group:group-one", "user-one")
         assert exc.value.code == "identity_not_observed"

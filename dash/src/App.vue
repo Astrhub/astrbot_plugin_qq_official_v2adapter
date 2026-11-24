@@ -6,7 +6,7 @@ import CommandPanel from "./CommandPanel.vue";
 import RemotePanel from "./RemotePanel.vue";
 import SdkPanel from "./SdkPanel.vue";
 import MessageStoragePanel from "./MessageStoragePanel.vue";
-import { changed, clone, connectionFields, createApi, defaultProfilePolicy, defaultStoragePolicy, runtimePolicyFields } from "./api.js";
+import { changed, clone, connectionFields, createApi, defaultProfilePolicy, defaultStatePolicy, defaultStoragePolicy, runtimePolicyFields } from "./api.js";
 import { applyHostContext, t, tError, tState } from "./i18n.js";
 import "./styles.css";
 
@@ -89,6 +89,9 @@ const state = reactive({
   profilePolicy: defaultProfilePolicy(),
   profilePolicySnapshot: JSON.stringify(defaultProfilePolicy()),
   profileStatus: null,
+  statePolicy: defaultStatePolicy(),
+  statePolicySnapshot: JSON.stringify(defaultStatePolicy()),
+  stateStatus: null,
   panelTargets: "",
   menuOnly: false,
   form: {
@@ -152,7 +155,11 @@ const profileDirty = computed(() => {
   if (!state.profilePolicySnapshot) return false;
   return JSON.stringify(state.profilePolicy) !== state.profilePolicySnapshot;
 });
-const dirty = computed(() => connectionDirty.value || draftDirty.value || storageDirty.value || profileDirty.value);
+const stateDirty = computed(() => {
+  if (!state.statePolicySnapshot) return false;
+  return JSON.stringify(state.statePolicy) !== state.statePolicySnapshot;
+});
+const dirty = computed(() => connectionDirty.value || draftDirty.value || storageDirty.value || profileDirty.value || stateDirty.value);
 const remoteAttention = computed(() => {
   const remote = state.current?.remote_state?.[state.scene];
   return Boolean(remote?.pending || remote?.state === "unknown");
@@ -293,7 +300,7 @@ onBeforeUnmount(() => {
             <path d="M4 12v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6" />
           </svg>
           <span>{{ t("nav.storage") }}</span>
-          <span v-if="storageDirty || profileDirty" class="nav-badge" aria-hidden="true"></span>
+          <span v-if="storageDirty || profileDirty || stateDirty" class="nav-badge" aria-hidden="true"></span>
         </button>
 
         <button :class="{ active: tab === 'commands' }" :disabled="!state.current" @click="tab = 'commands'">

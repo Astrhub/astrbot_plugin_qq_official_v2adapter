@@ -5,7 +5,7 @@ import pytest
 
 from v2.errors import V2Error
 from v2.messaging.convert import convert_chat
-from v2.messaging.store import MessageStore
+from v2.messaging.store import MESSAGE_POLICY_DEFAULTS, MessageStore
 from v2.models import InstanceKey, RobotKey, SessionRoute
 from v2.protocol import RawEnvelope
 
@@ -81,7 +81,7 @@ def test_identity_provenance_isolation_ttl_and_restart(config, tmp_path, clock):
         assert store.lookup(chat.route.robot, "member_openid", "group:group-one", "user-one")["nickname"] == "same-name"
         dump = "\n".join(store.db.iterdump())
         assert "fixture-not-for-identity-db" not in dump and "/v2menu" not in dump and config["secret"] not in dump
-        clock[0] += 86401
+        clock[0] += MESSAGE_POLICY_DEFAULTS["retention_seconds"] + 1
         with pytest.raises(V2Error) as exc:
             store.lookup(chat.route.robot, "member_openid", "group:group-one", "user-one")
         assert exc.value.code == "identity_not_observed"

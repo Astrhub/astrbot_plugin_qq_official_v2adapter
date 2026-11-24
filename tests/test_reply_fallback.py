@@ -4,6 +4,8 @@ from test_messaging_send import sending as sending
 from test_streaming import chains
 from test_streaming import streaming as streaming
 
+from v2.messaging.store import MESSAGE_POLICY_DEFAULTS
+
 
 async def test_sixth_passive_rejection_falls_back_once_and_later_sends_are_active(sending):
     s = sending
@@ -144,7 +146,7 @@ async def test_expiry_does_not_turn_unobserved_or_foreign_sources_into_active_se
         elif scope == "generation":
             source = replace(source, generation="another-instance-generation")
         elif scope == "expired_target":
-            s.clock[0] += 86401
+            s.clock[0] += MESSAGE_POLICY_DEFAULTS["retention_seconds"] + 1
         else:
             s.clock[0] = source.expires + 1
             s.store.prune()
@@ -283,7 +285,7 @@ async def test_active_preflight_failure_is_not_unknown_and_keeps_two_attempt_dia
     chat, client = s.observe()
     original = s.store.switch_active
     def switch(*args, **kwargs):
-        s.clock[0] += 86401
+        s.clock[0] += MESSAGE_POLICY_DEFAULTS["retention_seconds"] + 1
         return original(*args, **kwargs)
     monkeypatch.setattr(s.store, "switch_active", switch)
     s.modes.append(40034128)
@@ -515,7 +517,7 @@ async def test_live_pin_does_not_forget_invalid_source_when_history_expires(send
         s.modes.append(40034024)
         with pytest.raises(V2Error):
             await client.send(chat.route, "invalid source")
-        s.clock[0] += 86401
+        s.clock[0] += MESSAGE_POLICY_DEFAULTS["retention_seconds"] + 1
         s.observe(message_id="fresh-target-observation")
         s.store.prune()
         with pytest.raises(V2Error) as exc:

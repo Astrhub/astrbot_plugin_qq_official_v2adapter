@@ -8,7 +8,7 @@ owner 初始化以下自有资源：
 | --- | --- | --- |
 | Pages 设置 | `settings.sqlite3` | draft/applied、revision、版本历史和命令绑定 |
 | 原始收件 | `transport.sqlite3` | receipt、pending、delivered、retained/quarantine |
-| 消息账本 | `messaging.sqlite3` | identity、去重、reply source、sequence、operation、扩展状态 |
+| 消息账本 | `messaging.sqlite3` | identity、去重、reply source、sequence、operation、扩展状态、插件级 `message_policy` |
 | 资料缓存 | `profiles.sqlite3` | 当前/历史成员资料、名单连续性和插件级 `profile_policy` |
 | 消息历史 | `history.sqlite3` | 本地观测消息、转发节点、FTS5 检索索引和保留策略；默认 unlimited，与发送账本隔离 |
 | 媒体临时区 | `media-spool/` | 受界限保护的本地媒体副本 |
@@ -25,6 +25,10 @@ reserved -> in_flight -> sent
 ```
 
 初始化会把旧的 `in_flight` 标成 `unknown`、旧的 `reserved` 标成 `not_sent`，两者都不删除。unknown、partial 和历史淘汰的操作都不能通过删除记录或换 operation ID 自动重放。
+
+## 保留时间与条目上限
+
+`messaging.sqlite3` 的观察数据（identity、target、delivery、ref、reply source）与发送账本默认保留 7 天；条目上限默认为 identity 4096、source 16384、operation 32768。控制页「消息与存储」的运行时状态库卡片可改保留秒数与三个上限，保存后立即按新上限修剪过期条目。策略存在 `message_policy` 单行表中，重启后继续生效；构造参数只在首次建库时作为初始值。
 
 ## 升级与回退
 

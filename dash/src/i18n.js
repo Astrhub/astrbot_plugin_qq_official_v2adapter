@@ -330,7 +330,18 @@ export const MESSAGES = {
     "storage.profileCooldown": "失败冷却秒数",
     "storage.saveProfile": "保存并应用资料库设置",
     "storage.confirmProfile": "确认保存并应用资料库设置？立即对整个插件生效。",
-    "storage.savedProfile": "已保存并应用资料库设置"
+    "storage.savedProfile": "已保存并应用资料库设置",
+    "storage.stateTitle": "运行时状态库",
+    "storage.stateDesc": "插件级设置，控制消息状态库的保留时间与条目上限，保存后立即生效。",
+    "storage.stateScope": "整个插件共用一份 messaging.sqlite3",
+    "storage.stateUsage": "身份 {identities} · 目标 {targets} · 来源 {sources} · 投递 {deliveries} · 账本 {operations}",
+    "storage.stateRetention": "保留秒数",
+    "storage.stateIdentities": "身份条目上限",
+    "storage.stateSources": "来源条目上限",
+    "storage.stateOperations": "发送账本条目上限",
+    "storage.saveState": "保存并应用状态库设置",
+    "storage.confirmState": "确认保存并应用状态库设置？保存后会按新上限立即修剪过期条目。",
+    "storage.savedState": "已保存并应用状态库设置"
   },
   "en-US": {
     "page.title": "QQ Official V2 Console",
@@ -661,7 +672,18 @@ export const MESSAGES = {
     "storage.profileCooldown": "Failure cooldown seconds",
     "storage.saveProfile": "Save and apply profile store settings",
     "storage.confirmProfile": "Save and apply profile store settings immediately for this plugin?",
-    "storage.savedProfile": "Profile store settings saved and applied"
+    "storage.savedProfile": "Profile store settings saved and applied",
+    "storage.stateTitle": "Runtime state store",
+    "storage.stateDesc": "Plugin-level retention and entry limits for the message state store; saved values apply at once.",
+    "storage.stateScope": "One messaging.sqlite3 shared by the whole plugin",
+    "storage.stateUsage": "identities {identities} · targets {targets} · sources {sources} · deliveries {deliveries} · ledger {operations}",
+    "storage.stateRetention": "Retention seconds",
+    "storage.stateIdentities": "Identity entries",
+    "storage.stateSources": "Source entries",
+    "storage.stateOperations": "Send ledger entries",
+    "storage.saveState": "Save and apply state store settings",
+    "storage.confirmState": "Save and apply the state store settings? Expired entries are trimmed to the new limits at once.",
+    "storage.savedState": "State store settings saved and applied"
   }
 };
 
