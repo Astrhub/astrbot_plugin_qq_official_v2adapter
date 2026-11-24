@@ -182,7 +182,6 @@ class Management:
         # Reads already in flight are older than this invalidation and must not repopulate the cache.
         self._role_epoch[key] = self._role_epoch.get(key, 0) + 1
 
-
     async def _confirm_role(self, group, error, *, guard=None):
         """Refresh the cached role once when QQ denies a permission; the write itself is never replayed."""
         if error.business_code not in ROLE_DENIED_CODES:
