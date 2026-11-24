@@ -54,3 +54,18 @@ Markdown 示例中的模板变量和 `qqbot-media://` 引用不是待抓取页�
 changelog 字段已写入对应表格：C2C User 增加 `avatar`；群消息/群@ User 增加 `member_nickname` 与 `avatar`；群 info、群消息/群@、机器人进退群、群成员增减增加 `union_group_openid`（绑定第三方应用时有效，不作为路由主键）。官方 autogen 页表示例仍未同步，本地校注标明来源为 changelog，未改示例 JSON。`GROUP_MSG_RECEIVE`/`GROUP_MSG_REJECT` 官方表与 changelog 均未点名，未写入。
 
 同日抽查官方站点资源为 `v1.50.0`（`app.83c054bf.js`），抽查页 Last-Modified 均为 `Mon, 16 Nov 2026 12:29:16 GMT`。发送页与消息总览 HTML 字节数与 11-04 快照相同。MANIFEST 保留 11-04 全量 `site_version`/`app_js`/`fetched_at`，另记 `incremental_*` 当前来源，并更新本轮核对页哈希与第 193 页。群/C2C 发送页本地实现校注为 `msg_type=8` tuwen 已接入。
+
+## 2026-11-24 复核与增量
+
+全量抓取 193 个 URL，全部 HTTP 200；`sitemap.xml` 的 193 条 V2 路由与本地 193 个 Markdown 一一对应，无新增、无删除。本轮站点资源为 `v1.51.0`（`app.f79e2409.js`），全站 `Last-Modified` 同为 `Fri, 20 Nov 2026 07:06:01 GMT`，是整站部署时间，无法据此判断单页变化；因此改用每页“上次更新”字段与 `MANIFEST.json` 记录比对，正文差异用 8-gram 句子覆盖比对复核。
+
+有 13 页的官方更新时间晚于记录：11/16 17:01 的群信息接口与机器人进退群、群成员增减四页，11/16 17:13 的两个群消息事件与单聊事件页，11/16 19:50 的群成员批量移除页，11/17 16:00 的变更记录、群聊发送、单聊发送与消息总览页。其余 180 页只有 3 处本轮之前既有的转写差异（`rich-media.md` 的 Mermaid 重绘、`material-management.md` 的图片语法代码格式、`type/markdown.md` 的 Emoji 链接写法），未改。
+
+官方正文变化：
+
+1. `changelog.md` 新增 `20261117`：群消息 `msg_id` 可用于 `POST /v2/users/{user_openid}/messages` 私聊回复该群消息发送者（要求好友关系）；群消息被动回复次数上限由 5 次提升至 50 次（机器人开发者为该群群主或管理员时，群内与私聊回复均适用）；群消息被动回复有效期由 5 分钟延长至 60 分钟。群聊发送、单聊发送与消息总览页同步该规则，单聊自身的 `msg_id` 说明仍写 5 分钟。
+2. 两个群消息事件页与单聊事件页把 `author` 改为 `GroupUser`／`C2CUser`，`mentions` 改为 `GroupMentionsUser` 并新增该类（含 `is_you`、`scope`、`member_nickname`），`MsgElement` 删除 `author`；`member_nickname` 描述改为“群场景：用户在群内的昵称”。
+3. `union_group_openid` 与 `union_openid` 的描述按官方改为“跨应用关联群openid，当绑定了3方应用时有效”／“跨应用关联用户openid…”。
+4. 群成员批量移除页删除 `add_to_member_blacklist` 入参、`add_to_member_blacklist_fail_openids` 响应字段与“内邀接入”提示，错误码表改为 `40103012`／`40103011`，原 `11253` 不再出现。
+
+本轮只做文档增量：13 页正文与首行抓取日期（2026-11-24）已改写，`MANIFEST.json` 更新全部页面线上字节数、SHA-256、`Last-Modified` 与页面“上次更新”，并对 13 页重算 Markdown 字节数与哈希，另新增 `comparison_20261124` 记录本轮口径。插件侧的群来源有效期仍按 300 秒截断，未随本次文档同步调整。

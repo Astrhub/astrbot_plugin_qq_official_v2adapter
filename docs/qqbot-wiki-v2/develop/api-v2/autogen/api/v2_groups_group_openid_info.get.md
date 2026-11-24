@@ -1,4 +1,4 @@
-<!-- 来源: https://bot.q.qq.com/wiki/develop/api-v2/autogen/api/v2_groups_group_openid_info.get.html · 抓取 2026-10-25 -->
+<!-- 来源: https://bot.q.qq.com/wiki/develop/api-v2/autogen/api/v2_groups_group_openid_info.get.html · 抓取 2026-11-24 -->
 
 # 获取群基本信息
 
@@ -35,7 +35,7 @@ GET /v2/groups/3E5D8A1F7B2C9E4D6A0F1B3C5D7E9F2A/info
 | 名称 | 类型 | 描述 |
 | --- | --- | --- |
 | group_openid | string | 群 OpenID |
-| union_group_openid | string | 跨应用关联群 OpenID，当绑定了第三方应用时有效 |
+| union_group_openid | string | 跨应用关联群openid，当绑定了3方应用时有效 |
 | group_name | string | 群名称 |
 | group_finger_memo | string | 群简介 |
 | group_class_text | string | 群分类 |

@@ -1,4 +1,4 @@
-<!-- 来源: https://bot.q.qq.com/wiki/develop/api-v2/autogen/event/group_member_remove.html · 抓取 2026-10-25 -->
+<!-- 来源: https://bot.q.qq.com/wiki/develop/api-v2/autogen/event/group_member_remove.html · 抓取 2026-11-24 -->
 
 # 群成员退出
 
@@ -17,7 +17,7 @@
 | --- | --- | --- |
 | timestamp | integer | 事件时间戳（Unix 秒） |
 | group_openid | string | 群 OpenID |
-| union_group_openid | string | 跨应用关联群 OpenID，当绑定了第三方应用时有效 |
+| union_group_openid | string | 跨应用关联群openid，当绑定了3方应用时有效 |
 | member_openid | string | 退出成员的 OpenID |
 | user_openid | string | 退出成员的用户 OpenID（可能为空） |
 
