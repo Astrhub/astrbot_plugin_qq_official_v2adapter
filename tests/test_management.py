@@ -299,7 +299,8 @@ async def test_admin_write_reuses_cached_role_and_confirms_once_after_denial(man
     m = management
     await m.service.group_kick("g", ["u"], operation_id="kick-cached")
     assert bot_state_calls(m.calls) == 1
-    writes = lambda: sum(1 for call in m.calls if call[0] == "POST" and call[1].endswith("batch_remove_members"))
+    def writes():
+        return sum(1 for call in m.calls if call[0] == "POST" and call[1].endswith("batch_remove_members"))
     assert writes() == 1
     m.modes[:] = ["admin_denied"]
     with pytest.raises(V2Error) as error:

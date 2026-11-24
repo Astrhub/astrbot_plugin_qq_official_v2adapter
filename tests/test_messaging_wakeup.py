@@ -300,7 +300,6 @@ async def test_quote_of_other_unknown_expired_or_foreign_refs_do_not_wake(config
 
 def test_v4_upgrade_backfills_from_self_from_sent_operations(config, tmp_path):
     identity = InstanceKey.from_config(config)
-    robot = identity.robot
     path = tmp_path / "upgrade.sqlite3"
     state = MessageStore(path, clock=lambda: NOW)
     try:
