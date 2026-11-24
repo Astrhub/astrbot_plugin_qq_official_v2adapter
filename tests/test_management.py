@@ -33,6 +33,8 @@ async def management(config, tmp_path):
         calls.append((request.method, request.path, dict(request.query), body))
         if modes and modes[0] == "denied":
             return web.json_response({"code": 11253})
+        if modes and modes[0] == "admin_denied" and not request.path.endswith("bot_state"):
+            return web.json_response({"code": 11282})
         if request.path.endswith("bot_state"):
             return web.json_response({"member_openid": "real-bot", "member_role": "admin", "allow_proactive_msg": False})
         if request.path.endswith("restrict_chat_setting"):
@@ -255,3 +257,66 @@ async def test_onebot_entries_application_expiry_guild_crud_and_unknown_recovery
             await state.close()
             await http.close()
             recovered.close()
+
+
+def bot_state_calls(calls):
+    return sum(1 for call in calls if call[1].endswith("bot_state"))
+
+
+async def test_bot_state_role_is_cached_per_group_and_refresh_reads_again(management):
+    m = management
+    first = await m.service.bot_state("g")
+    assert first["member_role"] == "admin"
+    first["member_role"] = "member"
+    assert (await m.service.bot_state("g"))["member_role"] == "admin"
+    assert bot_state_calls(m.calls) == 1
+    await m.service.bot_state("g", refresh=True)
+    assert bot_state_calls(m.calls) == 2
+    await m.service.bot_state("other")
+    assert bot_state_calls(m.calls) == 3
+    m.clock[0] += 301
+    await m.service.bot_state("g")
+    assert bot_state_calls(m.calls) == 4
+
+
+async def test_bot_state_permission_denial_is_remembered_briefly(management):
+    m = management
+    m.modes[:] = ["denied"]
+    with pytest.raises(V2Error) as error:
+        await m.service.bot_state("g")
+    assert error.value.business_code == 11253
+    with pytest.raises(V2Error) as cached:
+        await m.service.bot_state("g")
+    assert cached.value.business_code == 11253
+    assert bot_state_calls(m.calls) == 1
+    m.modes[:] = []
+    m.clock[0] += 60
+    assert (await m.service.bot_state("g"))["member_role"] == "admin"
+    assert bot_state_calls(m.calls) == 2
+
+
+async def test_admin_write_reuses_cached_role_and_confirms_once_after_denial(management):
+    m = management
+    await m.service.group_kick("g", ["u"], operation_id="kick-cached")
+    assert bot_state_calls(m.calls) == 1
+    writes = lambda: sum(1 for call in m.calls if call[0] == "POST" and call[1].endswith("batch_remove_members"))
+    assert writes() == 1
+    m.modes[:] = ["admin_denied"]
+    with pytest.raises(V2Error) as error:
+        await m.service.group_kick("g", ["v"], operation_id="kick-denied")
+    assert error.value.business_code == 11282
+    assert writes() == 2
+    assert bot_state_calls(m.calls) == 2
+    m.modes[:] = []
+    await m.service.group_kick("g", ["w"], operation_id="kick-after")
+    assert bot_state_calls(m.calls) == 2 and writes() == 3
+
+
+async def test_unrelated_write_failure_keeps_the_cached_role(management):
+    m = management
+    await m.service.bot_state("g")
+    m.modes[:] = ["partial"]
+    with pytest.raises(V2Error) as error:
+        await m.service.group_kick("g", ["u"], blacklist=True, operation_id="kick-partial")
+    assert error.value.code == "partial_failure"
+    assert bot_state_calls(m.calls) == 1

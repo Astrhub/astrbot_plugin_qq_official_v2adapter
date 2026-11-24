@@ -26,6 +26,8 @@ NATIVE_ACTIONS = {"group_info", "bot_state", "group_member", "group_members", "g
 NATIVE_READ_ACTIONS = frozenset({"group_info", "bot_state", "group_member", "group_members", "group_mutes",
                                  "join_requests", "login_info", "guild_info", "channels", "channel_info",
                                  "guild_member", "guild_members"})
+ROLE_TTL_SECONDS, ROLE_RETRY_SECONDS = 300, 60
+ROLE_DENIED_CODES = frozenset({11253, 11282})
 
 
 def ident(value):
@@ -66,6 +68,7 @@ class Management:
         self.identity, self.http, self.state, self.store = identity, http, state, store
         self.settings = settings
         self.tasks, self.closed = set(), False
+        self._roles = {}
         self.store.db.execute("""CREATE TABLE IF NOT EXISTS join_flags(robot TEXT,target TEXT,member TEXT,request_id TEXT,
             flag_hash TEXT,expires REAL,observed REAL,state TEXT,op_id TEXT,
             PRIMARY KEY(robot,target,member,request_id))""")
@@ -126,16 +129,43 @@ class Management:
             invalid()
         return data
 
-    async def bot_state(self, group, *, guard=None):
-        data = await self._read(f"/v2/groups/{ident(group)}/bot_state", guard=guard)
-        if not isinstance(data, dict) or data.get("member_role") not in ("member", "admin", "owner"):
-            invalid()
-        text_id(data.get("member_openid"))
-        return data
+    async def bot_state(self, group, *, refresh=False, guard=None):
+        """Robot role in one group, cached per group so repeated admin checks stay inside the quota."""
+        key = text_id(group)
+        now = self.store.now()
+        for stale in [k for k, (expires, _) in self._roles.items() if expires <= now]:
+            self._roles.pop(stale, None)
+        cached = None if refresh else self._roles.get(key)
+        if cached is not None:
+            if isinstance(cached[1], V2Error):
+                raise cached[1]
+            return copy.deepcopy(cached[1])
+        try:
+            data = await self._read(f"/v2/groups/{ident(group)}/bot_state", guard=guard)
+            if not isinstance(data, dict) or data.get("member_role") not in ("member", "admin", "owner"):
+                invalid()
+            text_id(data.get("member_openid"))
+        except V2Error as error:
+            # A missing app permission is stable enough to remember briefly; every other failure is retried.
+            if error.business_code == 11253:
+                self._roles[key] = (now + ROLE_RETRY_SECONDS, error)
+            raise
+        self._roles[key] = (now + ROLE_TTL_SECONDS, data)
+        return copy.deepcopy(data)
 
     async def _admin(self, group, *, guard=None):
         if (await self.bot_state(group, guard=guard))["member_role"] not in {"admin", "owner"}:
             raise V2Error("group_admin_required", "The current bot-state response does not grant an administrator role.", status=403)
+
+    async def _confirm_role(self, group, error, *, guard=None):
+        """Refresh the cached role once when QQ denies a permission; the write itself is never replayed."""
+        if error.business_code not in ROLE_DENIED_CODES:
+            return
+        self._roles.pop(text_id(group), None)
+        try:
+            await self.bot_state(group, guard=guard)
+        except V2Error as confirm:
+            error.details = {**(error.details or {}), "role_confirm": confirm.code}
 
     @staticmethod
     def _member(data, expected=None):
@@ -199,7 +229,11 @@ class Management:
             operation_id = text_id(operation_id)
             frozen = self.store.frozen_request(self.identity.robot, operation_id, "group_ban", binding)
             if frozen is not None:
-                return await self._write("POST", path, frozen, kind="group_ban", operation_id=operation_id, guard=guard)
+                try:
+                    return await self._write("POST", path, frozen, kind="group_ban", operation_id=operation_id, guard=guard)
+                except V2Error as error:
+                    await self._confirm_role(group, error, guard=guard)
+                    raise
         op = "del"
         if duration:
             member = await self.group_member(group, user, guard=guard)
@@ -219,7 +253,11 @@ class Management:
             if guard is not None:
                 guard()
             body = self.store.frozen_request(self.identity.robot, operation_id, "group_ban", binding, request=body)
-        return await self._write("POST", path, body, kind="group_ban", operation_id=operation_id, guard=guard)
+        try:
+            return await self._write("POST", path, body, kind="group_ban", operation_id=operation_id, guard=guard)
+        except V2Error as error:
+            await self._confirm_role(group, error, guard=guard)
+            raise
 
     async def group_kick(self, group, users, *, blacklist=False, operation_id=None, guard=None):
         ident(group)
@@ -241,7 +279,11 @@ class Management:
             if failed:
                 raise V2Error("partial_failure", "Removal succeeded but some blacklist writes failed; do not replay removal.", status=502, phase="partial", details={"blacklist_failed": failed})
             return {"state": "succeeded", "removed": users}
-        return await self._write("POST", f"/v2/groups/{ident(group)}/batch_remove_members", {"member_openids": users, "add_to_member_blacklist": blacklist}, kind="group_kick", operation_id=operation_id, validate=validate, guard=guard)
+        try:
+            return await self._write("POST", f"/v2/groups/{ident(group)}/batch_remove_members", {"member_openids": users, "add_to_member_blacklist": blacklist}, kind="group_kick", operation_id=operation_id, validate=validate, guard=guard)
+        except V2Error as error:
+            await self._confirm_role(group, error, guard=guard)
+            raise
 
     def observe_request(self, group, data, *, received=None, fresh_read=False):
         self.check()
@@ -303,6 +345,7 @@ class Management:
             if exc.phase in {"not_sent", "rejected"}:
                 with self.store.transaction():
                     self.store.db.execute("UPDATE join_flags SET state='retryable' WHERE robot=? AND flag_hash=? AND state IN ('pending','attempted')", (robot, row["flag_hash"]))
+            await self._confirm_role(row["target"], exc, guard=guard)
             raise
         with self.store.transaction():
             self.store.db.execute("UPDATE join_flags SET state='succeeded' WHERE robot=? AND flag_hash=? AND state='attempted'", (robot, row["flag_hash"]))
