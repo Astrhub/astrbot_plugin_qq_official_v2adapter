@@ -98,7 +98,7 @@ def test_passive_sequences_remain_unique_without_local_quota(config, state, cloc
     assert state.reserve(chat.route, chat.source, "digest", "op6")["seq"] == 7
     state.mark_in_flight(chat.route.robot, "op1")
     state.finish(chat.route.robot, "op1", "unknown")
-    clock[0] += 301
+    clock[0] = chat.source.expires + 1
     state.prune()
     state.observe(convert_chat(chat.identity, RawEnvelope(chat_payload(), clock[0])))
     with pytest.raises(V2Error) as exc:
@@ -194,7 +194,7 @@ def test_expired_source_stays_expired_after_clock_rollback_and_restart(config, t
     state = MessageStore(path, clock=lambda: clock[0])
     chat = observed(config)
     state.observe(chat)
-    clock[0] += 301
+    clock[0] = chat.source.expires + 1
     with pytest.raises(V2Error) as exc:
         state.reserve(chat.route, chat.source, "x", "expired")
     assert exc.value.code == "reply_expired"
@@ -254,4 +254,4 @@ def test_identity_observation_time_is_not_the_older_message_time(config, state):
     state.observe(chat)
     record = state.lookup(chat.route.robot, "member_openid", "group:group-one", "user-one")
     assert record["first_seen"] == record["last_seen"] == NOW
-    assert chat.source.sent_at == NOW - 120 and chat.source.expires == NOW + 180
+    assert chat.source.sent_at == NOW - 120 and chat.source.expires == chat.source.sent_at + 3600

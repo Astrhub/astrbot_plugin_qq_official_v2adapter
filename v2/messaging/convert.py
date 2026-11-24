@@ -40,9 +40,11 @@ class ReplySource:
 
     @property
     def expires(self):
-        # Group sources follow the documented 5-minute window; C2C keeps a conservative
-        # 60-minute lease and lets QQ authoritatively reject expired passive replies.
-        return min(self.sent_at, self.received_at) + (3600 if self.route.scene == "c2c" else 300)
+        # Group and C2C sources follow the documented 60-minute passive window; QQ stays
+        # the authority on rejections. Channel and channel-DM scenes keep 5 minutes.
+        if self.route.scene in {"c2c", "group"}:
+            return min(self.sent_at, self.received_at) + 3600
+        return min(self.sent_at, self.received_at) + 300
 
 
 @dataclass
