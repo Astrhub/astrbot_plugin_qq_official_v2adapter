@@ -406,3 +406,12 @@ assert.deepEqual(failCalls, ["POST", "GET"]);
         timeout=15,
     )
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_storage_panels_shrink_below_viewport_with_long_paths():
+    """Absolute SQLite paths must wrap, and grid cards must be allowed to shrink."""
+    css = (ROOT / "dash" / "src" / "styles.css").read_text(encoding="utf-8")
+    assert "grid-template-columns: repeat(2, minmax(0, 1fr));" in css
+    assert "overflow-wrap: anywhere;" in css
+    storage = (ROOT / "dash" / "src" / "MessageStoragePanel.vue").read_text(encoding="utf-8")
+    assert 't("storage.path")' in storage and "stateUsage" in storage
