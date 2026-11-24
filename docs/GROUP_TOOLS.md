@@ -1,6 +1,6 @@
 # QQ V2 群工具
 
-插件注册 13 个 `qq_v2_` 前缀的宿主工具。工具从触发消息绑定机器人、群、会话和操作者；模型不能选择其他实例或群。
+插件注册 13 个 `qq_v2_` 前缀的宿主工具。工具从触发消息绑定机器人、群、会话和操作者；模型不能选择其他实例或群。工具接受来源的期限沿用群消息 60 分钟被动窗口，超过后返回 `tool_source_expired`，不会发起新的管理调用。
 
 | 工具 | 说明 |
 | --- | --- |
@@ -10,7 +10,7 @@
 | `find_known_members` | 搜索历史已知资料，最多 20 项 |
 | `list_mutes` | 查询当前群禁言 |
 | `mute_members` | 1–20 个成员，`duration_seconds` 0 表示解除 |
-| `kick_members` | 1–20 个成员，可选加入黑名单 |
+| `kick_members` | 1–20 个成员；官方已删除移除时拉黑，需要拉黑请随后调用 `change_blacklist` |
 | `list_blacklist` | 官方游标单页 |
 | `change_blacklist` | `add`/`del`，1–20 个显式成员 |
 | `list_join_requests` | 查询当前待处理申请和真实 flag |

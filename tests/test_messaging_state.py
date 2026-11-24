@@ -6,7 +6,7 @@ import pytest
 from v2.errors import V2Error
 from v2.messaging.convert import convert_chat
 from v2.messaging.store import MessageStore
-from v2.models import InstanceKey, RobotKey
+from v2.models import InstanceKey, RobotKey, SessionRoute
 from v2.protocol import RawEnvelope
 
 NOW = 1800000000.0
@@ -255,3 +255,28 @@ def test_identity_observation_time_is_not_the_older_message_time(config, state):
     record = state.lookup(chat.route.robot, "member_openid", "group:group-one", "user-one")
     assert record["first_seen"] == record["last_seen"] == NOW
     assert chat.source.sent_at == NOW - 120 and chat.source.expires == chat.source.sent_at + 3600
+
+
+def test_c2c_native_reply_cites_one_observed_group_message_and_shares_its_sequence(state, config):
+    chat = observed(config, "GROUP_AT_MESSAGE_CREATE", message_id="group-msg", sender="member-one")
+    state.observe(chat)
+    route = SessionRoute(chat.route.robot, "c2c", "user-one")
+    assert state.reserve_native(route, "message", "group-msg", "native-digest", "native-reply") == 1
+    assert state.reserve(chat.route, chat.source, "group-digest", "group-reply")["seq"] == 2
+    with pytest.raises(V2Error) as mismatch:
+        state.reserve_native(SessionRoute(chat.route.robot, "group", "another-group"), "message", "group-msg",
+                             "other-digest", "other-reply")
+    assert mismatch.value.code == "identity_mismatch"
+
+
+def test_c2c_passive_source_reuses_the_group_observation_only_across_scenes(state, config):
+    chat = observed(config, "GROUP_MESSAGE_CREATE", message_id="group-msg", sender="member-one")
+    state.observe(chat)
+    route = SessionRoute(chat.route.robot, "c2c", "user-one")
+    assert state.check_source(route, chat.source)["message_id"] == "group-msg"
+    assert state.reply_mode(route, chat.source) is None
+    with pytest.raises(V2Error) as mismatch:
+        state.check_source(SessionRoute(chat.route.robot, "channel", "other-channel"), chat.source)
+    assert mismatch.value.code == "identity_mismatch"
+    state.block_source(chat.source, 40034128)
+    assert state.db.execute("SELECT blocked FROM sources WHERE message_id='group-msg'").fetchone()[0] == "40034128"

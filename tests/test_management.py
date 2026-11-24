@@ -1,3 +1,4 @@
+import asyncio
 from types import SimpleNamespace
 
 import pytest
@@ -40,7 +41,7 @@ async def management(config, tmp_path):
         if request.path.endswith("restrict_chat_setting"):
             return web.json_response({"members": [{"member_openid": "u", "mute_expire_at": "2027-01-15T09:00:00+08:00"}], "global_rule": {"mode": "none"}} if request.method == "GET" else {})
         if request.path.endswith("batch_remove_members"):
-            return web.json_response({"remove_members_result": "success", "add_to_member_blacklist_fail_openids": ["u"] if modes and modes[0] == "partial" else []})
+            return web.json_response({} if modes and modes[0] == "malformed" else {"remove_members_result": "success"})
         if "/approval_join_request/" in request.path:
             return web.json_response({})
         if request.path.endswith("join_request_list"):
@@ -112,16 +113,25 @@ async def test_ban_update_unban_and_write_gate(management):
     assert len(m.calls) == before
 
 
-async def test_partial_kick_is_not_success_or_replayed(management):
+async def test_kick_blacklist_is_refused_before_any_write(management):
     m = management
-    m.modes[:] = ["partial"]
+    before = len(m.calls)
     with pytest.raises(V2Error) as error:
         await m.service.group_kick("g", ["u"], blacklist=True, operation_id="kick")
-    assert error.value.code == "partial_failure" and error.value.phase == "partial"
-    assert m.state.operation(m.http.identity.robot, "kick")["state"] == "partial"
+    assert error.value.code == "unsupported" and error.value.retcode == 1404
+    assert len(m.calls) == before
+
+
+async def test_kick_without_confirmation_is_unknown_and_not_replayed(management):
+    m = management
+    m.modes[:] = ["malformed"]
+    with pytest.raises(V2Error) as error:
+        await m.service.group_kick("g", ["u"], operation_id="kick")
+    assert error.value.code == "invalid_management_response" and error.value.phase == "result_unknown"
+    assert m.state.operation(m.http.identity.robot, "kick")["state"] == "unknown"
     before = sum(method == "POST" for method, *_ in m.calls)
     with pytest.raises(V2Error):
-        await m.service.group_kick("g", ["u"], blacklist=True, operation_id="kick")
+        await m.service.group_kick("g", ["u"], operation_id="kick")
     assert sum(method == "POST" for method, *_ in m.calls) == before
 
 
@@ -316,8 +326,66 @@ async def test_admin_write_reuses_cached_role_and_confirms_once_after_denial(man
 async def test_unrelated_write_failure_keeps_the_cached_role(management):
     m = management
     await m.service.bot_state("g")
-    m.modes[:] = ["partial"]
+    m.modes[:] = ["malformed"]
     with pytest.raises(V2Error) as error:
-        await m.service.group_kick("g", ["u"], blacklist=True, operation_id="kick-partial")
-    assert error.value.code == "partial_failure"
+        await m.service.group_kick("g", ["u"], operation_id="kick-malformed")
+    assert error.value.code == "invalid_management_response"
     assert bot_state_calls(m.calls) == 1
+
+
+async def test_cached_member_role_is_reconfirmed_before_a_write_is_denied(management):
+    m = management
+    roles = ["member", "admin"]
+    reads = []
+
+    async def read_role(path, *, params=None, guard=None):
+        reads.append(path)
+        return {"member_openid": "real-bot", "member_role": roles.pop(0) if roles else "admin"}
+
+    m.service._read = read_role
+    with pytest.raises(V2Error):
+        await m.service._admin("g")
+    assert len(reads) == 1
+    await m.service._admin("g")
+    assert len(reads) == 2
+    await m.service._admin("g")
+    assert len(reads) == 2
+
+
+async def test_older_bot_state_read_cannot_overwrite_a_newer_role(management):
+    m = management
+    gate = asyncio.Event()
+    reads = []
+
+    async def read_role(path, *, params=None, guard=None):
+        reads.append(path)
+        if not gate.is_set():
+            await gate.wait()
+            return {"member_openid": "real-bot", "member_role": "member"}
+        return {"member_openid": "real-bot", "member_role": "admin"}
+
+    m.service._read = read_role
+    older = asyncio.create_task(m.service.bot_state("g"))
+    await asyncio.sleep(0)
+    gate.set()
+    assert (await m.service.bot_state("g"))["member_role"] == "admin"
+    assert (await older)["member_role"] == "member"
+    assert (await m.service.bot_state("g"))["member_role"] == "admin"
+    assert len(reads) == 2
+
+
+async def test_cached_role_denial_is_rebuilt_for_every_call(management):
+    m = management
+    m.modes[:] = ["denied"]
+    with pytest.raises(V2Error) as original:
+        await m.service.bot_state("g")
+    with pytest.raises(V2Error) as first:
+        await m.service.bot_state("g")
+    with pytest.raises(V2Error) as second:
+        await m.service.bot_state("g")
+    assert first.value is not original.value and first.value is not second.value
+    assert first.value.business_code == 11253 and bot_state_calls(m.calls) == 1
+    first.value.details = {"mutated": True}
+    with pytest.raises(V2Error) as clean:
+        await m.service.bot_state("g")
+    assert clean.value.details is None

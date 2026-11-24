@@ -90,7 +90,7 @@ ACTION_RETURNS = {
     "get_forward_msg": ["messages"],
     "set_group_ban": ["state"], "delete_msg": ["state"], "set_group_add_request": ["state"],
     "set_group_kick": ["state", "removed"],
-    "set_group_kick_members": ["state", "removed", "blacklist_failed?"],
+    "set_group_kick_members": ["state", "removed"],
     "get_group_shut_list": ["array of real member mutes"],
     "_qq_get_group_blacklist": ["users", "next_cursor"],
     "_qq_set_group_blacklist": ["fail_openids"],

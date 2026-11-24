@@ -49,7 +49,7 @@ state = event.bot.qq.send_status(result["operation_id"])
 | `get_group_member_list` | 获取一页使用 `await event.bot.qq.get_group_member_list(group_openid, cursor)`；完整遍历使用 `async for row in event.bot.qq.iter_group_members(group_openid)` |
 | `get_stranger_info` | C2C 使用 `await event.bot.qq.get_user_info(user_openid)`；群成员使用 `await event.bot.qq.profiles.get_member(group_openid, member_openid, mode="prefer_cache")`，需要新鲜数据时使用 `mode="refresh"` 或 `get_group_member_info` |
 | `set_group_ban` | 使用 `await event.bot.qq.group_ban(group, member, duration, operation_id=...)`；原生管理方法见 [SDK 指南](sdk.md) |
-| `set_group_kick` | 使用 `await event.bot.qq.group_kick(group, [member], blacklist=..., operation_id=...)` |
+| `set_group_kick` | 使用 `await event.bot.qq.group_kick(group, [member], operation_id=...)`；官方已删除移除时拉黑，`blacklist=True` 或 `reject_add_request=true` 返回 `unsupported`，拉黑改用 `change_blacklist` |
 | `set_group_add_request` | 使用 `await event.bot.qq.approve(flag, approve=..., reason=..., blacklist=...)`；需要原生参数时使用 `approve_group_join_request(...)` |
 | `delete_msg` | 进程内 `await event.bot.api.call_action("delete_msg", message_id=event.message_obj.message_id)` 进入 `management.delete_message`；原生用 `event.bot.qq.delete_message(...)` 或按场景 `recall_*`。只撤回已发送且未过期的消息 |
 | `_qq_get_send_status` | `event.bot.qq.send_status(operation_id)` |

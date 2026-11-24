@@ -21,7 +21,7 @@
 
 ## NativeEvent
 
-同一核心事件（包括聊天事件）也会通过 `client.qq.events` 暴露；其中六类聊天事件还会进入 AstrBot 宿主消息管线。`NativeEvent.payload`/`d` 是递归冻结视图；`raw()` 返回隔离的可写副本。`typed` 只有在事件形状校验通过时才返回 TypedDict 视图；缺字段、类型错误或未知事件仍保留 raw，但 `typed` 为 `None`。
+同一核心事件（包括聊天事件）也会通过 `client.qq.events` 暴露；其中六类聊天事件还会进入 AstrBot 宿主消息管线。`NativeEvent.payload`/`d` 是递归冻结视图；`raw()` 返回隔离的可写副本。`typed` 只有在事件形状校验通过时才返回 TypedDict 视图；缺字段、类型错误或未知事件仍保留 raw，但 `typed` 为 `None`。群聊事件的 `mentions` 使用 `GroupMentionsUser`，包含官方 `is_you` 与 `scope` 字段；频道与单聊仍是 `User`。
 
 事件目录由 `v2/sdk/catalog.py` 管理，当前登记 56 个业务事件以及 READY/RESUMED 等连接通知。SDK 订阅不会新增 QQ Intents，也不会为 Webhook 自动打开管理端监听。
 

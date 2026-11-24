@@ -138,7 +138,7 @@ async def test_expiry_does_not_turn_unobserved_or_foreign_sources_into_active_se
         elif scope == "target":
             route = replace(route, target="other-target")
         elif scope == "scene":
-            route = replace(route, scene="c2c")
+            route = replace(route, scene="dm")
         elif scope in {"robot", "environment"}:
             route = replace(route, robot=RobotKey("other-app" if scope == "robot" else route.robot.appid, "sandbox" if scope == "environment" else "production"))
         elif scope == "generation":
@@ -196,7 +196,7 @@ def test_restart_during_mode_conversion_preserves_fence_and_diagnostics(config, 
     operation = store.reserve(chat.route, chat.source, "digest", "interrupted", allow_active=True)
     delivery = ReplyDelivery(store, chat.route, chat.source, operation)
     delivery.before_send()
-    store.block_source(chat.route, chat.source, 40034128, allow_active=True)
+    store.block_source(chat.source, 40034128, allow_active=True)
     delivery.switch({"code": "passive_source_rejected", "business_code": 40034128}, outcome="rejected")
     if wire_started:
         delivery.before_send()
@@ -251,7 +251,7 @@ async def test_legacy_block_requires_retained_definite_rejection_and_old_failure
     s = sending
     chat, client = s.observe()
     s.store.reserve(chat.route, chat.source, "old-digest", "legacy-failure")
-    s.store.block_source(chat.route, chat.source, 40034128)
+    s.store.block_source(chat.source, 40034128)
     s.store.finish(chat.route.robot, "legacy-failure", "rejected" if allowed else "unknown",
         error={"code": "qq_api_error", "phase": phase, "http_status": status, "business_code": 40034128})
     if allowed:
@@ -345,7 +345,7 @@ async def test_typing_never_uses_active_fallback(sending, stage):
     chat, _ = s.observe("C2C_MESSAGE_CREATE")
     typing = TypingCore(s.core, settings=lambda: {"typing_enabled": True})
     if stage == "blocked":
-        s.store.block_source(chat.route, chat.source, 40034128, allow_active=True)
+        s.store.block_source(chat.source, 40034128, allow_active=True)
     elif stage == "expired":
         s.clock[0] += 3601
     else:
@@ -415,7 +415,7 @@ async def test_native_converted_stream_keeps_later_auth_retry_on_same_frame(stre
 async def test_aggregate_handles_source_blocked_by_another_operation(streaming, event):
     s = streaming
     chat = s.observe(event)
-    s.store.block_source(chat.route, chat.source, 40034128, allow_active=True)
+    s.store.block_source(chat.source, 40034128, allow_active=True)
     result = await s.core.send(chat.route, chains("first", " second"), source=chat.source)
     assert result["mode"] == "aggregate" and result["delivery"]["mode"] == "active"
     assert len(s.calls) == 1 and s.calls[0][1]["content"] == "first second"
@@ -427,7 +427,7 @@ async def test_active_fallback_does_not_bypass_transport_readiness(sending, even
     from v2.errors import V2Error
     s = sending
     chat, client = s.observe(event)
-    s.store.block_source(chat.route, chat.source, 40034128, allow_active=True)
+    s.store.block_source(chat.source, 40034128, allow_active=True)
     s.core.is_online = s.core.ws_online = lambda: False
     with pytest.raises(V2Error) as exc:
         await client.send(chat.route, "not online")

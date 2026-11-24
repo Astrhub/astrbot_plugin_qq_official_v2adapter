@@ -36,6 +36,14 @@ def source_key(source):
     return "\x1f" + text_id(source.event_id)
 
 
+def passive_route_matches(route, source_route):
+    """A C2C send may cite one observed group message; QQ still decides the real sender and permission."""
+    source_robot = robot_key(source_route.robot)
+    if (source_robot, source_route.scene, source_route.target) == route_key(route):
+        return True
+    return source_robot == robot_key(route.robot) and source_route.scene == "group" and route.scene == "c2c"
+
+
 def private_file(path):
     if path.is_symlink() or path.exists() and not path.is_file():
         failure("message_state_path_invalid", "Message state must use a regular private file.", 503)
@@ -259,9 +267,11 @@ class MessageStore:
             old = self.db.execute("SELECT * FROM sources WHERE robot=? AND scene=? AND target=? AND message_id=?", (*key, source.message_id)).fetchone()
             seen_at = min(source.received_at, now)
             if old:
+                # Recompute from the earliest observation so a retained row follows the current window.
+                deadline = min(old["started"], old["received"], source.sent_at, source.received_at) + source.window
                 seen_at = min(seen_at, old["received"])
-                self.db.execute("UPDATE sources SET expires=min(expires,?),received=min(received,?),event_id=coalesce(event_id,?) WHERE robot=? AND scene=? AND target=? AND message_id=?",
-                                (source.expires, source.received_at, event_id, *key, source.message_id))
+                self.db.execute("UPDATE sources SET expires=?,received=min(received,?),event_id=coalesce(event_id,?) WHERE robot=? AND scene=? AND target=? AND message_id=?",
+                                (deadline, source.received_at, event_id, *key, source.message_id))
             else:
                 self._capacity("sources", self.source_capacity)
                 self.db.execute("INSERT INTO sources(robot,scene,target,message_id,started,received,expires,ref_idx,event_id) VALUES(?,?,?,?,?,?,?,?,?)",
@@ -422,9 +432,9 @@ class MessageStore:
                             (*route_key(chat.route), chat.source.message_id, chat.source.ref_idx or "", self.now()))
 
     def _source(self, route, source, now):
-        if (source.route.robot, source.route.scene, source.route.target) != (route.robot, route.scene, route.target):
+        if not passive_route_matches(route, source.route):
             failure("identity_mismatch", "Reply source belongs to another target.")
-        row = self.db.execute("SELECT * FROM sources WHERE robot=? AND scene=? AND target=? AND message_id=?", (*route_key(route), source_key(source))).fetchone()
+        row = self.db.execute("SELECT * FROM sources WHERE robot=? AND scene=? AND target=? AND message_id=?", (*route_key(source.route), source_key(source))).fetchone()
         if row is None or row["expires"] <= now or source.expires <= now:
             failure("reply_expired", "The original incoming message reply window has expired.")
         if row["blocked"]:
@@ -432,27 +442,36 @@ class MessageStore:
         return row
 
     def _claim_source_seq(self, route, source, row):
-        """Allocate the next passive sequence, fenced against the native SDK lane."""
+        """Allocate the next passive sequence; one message pools its budget across scenes."""
         kind = "message" if source.message_id is not None else "event"
         source_id = source.message_id if source.message_id is not None else source.event_id
-        key = (*route_key(route), kind, text_id(source_id))
-        sdk = self.db.execute("SELECT max(seq) FROM sdk_sequences WHERE robot=? AND scene=? AND target=? AND source_kind=? AND source_id=?", key).fetchone()[0] or 0
-        retained = self.db.execute("""SELECT max(seq) FROM operations WHERE robot=? AND scene=? AND target=?
-            AND source=? AND state IN ('reserved','in_flight','unknown','sent','rejected','history_evicted')""",
-            (key[0], key[1], key[2], source_key(source))).fetchone()[0] or 0
+        subject = text_id(source_id)
+        if kind == "message":
+            # QQ counts one msg_id budget across group and C2C replies, so this counter ignores the route.
+            sdk = self.db.execute("SELECT max(seq) FROM sdk_sequences WHERE robot=? AND source_kind=? AND source_id=?",
+                                  (robot_key(route.robot), kind, subject)).fetchone()[0] or 0
+            retained = self.db.execute("""SELECT max(seq) FROM operations WHERE robot=? AND source=?
+                AND state IN ('reserved','in_flight','unknown','sent','rejected','history_evicted')""",
+                (robot_key(route.robot), source_key(source))).fetchone()[0] or 0
+        else:
+            key = (*route_key(route), kind, subject)
+            sdk = self.db.execute("SELECT max(seq) FROM sdk_sequences WHERE robot=? AND scene=? AND target=? AND source_kind=? AND source_id=?", key).fetchone()[0] or 0
+            retained = self.db.execute("""SELECT max(seq) FROM operations WHERE robot=? AND scene=? AND target=?
+                AND source=? AND state IN ('reserved','in_flight','unknown','sent','rejected','history_evicted')""",
+                (key[0], key[1], key[2], source_key(source))).fetchone()[0] or 0
         seq = max(row["seq"], sdk, retained) + 1
         self.db.execute("UPDATE sources SET seq=?,used=used+1 WHERE robot=? AND scene=? AND target=? AND message_id=?",
-                        (seq, *route_key(route), source_key(source)))
+                        (seq, *route_key(source.route), source_key(source)))
         return seq
 
     def reply_mode(self, route, source):
         if source is None:
             self.target(route)
             return None
-        if route_key(source.route) != route_key(route):
+        if not passive_route_matches(route, source.route):
             failure("identity_mismatch", "Reply source belongs to another target.")
         now = self.now()
-        key = (*route_key(route), source_key(source))
+        key = (*route_key(source.route), source_key(source))
         row = self.db.execute("SELECT * FROM sources WHERE robot=? AND scene=? AND target=? AND message_id=?", key).fetchone()
         if row is not None and row["blocked"]:
             blocked = row["blocked"]
@@ -484,12 +503,14 @@ class MessageStore:
         with self.transaction():
             return self._source(route, source, self.now())
 
-    def block_source(self, route, source, code, *, allow_active=False):
+    def block_source(self, source, code, *, allow_active=False):
         if source:
             with self.transaction():
                 blocked = f"active:{code}" if allow_active and code in ACTIVE_FALLBACK_CODES else str(code)
                 extra = " AND (blocked IS NULL OR blocked LIKE 'active:%')" if blocked.startswith("active:") else ""
-                self.db.execute("UPDATE sources SET blocked=? WHERE robot=? AND scene=? AND target=? AND message_id=?" + extra, (blocked, *route_key(route), source_key(source)))
+                # Record the rejection on the source's own row, including a cross-scene C2C reply to a group message.
+                self.db.execute("UPDATE sources SET blocked=? WHERE robot=? AND scene=? AND target=? AND message_id=?" + extra,
+                                (blocked, *route_key(source.route), source_key(source)))
 
     def register_event_source(self, source):
         if source.message_id is not None:
@@ -500,8 +521,12 @@ class MessageStore:
             self._prune(now)
             if source.expires <= now:
                 failure("reply_expired", "The original interaction reply window expired.")
-            if self.db.execute("SELECT 1 FROM sources WHERE robot=? AND scene=? AND target=? AND message_id=?", key).fetchone():
-                self.db.execute("UPDATE sources SET expires=min(expires,?),received=min(received,?) WHERE robot=? AND scene=? AND target=? AND message_id=?", (source.expires, source.received_at, *key))
+            old = self.db.execute("SELECT started,received FROM sources WHERE robot=? AND scene=? AND target=? AND message_id=?", key).fetchone()
+            if old:
+                # Same recompute as chat sources: keep the earliest observation, apply the current window.
+                deadline = min(old["started"], old["received"], source.sent_at, source.received_at) + source.window
+                self.db.execute("UPDATE sources SET expires=?,received=min(received,?) WHERE robot=? AND scene=? AND target=? AND message_id=?",
+                                (deadline, source.received_at, *key))
             else:
                 self._capacity("sources", self.source_capacity)
                 self.db.execute("INSERT INTO sources(robot,scene,target,message_id,started,received,expires,ref_idx) VALUES(?,?,?,?,?,?,?,NULL)", (*key, source.sent_at, source.received_at, source.expires))
@@ -549,18 +574,31 @@ class MessageStore:
                 if tuple(old[:4]) != key[1:] or requested is not None and old[4] != requested:
                     failure("operation_conflict", "This operation already claimed another source or sequence.")
                 return old[4]
-            high = self.db.execute("SELECT max(seq) FROM sdk_sequences WHERE robot=? AND scene=? AND target=? AND source_kind=? AND source_id=?", key).fetchone()[0] or 0
-            observed = self.db.execute("SELECT seq FROM sources WHERE robot=? AND scene=? AND target=? AND message_id=?", (*key[:3], source_id)).fetchone() if source_kind == "message" else None
-            high = max(high, observed[0]) if observed else high
             legacy_source = source_id if source_kind == "message" else "\x1f" + source_id
-            retained = self.db.execute("""SELECT max(seq) FROM operations WHERE robot=? AND scene=? AND target=?
-                AND source=? AND state IN ('reserved','in_flight','unknown','sent','rejected','history_evicted')""",
-                (key[0], key[1], key[2], legacy_source)).fetchone()[0]
-            high = max(high, retained or 0)
-            seq = requested if requested is not None else high + 1
-            occupied = self.db.execute("""SELECT 1 FROM operations WHERE robot=? AND scene=? AND target=?
-                AND source=? AND seq=? AND state IN ('reserved','in_flight','unknown','sent','rejected','history_evicted')""",
-                (key[0], key[1], key[2], legacy_source, seq)).fetchone()
+            # QQ counts one msg_id budget across group and C2C replies, so message sequences pool by robot.
+            if source_kind == "message":
+                high = self.db.execute("SELECT max(seq) FROM sdk_sequences WHERE robot=? AND source_kind=? AND source_id=?",
+                                       (key[0], source_kind, source_id)).fetchone()[0] or 0
+                observed = self.db.execute("SELECT max(seq) FROM sources WHERE robot=? AND message_id=?", (key[0], source_id)).fetchone()[0] or 0
+                retained = self.db.execute("""SELECT max(seq) FROM operations WHERE robot=? AND source=?
+                    AND state IN ('reserved','in_flight','unknown','sent','rejected','history_evicted')""",
+                    (key[0], legacy_source)).fetchone()[0] or 0
+            else:
+                high = self.db.execute("SELECT max(seq) FROM sdk_sequences WHERE robot=? AND scene=? AND target=? AND source_kind=? AND source_id=?",
+                                       key).fetchone()[0] or 0
+                observed = 0
+                retained = self.db.execute("""SELECT max(seq) FROM operations WHERE robot=? AND scene=? AND target=?
+                    AND source=? AND state IN ('reserved','in_flight','unknown','sent','rejected','history_evicted')""",
+                    (key[0], key[1], key[2], legacy_source)).fetchone()[0] or 0
+            seq = requested if requested is not None else max(high, observed, retained) + 1
+            if source_kind == "message":
+                occupied = self.db.execute("""SELECT 1 FROM operations WHERE robot=? AND source=? AND seq=?
+                    AND state IN ('reserved','in_flight','unknown','sent','rejected','history_evicted')""",
+                    (key[0], legacy_source, seq)).fetchone()
+            else:
+                occupied = self.db.execute("""SELECT 1 FROM operations WHERE robot=? AND scene=? AND target=?
+                    AND source=? AND seq=? AND state IN ('reserved','in_flight','unknown','sent','rejected','history_evicted')""",
+                    (key[0], key[1], key[2], legacy_source, seq)).fetchone()
             if occupied:
                 failure("sequence_conflict", "This source sequence belongs to a retained send.")
             try:
@@ -672,7 +710,8 @@ class MessageStore:
             if source is not None:
                 known = self.db.execute("""SELECT robot,scene,target FROM sources WHERE message_id=?
                     UNION ALL SELECT robot,scene,target FROM deliveries WHERE message_id=?""", (source, source)).fetchall()
-                if any(tuple(row) != key for row in known):
+                # A C2C reply may cite one observed group message; QQ still decides the real author.
+                if any(tuple(row) != key and not (row[0] == key[0] and row[1] == "group" and route.scene == "c2c") for row in known):
                     failure("identity_mismatch", "Observed reply source belongs to another robot or target.")
             if source_kind == "event" and source_id is not None:
                 chats = self.db.execute("SELECT robot,scene,target FROM sources WHERE event_id=?", (source_id,)).fetchall()
@@ -755,7 +794,7 @@ class MessageStore:
                 failure("operation_conflict", "Only the original unfinished reply can change wire mode.")
             if row["seq"] is None:
                 failure("operation_already_attempted", "This operation has already selected active delivery.")
-            self.db.execute("UPDATE sources SET used=max(0,used-1) WHERE robot=? AND scene=? AND target=? AND message_id=?", (*route_key(route), source_key(source)))
+            self.db.execute("UPDATE sources SET used=max(0,used-1) WHERE robot=? AND scene=? AND target=? AND message_id=?", (*route_key(source.route), source_key(source)))
             self.db.execute("DELETE FROM charges WHERE robot=? AND op_id=?", (robot_key(route.robot), op_id))
             self.db.execute("UPDATE operations SET seq=NULL,state='reserved',updated=?,result=? WHERE robot=? AND op_id=?",
                             (self.now(), json.dumps({"delivery": delivery}), robot_key(route.robot), op_id))

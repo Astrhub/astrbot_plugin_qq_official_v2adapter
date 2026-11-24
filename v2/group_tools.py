@@ -8,7 +8,7 @@ from astrbot.core.provider.register import llm_tools
 from astrbot.core.star.session_plugin_manager import SessionPluginManager
 
 from . import PLATFORM_TYPES, PLUGIN_NAME
-from .errors import V2Error
+from .errors import V2Error, unsupported
 from .event import V2MessageEvent
 from .extensions.management import timestamp
 from .extensions.state import digest
@@ -231,9 +231,12 @@ class GroupTools:
                 blacklist = args.get("blacklist", False)
                 if type(blacklist) is not bool:
                     raise V2Error("invalid_blacklist", "blacklist must be boolean.")
-                frozen = {"members": users, "blacklist": blacklist}
+                if blacklist:
+                    # QQ removed the removal-time blacklist field; the separate blacklist tool still applies.
+                    raise unsupported("QQ no longer accepts a blacklist choice on group removal; call change_blacklist after the removal.")
+                frozen = {"members": users}
                 async def execute(op_id, request):
-                    await qq.batch_remove_group_members(group, request["members"], request["blacklist"], operation_id=op_id)
+                    await qq.batch_remove_group_members(group, request["members"], operation_id=op_id)
                 return await self._write(event, name, group, actor, frozen, frozen, execute)
             op = args["op"]
             if op not in ("add", "del"):
