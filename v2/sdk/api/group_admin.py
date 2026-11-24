@@ -28,16 +28,9 @@ def timestamp(value):
     return value
 
 
-def partial_remove(data, members):
-    if (not isinstance(data, dict) or data.get("remove_members_result") != "success"
-            or not isinstance(data.get("add_to_member_blacklist_fail_openids"), list)):
+def removal_result(data):
+    if not isinstance(data, dict) or data.get("remove_members_result") != "success":
         raise V2Error("invalid_management_response", "QQ did not confirm group removal.", status=502, phase="result_unknown")
-    failed = data["add_to_member_blacklist_fail_openids"]
-    if any(not isinstance(member, str) or member not in members for member in failed):
-        raise V2Error("invalid_management_response", "QQ returned unrelated removal identities.", status=502, phase="result_unknown")
-    if failed:
-        raise V2Error("partial_failure", "Members were removed, but blacklist changes failed; do not repeat removal.",
-                      status=502, phase="partial", details={"removed": members, "blacklist_failed": failed})
 
 
 def partial_blacklist(data, members):
@@ -92,15 +85,13 @@ class NativeGroupAdminMixin:
                                         scene="group", target=group_openid)
 
     async def batch_remove_group_members(self, group_openid: str, member_openids: list[str],
-                                         add_to_member_blacklist: bool = False, *, operation_id=None) -> dict:
-        """Remove at most twenty members in one QQ call and expose partial blacklist failure."""
+                                         *, operation_id=None) -> dict:
+        """Remove at most twenty members in one QQ call; a blacklist change is a separate request."""
         members = ids(member_openids)
-        if type(add_to_member_blacklist) is not bool:
-            raise V2Error("invalid_members", "Blacklist choice must be boolean.")
         return await self._native_write("POST", f"/v2/groups/{segment(group_openid)}/batch_remove_members",
-            {"member_openids": members, "add_to_member_blacklist": add_to_member_blacklist},
+            {"member_openids": members},
             kind="batch_remove_members", scene="group", target=group_openid, operation_id=operation_id,
-            response_check=lambda data: partial_remove(data, members))
+            response_check=removal_result)
 
     async def set_group_member_blacklist(self, group_openid: str, op: str, member_openids: list[str],
                                          *, operation_id=None) -> dict:

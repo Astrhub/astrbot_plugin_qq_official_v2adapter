@@ -16,7 +16,7 @@ from v2.client import V2Client
 from v2.errors import V2Error
 from v2.event import V2MessageEvent
 from v2.messaging.convert import convert_chat
-from v2.messaging.store import MessageStore
+from v2.messaging.store import MESSAGE_POLICY_DEFAULTS, MessageStore
 from v2.models import InstanceKey, SessionRoute
 from v2.protocol import RawEnvelope
 
@@ -283,8 +283,8 @@ async def test_quote_of_other_unknown_expired_or_foreign_refs_do_not_wake(config
             await host_waking.process(event)
             assert event.is_stopped() and not event.is_wake and not event.is_at_or_wake_command
         # An expired self ref stops binding once its lease passes.
-        clock[0] = NOW + 86401
-        _, expired = quote_chat(config, state, ref="REFIDX_bot-msg", now=NOW + 86401)
+        clock[0] = NOW + MESSAGE_POLICY_DEFAULTS["retention_seconds"] + 1
+        _, expired = quote_chat(config, state, ref="REFIDX_bot-msg", now=NOW + MESSAGE_POLICY_DEFAULTS["retention_seconds"] + 1)
         reply = next(part for part in expired.message.message if isinstance(part, Reply))
         assert reply.sender_id != READY_ID and expired.message.self_id == READY_ID
         await host_waking.process(quote_event(config, expired))

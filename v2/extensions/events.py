@@ -20,8 +20,13 @@ class EventReplySource:
     ref_idx: None = None
 
     @property
+    def window(self):
+        # Interaction replies keep their documented short window; only chat sources use the passive window.
+        return 300
+
+    @property
     def expires(self):
-        return min(self.sent_at, self.received_at) + 300
+        return min(self.sent_at, self.received_at) + self.window
 
 
 @dataclass(frozen=True)

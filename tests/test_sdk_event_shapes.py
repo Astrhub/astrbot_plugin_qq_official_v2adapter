@@ -1,7 +1,7 @@
 """Documented QQ dispatch samples remain typed without losing wire extras."""
 
 
-from v2.sdk.event_types import SHAPES
+from v2.sdk.event_types import SHAPES, GroupMentionsUser, GroupMessage
 from v2.sdk.events import EventContext, NativeEvent
 
 
@@ -124,3 +124,18 @@ def test_invalid_schema_never_becomes_a_typed_event_and_diagnostics_keep_raw():
     assert make_event("RESUMED", []).typed is None
     other_bot = make_event("GROUP_MEMBER_ADD", {"timestamp": 1, "group_openid": "g", "member_openid": "u"}, appid="other")
     assert other_bot.key != wrong.key and other_bot.context.appid == "other"
+
+
+def test_group_mentions_keep_the_documented_fields_in_the_typed_view():
+    assert {"is_you", "scope"} <= set(GroupMentionsUser.__annotations__)
+    assert GroupMessage.__annotations__["mentions"] == list[GroupMentionsUser]
+    assert SHAPES["GROUP_AT_MESSAGE_CREATE"].types["mentions"] == list[GroupMentionsUser]
+    body = {"id": "m", "author": {"member_openid": "u"}, "group_openid": "g",
+            "mentions": [{"member_openid": "u2", "is_you": True, "scope": "single"}]}
+    notice = make_event("GROUP_MESSAGE_CREATE", body)
+    assert notice.schema_valid and notice.typed["d"]["mentions"][0]["is_you"] is True
+
+
+def test_group_message_still_validates_inherited_field_types():
+    malformed = make_event("GROUP_MESSAGE_CREATE", {"id": 1, "author": {"member_openid": "u"}, "group_openid": "g"})
+    assert malformed.known and not malformed.schema_valid and malformed.typed is None

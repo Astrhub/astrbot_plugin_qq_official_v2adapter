@@ -4,7 +4,9 @@ import copy
 import hashlib
 import json
 import secrets
+from collections import Counter
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from urllib.parse import quote, urlsplit
 from uuid import uuid4
@@ -28,6 +30,21 @@ NATIVE_READ_ACTIONS = frozenset({"group_info", "bot_state", "group_member", "gro
                                  "guild_member", "guild_members"})
 ROLE_TTL_SECONDS, ROLE_RETRY_SECONDS = 300, 60
 ROLE_DENIED_CODES = frozenset({11253, 11282})
+
+
+@dataclass(frozen=True)
+class RoleEntry:
+    expires: float
+    data: dict | None = None
+    denial: dict | None = None
+
+
+def role_denial(fields):
+    """Rebuild a cached denial so repeated cache hits never share one traceback."""
+    return V2Error(fields["code"], fields["message"], retcode=fields["retcode"], status=fields["status"],
+                   business_code=fields["business_code"], trace_id=fields["trace_id"],
+                   retry_after=fields["retry_after"], http_status=fields["http_status"], phase=fields["phase"],
+                   operation_id=fields["operation_id"], details=copy.deepcopy(fields.get("details")))
 
 
 def ident(value):
@@ -68,7 +85,7 @@ class Management:
         self.identity, self.http, self.state, self.store = identity, http, state, store
         self.settings = settings
         self.tasks, self.closed = set(), False
-        self._roles = {}
+        self._roles, self._role_epoch, self._role_pending = {}, {}, Counter()
         self.store.db.execute("""CREATE TABLE IF NOT EXISTS join_flags(robot TEXT,target TEXT,member TEXT,request_id TEXT,
             flag_hash TEXT,expires REAL,observed REAL,state TEXT,op_id TEXT,
             PRIMARY KEY(robot,target,member,request_id))""")
@@ -130,16 +147,20 @@ class Management:
         return data
 
     async def bot_state(self, group, *, refresh=False, guard=None):
-        """Robot role in one group, cached per group so repeated admin checks stay inside the quota."""
+        """Robot role in one group, cached per group so repeated reads stay inside the quota."""
         key = text_id(group)
         now = self.store.now()
-        for stale in [k for k, (expires, _) in self._roles.items() if expires <= now]:
+        for stale in [k for k, entry in self._roles.items() if entry.expires <= now]:
             self._roles.pop(stale, None)
+        for stale in [k for k in self._role_epoch if k not in self._roles and k not in self._role_pending and k != key]:
+            self._role_epoch.pop(stale, None)
         cached = None if refresh else self._roles.get(key)
         if cached is not None:
-            if isinstance(cached[1], V2Error):
-                raise cached[1]
-            return copy.deepcopy(cached[1])
+            if cached.denial is not None:
+                raise role_denial(cached.denial)
+            return copy.deepcopy(cached.data)
+        epoch = self._role_epoch[key] = self._role_epoch.get(key, 0) + 1
+        self._role_pending[key] += 1
         try:
             data = await self._read(f"/v2/groups/{ident(group)}/bot_state", guard=guard)
             if not isinstance(data, dict) or data.get("member_role") not in ("member", "admin", "owner"):
@@ -147,21 +168,28 @@ class Management:
             text_id(data.get("member_openid"))
         except V2Error as error:
             # A missing app permission is stable enough to remember briefly; every other failure is retried.
-            if error.business_code == 11253:
-                self._roles[key] = (now + ROLE_RETRY_SECONDS, error)
+            if error.business_code == 11253 and self._role_epoch.get(key) == epoch:
+                self._roles[key] = RoleEntry(now + ROLE_RETRY_SECONDS, denial=error.as_dict())
             raise
-        self._roles[key] = (now + ROLE_TTL_SECONDS, data)
+        finally:
+            self._role_pending[key] -= 1
+            if not self._role_pending[key]:
+                del self._role_pending[key]
+        if self._role_epoch.get(key) == epoch:
+            # A newer read or an invalidated cache wins over this late result.
+            self._roles[key] = RoleEntry(now + ROLE_TTL_SECONDS, data=data)
         return copy.deepcopy(data)
 
-    async def _admin(self, group, *, guard=None):
-        if (await self.bot_state(group, guard=guard))["member_role"] not in {"admin", "owner"}:
-            raise V2Error("group_admin_required", "The current bot-state response does not grant an administrator role.", status=403)
+    def _invalidate_role(self, key):
+        self._roles.pop(key, None)
+        # Reads already in flight are older than this invalidation and must not repopulate the cache.
+        self._role_epoch[key] = self._role_epoch.get(key, 0) + 1
 
     async def _confirm_role(self, group, error, *, guard=None):
         """Refresh the cached role once when QQ denies a permission; the write itself is never replayed."""
         if error.business_code not in ROLE_DENIED_CODES:
             return
-        self._roles.pop(text_id(group), None)
+        self._invalidate_role(text_id(group))
         try:
             await self.bot_state(group, guard=guard)
         except V2Error as confirm:
@@ -222,7 +250,6 @@ class Management:
         if type(duration) is not int or not 0 <= duration <= 30 * 86400:
             raise V2Error("invalid_duration", "Group mute duration must be 0..2592000 seconds.")
         self.check(write=True)
-        await self._admin(group, guard=guard)
         binding = digest(["group_ban", group, user, duration])
         path = f"/v2/groups/{ident(group)}/restrict_chat_setting"
         if operation_id is not None:
@@ -267,20 +294,17 @@ class Management:
             ident(user)
         if len(set(users)) != len(users):
             raise V2Error("invalid_members", "Duplicate members are not accepted.")
+        if blacklist:
+            # QQ removed the removal-time blacklist field; refuse the choice explicitly instead of dropping it.
+            raise unsupported("QQ no longer accepts a blacklist choice on group removal; use the member blacklist action instead.")
         users = list(users)
         self.check(write=True)
-        await self._admin(group, guard=guard)
         def validate(data):
-            if not isinstance(data, dict) or data.get("remove_members_result") != "success" or not isinstance(data.get("add_to_member_blacklist_fail_openids"), list):
+            if not isinstance(data, dict) or data.get("remove_members_result") != "success":
                 invalid()
-            failed = data["add_to_member_blacklist_fail_openids"]
-            if any(not isinstance(user, str) or user not in users for user in failed):
-                invalid()
-            if failed:
-                raise V2Error("partial_failure", "Removal succeeded but some blacklist writes failed; do not replay removal.", status=502, phase="partial", details={"blacklist_failed": failed})
             return {"state": "succeeded", "removed": users}
         try:
-            return await self._write("POST", f"/v2/groups/{ident(group)}/batch_remove_members", {"member_openids": users, "add_to_member_blacklist": blacklist}, kind="group_kick", operation_id=operation_id, validate=validate, guard=guard)
+            return await self._write("POST", f"/v2/groups/{ident(group)}/batch_remove_members", {"member_openids": users}, kind="group_kick", operation_id=operation_id, validate=validate, guard=guard)
         except V2Error as error:
             await self._confirm_role(group, error, guard=guard)
             raise
@@ -327,7 +351,6 @@ class Management:
         row = self.store.db.execute("SELECT * FROM join_flags WHERE robot=? AND flag_hash=?", (robot, hashlib.sha256(flag.encode()).hexdigest())).fetchone()
         if not row or row["expires"] <= self.store.now() or row["state"] != "pending":
             raise V2Error("request_flag_invalid", "Use an observed, unexpired, unused request flag for this robot.", status=404)
-        await self._admin(row["target"], guard=guard)
         op_id = "approve-" + row["flag_hash"]
         body = {"op": "approve" if approve else "decline", "join_request_id": row["request_id"]}
         if not approve:

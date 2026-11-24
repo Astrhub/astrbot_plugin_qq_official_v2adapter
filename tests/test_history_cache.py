@@ -7,7 +7,7 @@ from test_messaging_delivery import receiver as receiver
 from test_messaging_state import NOW, chat_payload, observed
 
 from v2.errors import V2Error
-from v2.messaging.store import MessageStore
+from v2.messaging.store import MESSAGE_POLICY_DEFAULTS, MessageStore
 from v2.protocol import RawEnvelope
 
 
@@ -57,7 +57,7 @@ def test_delivery_lru_preserves_unknown_sources_and_live_pipeline_pins(cache, co
         store.mark_delivered(observed(config, message_id=f"history-{number}"))
     assert store.delivered(unknown) and store.delivered(active)
     assert store.db.execute("SELECT count(*) FROM deliveries").fetchone()[0] == 4
-    clock[0] += 86401
+    clock[0] += MESSAGE_POLICY_DEFAULTS["retention_seconds"] + 1
     store.prune()
     assert store.delivered(unknown) and store.delivered(active)
     assert store.operation(unknown.route.robot, "unknown")["state"] == "unknown"

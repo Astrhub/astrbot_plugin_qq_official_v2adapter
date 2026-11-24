@@ -39,12 +39,14 @@ class ReplySource:
     received_at: float
 
     @property
-    def expires(self):
+    def window(self):
         # Group and C2C sources follow the documented 60-minute passive window; QQ stays
         # the authority on rejections. Channel and channel-DM scenes keep 5 minutes.
-        if self.route.scene in {"c2c", "group"}:
-            return min(self.sent_at, self.received_at) + 3600
-        return min(self.sent_at, self.received_at) + 300
+        return 3600 if self.route.scene in {"c2c", "group"} else 300
+
+    @property
+    def expires(self):
+        return min(self.sent_at, self.received_at) + self.window
 
 
 @dataclass

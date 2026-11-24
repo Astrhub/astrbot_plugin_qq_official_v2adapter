@@ -99,6 +99,8 @@ class ControlAPI:
                                        ("history/purge", "POST", "history_purge"),
                                        ("profile/status", "GET", "profile_status"),
                                        ("profile/policy", "POST", "profile_policy"),
+                                       ("state/status", "GET", "state_status"),
+                                       ("state/policy", "POST", "state_policy"),
                                        ("onboarding/start", "POST", "onboarding_start"), ("onboarding/status", "POST", "onboarding_status"),
                                        ("onboarding/cancel", "POST", "onboarding_cancel"), ("onboarding/commit", "POST", "onboarding_commit")):
             route = f"/{PLUGIN_NAME}/{path}"
@@ -299,6 +301,18 @@ class ControlAPI:
         return {**result, **store.policy_status()}
 
 
+    def dispatch_state(self, operation, body):
+        store = getattr(self.owner, "messages", None)
+        if store is None or getattr(store, "closed", True):
+            raise V2Error("message_state_not_ready", "Message state is not attached.", status=503)
+        if operation == "state_status":
+            return store.policy_status()
+        if body.get("confirm") is not True:
+            raise V2Error("confirmation_required", "Confirm saving message-state settings.")
+        result = store.save_policy(body.get("policy") or {})
+        return {**result, **store.policy_status()}
+
+
     def _history_store(self):
         history = getattr(self.owner, "history", None)
         if history is None or history.closed:
@@ -408,6 +422,8 @@ class ControlAPI:
                 self.owner.config.update(old)
                 raise V2Error("config_save_failed", "Host switch save failed; reload to verify disk state.", status=503) from exc
             return {"flags": self.flags(), "revision": self.fingerprint(self.flags())}
+        if operation in {"state_status", "state_policy"}:
+            return self.dispatch_state(operation, body)
         if operation in {"profile_status", "profile_policy"}:
             return self.dispatch_profile(operation, username, body)
         platform_id = body.get("platform_id") if request.method == "POST" else request.query.get("platform_id")

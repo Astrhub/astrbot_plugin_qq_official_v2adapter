@@ -191,7 +191,7 @@ async def test_blocked_candidate_is_skipped_with_reason(sending, adapter):
     s = sending
     chat, _ = s.observe()
     adapter.session_sources.record(chat, s.store.now())
-    s.store.block_source(chat.route, chat.source, 40034128, allow_active=True)
+    s.store.block_source(chat.source, 40034128, allow_active=True)
     s.modes.append(ACTIVE_DENIED_CODE)
     with pytest.raises(V2Error) as exc:
         await adapter.send_by_session(group_session(), MessageChain([Plain("blocked")]))

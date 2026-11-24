@@ -51,9 +51,9 @@ async def tool_env(native, tmp_path):
         elif parsed.path == "/v2/groups/g/restrict_chat_setting":
             data = {"global_rule": {"mode": "none"}, "members": [{"member_openid": "u", "username": "One", "mute_expire_at": "later", "union_openid": "private"}]} if spec.method == "GET" else {}
         elif parsed.path == "/v2/groups/g/member_blacklist":
-            data = {"users": [{"member_openid": "u", "username": "One", "union_openid": "private"}], "next_cursor": ""} if spec.method == "GET" else {"fail_openids": []}
+            data = {"users": [{"member_openid": "u", "username": "One", "union_openid": "private"}], "next_cursor": ""} if spec.method == "GET" else {"fail_openids": spec.json_body.get("member_openids", []) if mode[0] == "partial" else []}
         elif parsed.path == "/v2/groups/g/batch_remove_members":
-            data = {"remove_members_result": "success", "add_to_member_blacklist_fail_openids": ["u"] if mode[0] == "partial" else []}
+            data = {"remove_members_result": "success"}
         elif parsed.path == "/v2/groups/g/join_request_list":
             data = {"list": [{"member_openid": "u", "username": "One", "join_request_id": "real-request",
                               "apply_at": "1970-01-01T02:45:00+00:00", "apply_source": "self_apply",
@@ -216,15 +216,18 @@ async def test_write_frozen_relative_expiry_partial_and_unknown_replay_fences(to
     with pytest.raises(V2Error) as alien:
         await t.tools.call(stranger, "get_operation_status", operation_id=first["operation_id"])
     assert alien.value.code in {"operator_verification_unavailable", "operation_not_found"}
-    t.mode[0] = "partial"
-    partial = await t.tools.call(event, "kick_members", member_openids=["u"], blacklist=True)
-    assert partial["state"] == "partial" and partial["removed"] == ["u"]
-    again = await t.tools.call(event, "kick_members", member_openids=["u"], blacklist=True)
-    assert again == partial and len([r for r in t.requests if r[3].endswith("batch_remove_members")]) == 1
-    with pytest.raises(V2Error) as native_partial:
-        await t.m.client.qq.batch_remove_group_members("g", ["u"], True, operation_id=partial["operation_id"])
-    assert native_partial.value.code == "operation_already_attempted" and native_partial.value.phase == "partial"
+    with pytest.raises(V2Error) as refused:
+        await t.tools.call(event, "kick_members", member_openids=["u"], blacklist=True)
+    assert refused.value.code == "unsupported"
+    assert not [r for r in t.requests if r[3].endswith("batch_remove_members")]
+    kicked = await t.tools.call(event, "kick_members", member_openids=["u"])
+    assert kicked["state"] == "succeeded"
     assert len([r for r in t.requests if r[3].endswith("batch_remove_members")]) == 1
+    t.mode[0] = "partial"
+    partial = await t.tools.call(event, "change_blacklist", op="del", member_openids=["u"])
+    assert partial["state"] == "partial" and partial["blacklist_failed"] == ["u"]
+    again = await t.tools.call(event, "change_blacklist", op="del", member_openids=["u"])
+    assert again == partial and len([r for r in t.requests if r[3].endswith("member_blacklist") and r[0] == "POST"]) == 1
     t.mode[0] = "unknown"
     unknown = await t.tools.call(event, "change_blacklist", op="add", member_openids=["u"])
     assert unknown["state"] == "unknown" and unknown["error"]["code"] == "qq_api_error"

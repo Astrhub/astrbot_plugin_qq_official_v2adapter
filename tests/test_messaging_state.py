@@ -5,8 +5,8 @@ import pytest
 
 from v2.errors import V2Error
 from v2.messaging.convert import convert_chat
-from v2.messaging.store import MessageStore
-from v2.models import InstanceKey, RobotKey
+from v2.messaging.store import MESSAGE_POLICY_DEFAULTS, MessageStore
+from v2.models import InstanceKey, RobotKey, SessionRoute
 from v2.protocol import RawEnvelope
 
 NOW = 1800000000.0
@@ -81,7 +81,7 @@ def test_identity_provenance_isolation_ttl_and_restart(config, tmp_path, clock):
         assert store.lookup(chat.route.robot, "member_openid", "group:group-one", "user-one")["nickname"] == "same-name"
         dump = "\n".join(store.db.iterdump())
         assert "fixture-not-for-identity-db" not in dump and "/v2menu" not in dump and config["secret"] not in dump
-        clock[0] += 86401
+        clock[0] += MESSAGE_POLICY_DEFAULTS["retention_seconds"] + 1
         with pytest.raises(V2Error) as exc:
             store.lookup(chat.route.robot, "member_openid", "group:group-one", "user-one")
         assert exc.value.code == "identity_not_observed"
@@ -255,3 +255,40 @@ def test_identity_observation_time_is_not_the_older_message_time(config, state):
     record = state.lookup(chat.route.robot, "member_openid", "group:group-one", "user-one")
     assert record["first_seen"] == record["last_seen"] == NOW
     assert chat.source.sent_at == NOW - 120 and chat.source.expires == chat.source.sent_at + 3600
+
+
+def test_c2c_native_reply_cites_one_observed_group_message_and_shares_its_sequence(state, config):
+    chat = observed(config, "GROUP_AT_MESSAGE_CREATE", message_id="group-msg", sender="member-one")
+    state.observe(chat)
+    route = SessionRoute(chat.route.robot, "c2c", "user-one")
+    assert state.reserve_native(route, "message", "group-msg", "native-digest", "native-reply") == 1
+    assert state.reserve(chat.route, chat.source, "group-digest", "group-reply")["seq"] == 2
+    with pytest.raises(V2Error) as mismatch:
+        state.reserve_native(SessionRoute(chat.route.robot, "group", "another-group"), "message", "group-msg",
+                             "other-digest", "other-reply")
+    assert mismatch.value.code == "identity_mismatch"
+
+
+def test_c2c_passive_source_reuses_the_group_observation_only_across_scenes(state, config):
+    chat = observed(config, "GROUP_MESSAGE_CREATE", message_id="group-msg", sender="member-one")
+    state.observe(chat)
+    route = SessionRoute(chat.route.robot, "c2c", "user-one")
+    assert state.check_source(route, chat.source)["message_id"] == "group-msg"
+    assert state.reply_mode(route, chat.source) is None
+    with pytest.raises(V2Error) as mismatch:
+        state.check_source(SessionRoute(chat.route.robot, "channel", "other-channel"), chat.source)
+    assert mismatch.value.code == "identity_mismatch"
+    state.block_source(chat.source, 40034128)
+    assert state.db.execute("SELECT blocked FROM sources WHERE message_id='group-msg'").fetchone()[0] == "40034128"
+
+
+def test_sdk_sequence_claim_is_unique_for_one_message_across_scenes(state, config):
+    chat = observed(config, "GROUP_MESSAGE_CREATE", message_id="group-msg", sender="member-one")
+    state.observe(chat)
+    assert state.claim_sequence(chat.route, "message", "group-msg", "op-group", lane="send", binding="binding-a") == 1
+    c2c = SessionRoute(chat.route.robot, "c2c", "user-one")
+    with pytest.raises(V2Error) as taken:
+        state.claim_sequence(c2c, "message", "group-msg", "op-c2c", requested=1, lane="send", binding="binding-b")
+    assert taken.value.code == "sequence_conflict"
+
+

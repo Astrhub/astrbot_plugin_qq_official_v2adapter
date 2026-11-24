@@ -25,7 +25,7 @@ SCHEDULE = {"schedule": {"name": "x", "start_timestamp": "1700000000000", "end_t
 WRITES = [
     ("A005", "POST", "/v2/generate_url_link", lambda q: q.generate_url_link(""), {"callback_data": ""}, {"data": {"url": "https://qun.qq.com/share?token=private"}}),
     ("A029", "POST", "/v2/groups/g%2F1/restrict_chat_setting", lambda q: q.set_group_restrict_chat_setting("g/1", [{"op": "del", "member_openid": "u", "mute_expire_at": ""}]), {"members": [{"op": "del", "member_openid": "u", "mute_expire_at": ""}]}, {}),
-    ("A030", "POST", "/v2/groups/g%2F1/batch_remove_members", lambda q: q.batch_remove_group_members("g/1", ["u"], True), {"member_openids": ["u"], "add_to_member_blacklist": True}, {"remove_members_result": "success", "add_to_member_blacklist_fail_openids": []}),
+    ("A030", "POST", "/v2/groups/g%2F1/batch_remove_members", lambda q: q.batch_remove_group_members("g/1", ["u"]), {"member_openids": ["u"]}, {"remove_members_result": "success"}),
     ("A032", "POST", "/v2/groups/g%2F1/member_blacklist", lambda q: q.set_group_member_blacklist("g/1", "add", ["u"]), {"op": "add", "member_openids": ["u"]}, {"fail_openids": []}),
     ("A034", "POST", "/v2/groups/g%2F1/approval_join_request/u", lambda q: q.approve_group_join_request("g/1", "u", "decline", "request", "", False), {"op": "decline", "join_request_id": "request", "reject_reason": "", "add_to_member_blacklist": False}, {}),
     ("A036", "POST", "/v2/groups/join_approval_strategy", lambda q: q.create_join_approval_strategy(group_openids=["g/1"], is_enable="off", remark=""), {"group_openids": ["g/1"], "is_enable": "off", "remark": ""}, {"strategy_id": "strat", "extra": 0}),
@@ -124,20 +124,23 @@ async def test_m6_disabled_management_partial_outcomes_and_blacklist_limits(admi
     assert read_only.value.code == "unsupported" and not m.calls
 
     m.policy["management_writes"] = True
-    m.response[0] = {"remove_members_result": "success", "add_to_member_blacklist_fail_openids": ["u"]}
-    with pytest.raises(V2Error) as partial:
-        await m.client.qq.batch_remove_group_members("g", ["u"], True, operation_id="kick-once")
-    assert partial.value.phase == "partial" and partial.value.details["removed"] == ["u"]
-    assert m.extension.operation(m.client.identity.robot, "kick-once")["state"] == "partial"
-    with pytest.raises(V2Error) as replay:
-        await m.client.qq.batch_remove_group_members("g", ["u"], True, operation_id="kick-once")
-    assert replay.value.code == "operation_already_attempted" and replay.value.phase == "partial"
+    m.response[0] = {"remove_members_result": "success"}
+    assert await m.client.qq.batch_remove_group_members("g", ["u"], operation_id="kick-once") == m.response[0]
     assert len(m.calls) == 1
+    m.response[0] = {"fail_openids": ["u"]}
+    with pytest.raises(V2Error) as partial:
+        await m.client.qq.set_group_member_blacklist("g", "add", ["u"], operation_id="blacklist-once")
+    assert partial.value.phase == "partial" and partial.value.details["blacklist_failed"] == ["u"]
+    assert m.extension.operation(m.client.identity.robot, "blacklist-once")["state"] == "partial"
+    with pytest.raises(V2Error) as replay:
+        await m.client.qq.set_group_member_blacklist("g", "add", ["u"], operation_id="blacklist-once")
+    assert replay.value.code == "operation_already_attempted" and replay.value.phase == "partial"
+    assert len(m.calls) == 2
     m.response[0] = {"user_ids": []}
     with pytest.raises(V2Error) as muted:
         await m.client.qq.mute_multi_member("guild", ["u"], mute_seconds="30", operation_id="mute-once")
     assert muted.value.phase == "partial" and muted.value.details["failed"] == ["u"]
-    assert len(m.calls) == 2
+    assert len(m.calls) == 3
 
     m.calls.clear()
     m.response[0] = {"strategy_id": "strat", "whitelist_user_count": 10000}
@@ -183,7 +186,7 @@ async def legacy_wire(receiver):
     owner, instance = receiver
     token_entered, token_release = asyncio.Event(), asyncio.Event()
     write_entered, write_release = asyncio.Event(), asyncio.Event()
-    hold_token, hold_write, partial_kick = [False], [False], [False]
+    hold_token, hold_write, partial_blacklist = [False], [False], [False]
     calls = []
 
     async def handler(request):
@@ -209,7 +212,9 @@ async def legacy_wire(receiver):
         if request.path == "/v2/generate_url_link":
             return web.json_response({"data": {"url": "https://qun.qq.com/qunpro/robot/qunshare"}})
         if request.path.endswith("/batch_remove_members"):
-            return web.json_response({"remove_members_result": "success", "add_to_member_blacklist_fail_openids": ["u"] if partial_kick[0] else []})
+            return web.json_response({"remove_members_result": "success"})
+        if request.path.endswith("/member_blacklist"):
+            return web.json_response({"fail_openids": ["u"] if partial_blacklist[0] else []})
         if request.path == "/guilds/g/channels":
             return web.json_response({"guild_id": "g", "id": "ch"})
         if request.path == "/channels/ch" and request.method == "PATCH":
@@ -227,7 +232,7 @@ async def legacy_wire(receiver):
             yield SimpleNamespace(owner=owner, instance=instance, manager=manager, calls=calls,
                 hold_token=hold_token, token_entered=token_entered, token_release=token_release,
                 hold_write=hold_write, write_entered=write_entered, write_release=write_release,
-                partial_kick=partial_kick)
+                partial_blacklist=partial_blacklist)
         finally:
             token_release.set()
             write_release.set()
@@ -264,8 +269,6 @@ def prepare_legacy_call(p, name, args, suffix=""):
         seed = f"seed-send{suffix}"
         store.reserve(route, None, "fixture-message", seed)
         store.finish(route.robot, seed, "sent", result={"message_id": "msg", "wire_started": store.now()})
-    if name == "group_kick":
-        return args, {"blacklist": True, "operation_id": op_id}, op_id
     return args, {"operation_id": op_id}, op_id
 
 
@@ -318,7 +321,7 @@ async def test_revoked_legacy_write_waiting_for_token_never_starts_business_wire
         assert p.calls == []
         rows = p.instance.client._state.extension_state.db.execute(
             "SELECT state FROM extension_ops WHERE op_id=?", (op_id,)).fetchall()
-        if name in {"group_ban", "approve"}:
+        if name == "group_ban":
             assert not rows
         else:
             assert [row[0] for row in rows] == ["not_sent"]
@@ -366,7 +369,7 @@ async def test_legacy_owner_unloaded_after_wire_or_prequery_and_partial_kick(leg
         with pytest.raises(RuntimeError) as stopped:
             await ban_task
         assert stopped.value.code == "stale_owner" and [path for _, path, _ in p.calls] == [
-            "/v2/groups/g/bot_state", "/v2/groups/g/members/u"]
+            "/v2/groups/g/members/u"]
         assert not p.instance.client._state.extension_state.db.execute(
             "SELECT 1 FROM extension_ops WHERE op_id='prequery-ban'").fetchone()
     finally:
@@ -374,37 +377,13 @@ async def test_legacy_owner_unloaded_after_wire_or_prequery_and_partial_kick(leg
         monkeypatch.setattr(p.manager, "group_member", original_member)
 
     p.calls.clear()
-    (flag,), kwargs, op_id = prepare_legacy_call(p, "approve", (), "-rev")
-    entered2, release2 = asyncio.Event(), asyncio.Event()
-    original_admin = p.manager._admin
-
-    async def delayed_admin(*args, **options):
-        await original_admin(*args, **options)
-        entered2.set()
-        await release2.wait()
-
-    monkeypatch.setattr(p.manager, "_admin", delayed_admin)
-    plugin3 = object()
-    approve_task = asyncio.create_task(p.instance.client.qq.with_options(owner=plugin3).approve(flag, **kwargs))
-    try:
-        await asyncio.wait_for(entered2.wait(), 2)
-        await p.owner.catalog_unloaded(SimpleNamespace(star_cls=plugin3))
-        release2.set()
-        with pytest.raises(RuntimeError) as stopped:
-            await approve_task
-        assert stopped.value.code == "stale_owner" and stopped.value.phase == "not_sent"
-        assert p.instance.client._state.extension_state.operation(p.instance.identity.robot, op_id)["state"] == "not_sent"
-        assert p.manager.store.db.execute("SELECT state FROM join_flags WHERE flag_hash=?", (hashlib.sha256(flag.encode()).hexdigest(),)).fetchone()[0] == "retryable"
-    finally:
-        release2.set()
-        monkeypatch.setattr(p.manager, "_admin", original_admin)
 
     p.calls.clear()
     p.write_entered.clear()
     p.write_release.clear()
-    p.partial_kick[0] = p.hold_write[0] = True
+    p.partial_blacklist[0] = p.hold_write[0] = True
     plugin4 = object()
-    kick_task = asyncio.create_task(p.instance.client.qq.with_options(owner=plugin4).group_kick("g", ["u"], blacklist=True, operation_id="partial-owned-kick"))
+    kick_task = asyncio.create_task(p.instance.client.qq.with_options(owner=plugin4).set_group_member_blacklist("g", "add", ["u"], operation_id="partial-owned-kick"))
     try:
         await asyncio.wait_for(p.write_entered.wait(), 2)
         await p.owner.catalog_unloaded(SimpleNamespace(star_cls=plugin4))
@@ -414,8 +393,10 @@ async def test_legacy_owner_unloaded_after_wire_or_prequery_and_partial_kick(leg
         assert partial.value.code == "partial_failure" and partial.value.phase == "partial"
         assert p.instance.client._state.extension_state.operation(p.instance.identity.robot, "partial-owned-kick")["state"] == "partial"
         with pytest.raises(RuntimeError) as replay:
-            await p.instance.client.qq.group_kick("g", ["u"], blacklist=True, operation_id="partial-owned-kick")
+            await p.instance.client.qq.set_group_member_blacklist("g", "add", ["u"], operation_id="partial-owned-kick")
         assert replay.value.phase == "partial"
     finally:
-        p.partial_kick[0] = p.hold_write[0] = False
+        p.partial_blacklist[0] = p.hold_write[0] = False
         p.write_release.set()
+
+

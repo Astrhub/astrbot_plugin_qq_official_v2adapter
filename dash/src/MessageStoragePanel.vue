@@ -1,7 +1,7 @@
 <script setup>
 import { computed, onMounted, ref, watch } from "vue";
 import AbSelect from "./AbSelect.vue";
-import { clone, normalizeProfilePolicy, normalizeStoragePolicy } from "./api.js";
+import { clone, normalizeProfilePolicy, normalizeStatePolicy, normalizeStoragePolicy } from "./api.js";
 import { t } from "./i18n.js";
 
 const props = defineProps({
@@ -93,7 +93,9 @@ async function loadProfile() {
   fillProfile(await props.api.profileStatus());
 }
 
-onMounted(() => emit("run", loadProfile));
+onMounted(() => emit("run", async () => {
+  await Promise.all([loadProfile(), loadState()]);
+}));
 
 const profileBounds = computed(() => props.state.profileStatus?.bounds || {});
 
@@ -112,6 +114,47 @@ async function saveProfile() {
   const result = await props.api.saveProfilePolicy(profilePayload());
   fillProfile(result);
   emit("status", t("storage.savedProfile"));
+}
+
+function fillState(value) {
+  props.state.stateStatus = value;
+  if (value?.policy) {
+    props.state.statePolicy = normalizeStatePolicy(value.policy);
+    props.state.statePolicySnapshot = JSON.stringify(props.state.statePolicy);
+  }
+}
+
+async function loadState() {
+  fillState(await props.api.stateStatus());
+}
+
+const stateBounds = computed(() => props.state.stateStatus?.bounds || {});
+const stateUsage = computed(() => {
+  const counts = props.state.stateStatus?.counts || {};
+  return t("storage.stateUsage", {
+    identities: counts.identities || 0,
+    targets: counts.targets || 0,
+    sources: counts.sources || 0,
+    deliveries: counts.deliveries || 0,
+    operations: counts.operations || 0,
+  });
+});
+
+function statePayload() {
+  const current = props.state.statePolicy;
+  return {
+    retention_seconds: Number(current.retention_seconds),
+    identity_capacity: Number(current.identity_capacity),
+    source_capacity: Number(current.source_capacity),
+    operation_capacity: Number(current.operation_capacity),
+  };
+}
+
+async function saveState() {
+  if (!(await props.confirm(t("storage.confirmState")))) return;
+  const result = await props.api.saveStatePolicy(statePayload());
+  fillState(result);
+  emit("status", t("storage.savedState"));
 }
 watch(() => props.state.view?.platform_id, () => {
   entries.value = [];
@@ -262,6 +305,43 @@ function formatTime(value) {
       <div class="actions">
         <button type="button" :disabled="busy" @click="emit('run', saveProfile)">
           {{ t("storage.saveProfile") }}
+        </button>
+      </div>
+    </article>
+    <article class="card">
+      <h2>{{ t("storage.stateTitle") }}</h2>
+      <p class="muted">{{ t("storage.stateDesc") }}</p>
+      <dl class="facts">
+        <div>
+          <dt>{{ t("storage.profileScope") }}</dt>
+          <dd>{{ t("storage.stateScope") }}</dd>
+        </div>
+        <div>
+          <dt>{{ t("storage.profileUsed") }}</dt>
+          <dd>{{ stateUsage }}</dd>
+        </div>
+      </dl>
+      <div class="form-grid">
+        <label>
+          {{ t("storage.stateRetention") }}
+          <input v-model.number="state.statePolicy.retention_seconds" type="number" :min="stateBounds.retention_seconds?.min" :max="stateBounds.retention_seconds?.max">
+        </label>
+        <label>
+          {{ t("storage.stateIdentities") }}
+          <input v-model.number="state.statePolicy.identity_capacity" type="number" :min="stateBounds.identity_capacity?.min" :max="stateBounds.identity_capacity?.max">
+        </label>
+        <label>
+          {{ t("storage.stateSources") }}
+          <input v-model.number="state.statePolicy.source_capacity" type="number" :min="stateBounds.source_capacity?.min" :max="stateBounds.source_capacity?.max">
+        </label>
+        <label>
+          {{ t("storage.stateOperations") }}
+          <input v-model.number="state.statePolicy.operation_capacity" type="number" :min="stateBounds.operation_capacity?.min" :max="stateBounds.operation_capacity?.max">
+        </label>
+      </div>
+      <div class="actions">
+        <button type="button" :disabled="busy" @click="emit('run', saveState)">
+          {{ t("storage.saveState") }}
         </button>
       </div>
     </article>

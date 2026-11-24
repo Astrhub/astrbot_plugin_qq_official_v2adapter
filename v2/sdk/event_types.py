@@ -19,6 +19,11 @@ class User(TypedDict, total=False):
     union_user_account: str
 
 
+class GroupMentionsUser(User, total=False):
+    is_you: bool
+    scope: str
+
+
 class Guild(TypedDict, total=False):
     id: str
     name: str
@@ -66,6 +71,10 @@ class Message(TypedDict, total=False):
     message_scene: dict[str, object]
     msg_elements: list[dict[str, object]]
     seq: int
+
+
+class GroupMessage(Message, total=False):
+    mentions: list[GroupMentionsUser]
 
 
 class GroupMember(TypedDict, total=False):
@@ -199,9 +208,13 @@ class MemberNotice(TypedDict):
 
 class ChatNotice(TypedDict):
     t: Literal["MESSAGE_CREATE", "MESSAGE_DELETE", "AT_MESSAGE_CREATE", "PUBLIC_MESSAGE_DELETE",
-               "DIRECT_MESSAGE_CREATE", "DIRECT_MESSAGE_DELETE", "GROUP_AT_MESSAGE_CREATE",
-               "GROUP_MESSAGE_CREATE", "C2C_MESSAGE_CREATE"]
+               "DIRECT_MESSAGE_CREATE", "DIRECT_MESSAGE_DELETE", "C2C_MESSAGE_CREATE"]
     d: Message
+
+
+class GroupChatNotice(TypedDict):
+    t: Literal["GROUP_AT_MESSAGE_CREATE", "GROUP_MESSAGE_CREATE"]
+    d: GroupMessage
 
 
 class GroupMemberNotice(TypedDict):
@@ -274,7 +287,7 @@ class ResumedNotice(TypedDict):
     d: Literal[""]
 
 
-TypedNotice = (GuildNotice | ChannelNotice | MemberNotice | ChatNotice | GroupMemberNotice | GroupActionNotice |
+TypedNotice = (GuildNotice | ChannelNotice | MemberNotice | ChatNotice | GroupChatNotice | GroupMemberNotice | GroupActionNotice |
                FriendNotice | C2CNotice | JoinNotice | InteractionNotice | ReactionNotice | AuditNotice |
                ForumNotice | AudioNotice | SubscribeNotice | ReadyNotice | ResumedNotice)
 
@@ -317,7 +330,8 @@ add("MESSAGE_CREATE AT_MESSAGE_CREATE DIRECT_MESSAGE_CREATE", "channel_message",
 add("MESSAGE_DELETE PUBLIC_MESSAGE_DELETE DIRECT_MESSAGE_DELETE", "channel_message",
     "botpy 1.2.1 connection.py; current dedicated payload page not confirmed", (), Message.__annotations__, False)
 add("GROUP_MESSAGE_CREATE GROUP_AT_MESSAGE_CREATE", "group_message",
-    _AUTO + "group_message_create.md", ("id", "author", "group_openid"), Message.__annotations__)
+    _AUTO + "group_message_create.md", ("id", "author", "group_openid"),
+    {**Message.__annotations__, **GroupMessage.__annotations__})
 add("C2C_MESSAGE_CREATE", "c2c_message", _AUTO + "c2c_message_create.md",
     ("id", "author"), Message.__annotations__)
 add("GROUP_MEMBER_ADD GROUP_MEMBER_REMOVE", "group_member", _AUTO + "group_member_add.md",

@@ -43,9 +43,10 @@ async def delivery(receiver):
             await wire_release.wait()
         if request.path == "/guilds/g/members/u/mute":
             return web.Response(status=500 if outcome[0] == "unknown" else 204)
+        if request.path == "/v2/groups/g/member_blacklist":
+            return web.json_response({"fail_openids": ["u"] if outcome[0] == "partial" else []})
         if request.path == "/v2/groups/g/batch_remove_members":
-            return web.json_response({"remove_members_result": "success",
-                "add_to_member_blacklist_fail_openids": ["u"] if outcome[0] == "partial" else []})
+            return web.json_response({} if outcome[0] == "unknown" else {"remove_members_result": "success"})
         assert request.path == "/v2/groups/group-one/messages"
         return web.json_response({"id": "actual-event-send", "timestamp": "2027-01-15T08:00:00+08:00",
                                   "ext_info": {"ref_idx": "REFIDX_actual-event-send"}})
@@ -249,12 +250,13 @@ async def test_recovered_ingress_uses_subscription_owner_without_renewing_reply(
         await live_only.close()
 
 
-@pytest.mark.parametrize("outcome,name,op_id,state", [
-    ("success", "guild_mute", "sent-before-unload", "succeeded"),
-    ("partial", "group_kick", "partial-before-unload", "partial"),
-    ("unknown", "guild_mute", "unknown-before-unload", "unknown"),
+@pytest.mark.parametrize("outcome,name,op_id,state,method,path", [
+    ("success", "guild_mute", "sent-before-unload", "succeeded", "PATCH", "/guilds/g/members/u/mute"),
+    ("partial", "member_blacklist", "partial-before-unload", "partial", "POST", "/v2/groups/g/member_blacklist"),
+    ("unknown", "group_kick", "unknown-kick-before-unload", "unknown", "POST", "/v2/groups/g/batch_remove_members"),
+    ("unknown", "guild_mute", "unknown-before-unload", "unknown", "PATCH", "/guilds/g/members/u/mute"),
 ])
-async def test_delivered_client_preserves_actual_inflight_write_outcome(delivery, outcome, name, op_id, state):
+async def test_delivered_client_preserves_actual_inflight_write_outcome(delivery, outcome, name, op_id, state, method, path):
     p = delivery
     plugin = object()
     sub = p.instance.client.qq.events.stream({"GROUP_AT_MESSAGE_CREATE"}, owner=plugin)
@@ -267,7 +269,9 @@ async def test_delivered_client_preserves_actual_inflight_write_outcome(delivery
         event = await asyncio.wait_for(anext(iterator), 2)
         def write(client):
             if name == "group_kick":
-                return client.group_kick("g", ["u"], blacklist=True, operation_id=op_id)
+                return client.group_kick("g", ["u"], operation_id=op_id)
+            if name == "member_blacklist":
+                return client.set_group_member_blacklist("g", "add", ["u"], operation_id=op_id)
             return client.guild_mute("g", "u", 60, operation_id=op_id)
         task = asyncio.create_task(write(event.client))
         await asyncio.wait_for(p.wire_entered.wait(), 2)
@@ -281,8 +285,7 @@ async def test_delivered_client_preserves_actual_inflight_write_outcome(delivery
             assert error.value.phase == ("partial" if outcome == "partial" else "result_unknown")
         assert p.owner.extension_state.operation(p.instance.identity.robot, op_id)["state"] == state
         writes = [(method, path) for method, path, _ in p.calls if method in {"POST", "PATCH", "DELETE"}]
-        assert writes == [(("POST", "/v2/groups/g/batch_remove_members") if outcome == "partial"
-                           else ("PATCH", "/guilds/g/members/u/mute"))]
+        assert writes == [(method, path)]
         if outcome != "success":
             with pytest.raises(RuntimeError) as replay:
                 await write(p.instance.client.qq)

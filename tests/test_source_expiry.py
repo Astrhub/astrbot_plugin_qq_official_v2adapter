@@ -4,6 +4,7 @@ from test_messaging_state import clock as clock
 from test_messaging_state import state as state
 
 from v2.errors import V2Error
+from v2.extensions.events import EventReplySource
 from v2.messaging.convert import convert_chat
 from v2.messaging.store import MessageStore, robot_key
 from v2.models import InstanceKey
@@ -102,3 +103,27 @@ def test_restart_prunes_released_reservations_but_preserves_unknown_sources(conf
         assert restored.operation(chats[1].route.robot, "in_flight")["state"] == "unknown"
     finally:
         restored.close()
+
+
+def test_retained_chat_source_follows_the_current_window_when_reobserved(state, clock, config):
+    chat = observed(config, "GROUP_MESSAGE_CREATE")
+    state.observe(chat)
+    # A row written under the previous 300-second policy must not pin the new 60-minute window.
+    state.db.execute("UPDATE sources SET expires=?", (chat.source.received_at + 300,))
+    state.db.commit()
+    clock[0] = chat.source.received_at + 200
+    state.observe(chat)
+    assert state.db.execute("SELECT expires FROM sources").fetchone()[0] == chat.source.expires
+    clock[0] = chat.source.received_at + 301
+    state.reserve(chat.route, chat.source, "digest", "operation")
+
+
+def test_retained_event_source_restores_its_own_window(state, clock, config):
+    chat = observed(config, "C2C_MESSAGE_CREATE")
+    source = EventReplySource(chat.route, chat.identity.generation, "real-event", "interaction", clock[0], clock[0])
+    state.register_event_source(source)
+    state.db.execute("UPDATE sources SET expires=?", (clock[0] + 10,))
+    state.db.commit()
+    clock[0] += 5
+    state.register_event_source(source)
+    assert state.db.execute("SELECT expires FROM sources").fetchone()[0] == source.expires
