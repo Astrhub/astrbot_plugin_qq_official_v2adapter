@@ -1,4 +1,4 @@
-<!-- 来源: https://bot.q.qq.com/wiki/develop/api-v2/autogen/event/group_at_message_create.html · 抓取 2026-10-25 -->
+<!-- 来源: https://bot.q.qq.com/wiki/develop/api-v2/autogen/event/group_at_message_create.html · 抓取 2026-11-24 -->
 
 # 群@机器人消息
 
@@ -18,7 +18,7 @@ content 字段已自动去除@机器人的前缀。
 | 名称 | 类型 | 描述 |
 | --- | --- | --- |
 | id | string | 消息 ID，可用于被动回复和撤回 |
-| author | [User](#user) | 发送者（member_openid 有值） |
+| author | [GroupUser](#groupuser) | 发送者（member_openid 有值） |
 | content | string | 消息文本内容（已去除@机器人的前缀） |
 | group_openid | string | 群 OpenID |
 | union_group_openid | string | 跨应用关联群 OpenID，当绑定了第三方应用时有效 |
@@ -26,26 +26,24 @@ content 字段已自动去除@机器人的前缀。
 | message_type | integer | 消息内容类型（同 C2C_MESSAGE_CREATE） |
 | message_scene | [MessageScene](#messagescene) | 消息场景上下文 |
 | attachments | [][MessageAttachment](#messageattachment) | 消息附件 |
-| mentions | [][User](#user) | 消息中@的用户列表（不含@机器人自身） |
+| mentions | [][GroupMentionsUser](#groupmentionsuser) | 消息中@的用户列表（不含@机器人自身） |
 | ark_data | [ARKData](#arkdata) | 结构化卡片消息数据 |
 | msg_elements | [][MsgElement](#msgelement) | 消息元素列表 |
 
-> 本地校注（changelog 20261116）：事件体已写入 `union_group_openid`，User 表已写入 `member_nickname` 与头像。官方 autogen 页表示例尚未同步。`union_group_openid` 不作为群路由主键。
+> 本地校注（2026-11-24）：官方页 2026-11-16 起改用 `GroupUser` 与 `GroupMentionsUser` 表，本镜像已同步该结构；事件示例仍未包含 `avatar`、`union_group_openid`。`union_group_openid` 不作为群路由主键。
 
-#### User
+#### GroupUser
 
 | 名称 | 类型 | 描述 |
 | --- | --- | --- |
 | id | string | 用户唯一标识（OpenID 格式） |
 | username | string | 用户昵称 |
-| member_nickname | string | 群内昵称 |
-| avatar | string | 用户头像 |
+| avatar | string | 用户头像 URL |
 | bot | boolean | 是否为机器人 |
-| union_openid | string | 跨应用统一用户 OpenID（可能为空） |
-| union_user_account | string | 跨应用统一用户账号（可能为空） |
-| user_openid | string | 用户 OpenID（单聊场景使用） |
-| member_openid | string | 群成员 OpenID（群聊场景使用） |
+| union_openid | string | 跨应用关联用户openid，当绑定了3方应用时有效 |
+| member_openid | string | 群成员 OpenID |
 | member_role | string | 群内角色。member=普通成员, admin=管理员, owner=群主 |
+| member_nickname | string | 群场景：用户在群内的昵称 |
 
 #### MessageScene
 
@@ -67,6 +65,19 @@ content 字段已自动去除@机器人的前缀。
 | voice_wav_url | string | 语音消息 SILK 等转换后的 WAV 文件 URL |
 | asr_refer_text | string | 语音消息 ASR 参考结果 |
 
+#### GroupMentionsUser
+
+| 名称 | 类型 | 描述 |
+| --- | --- | --- |
+| id | string | 用户唯一标识（OpenID 格式） |
+| username | string | 用户昵称 |
+| bot | boolean | 是否为机器人 |
+| member_openid | string | 群成员 OpenID（群聊场景使用） |
+| member_role | string | 群内角色。member=普通成员, admin=管理员, owner=群主 |
+| is_you | boolean | 是否是@的当前bot |
+| scope | string | all：@全体成员，single：指定@对象 |
+| member_nickname | string | 用户在群内的昵称 |
+
 #### ARKData
 
 | 名称 | 类型 | 描述 |
@@ -81,7 +92,6 @@ content 字段已自动去除@机器人的前缀。
 | 名称 | 类型 | 描述 |
 | --- | --- | --- |
 | msg_idx | string | 消息元素在列表中的引用消息索引 |
-| author | [User](#user) | 该元素对应的消息发送者 |
 | message_type | integer | 消息内容类型: 0=普通文本, 3=结构化卡片, 101=并行消息, 102=聊天记录, 103=引用消息 |
 | content | string | 消息正文内容 |
 | attachments | [][MessageAttachment](#messageattachment) | 该元素携带的附件 |

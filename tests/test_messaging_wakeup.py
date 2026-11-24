@@ -115,7 +115,7 @@ def test_group_self_cleanup_preserves_other_content_source_and_typed_identity(co
     assert event.bot._source is chat.source and event.bot._route == chat.route
     assert chat.route.scene == "group" and chat.route.target == "group-one" and chat.route.user == "user-one"
     assert chat.source.message_id == "msg-one" and chat.source.event_id == "event-msg-one"
-    assert chat.source.ref_idx == "REFIDX_msg-one" and chat.source.expires == NOW + 300
+    assert chat.source.ref_idx == "REFIDX_msg-one" and chat.source.expires == NOW + 3600
     state = MessageStore(tmp_path / "group-mentions.sqlite3", clock=lambda: NOW)
     try:
         state.observe(chat)
@@ -300,7 +300,6 @@ async def test_quote_of_other_unknown_expired_or_foreign_refs_do_not_wake(config
 
 def test_v4_upgrade_backfills_from_self_from_sent_operations(config, tmp_path):
     identity = InstanceKey.from_config(config)
-    robot = identity.robot
     path = tmp_path / "upgrade.sqlite3"
     state = MessageStore(path, clock=lambda: NOW)
     try:

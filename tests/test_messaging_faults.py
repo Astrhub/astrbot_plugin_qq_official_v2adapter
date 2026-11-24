@@ -47,7 +47,7 @@ async def test_expiry_while_waiting_for_http_slot_selects_active_before_writing(
     s.store.reserve = reserve
     task = asyncio.create_task(client.send(chat.route, "waiting"))
     await asyncio.wait_for(reserved.wait(), 2)
-    s.clock[0] += 301
+    s.clock[0] = chat.source.expires + 1
     s.http._slots.release()
     result = await asyncio.wait_for(task, 2)
     assert result["state"] == "sent" and result["delivery"]["reason"]["code"] == "reply_window_expired"

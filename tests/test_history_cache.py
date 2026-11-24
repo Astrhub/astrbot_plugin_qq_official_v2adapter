@@ -33,7 +33,7 @@ async def test_rolling_history_caches_do_not_stop_real_delivery(receiver, event)
         delivered = instance._event_queue.get_nowait()
         assert delivered.message_obj.message_id == f"rolling-{number}"
         delivered.cleanup_temporary_local_files()
-        clock[0] += 301
+        clock[0] += 3601
         assert owner.messages.db.execute("SELECT count(*) FROM deliveries").fetchone()[0] <= 4
         assert owner.messages.db.execute("SELECT count(*) FROM refs").fetchone()[0] <= 4
     assert owner.inbox.count(key) == 0 and not owner.messages._delivery_pins
@@ -136,7 +136,7 @@ async def test_cache_admission_failure_does_not_duplicate_queued_event(receiver,
             with pytest.raises(error_type) as exc:
                 instance.consumer.step()
             assert exc.value.code == "message_state_full"
-        clock[0] += 301
+        clock[0] += 3601
     assert instance._event_queue.qsize() == 3 and owner.inbox.count(key) == 1
     first = instance._event_queue.get_nowait()
     first.cleanup_temporary_local_files()

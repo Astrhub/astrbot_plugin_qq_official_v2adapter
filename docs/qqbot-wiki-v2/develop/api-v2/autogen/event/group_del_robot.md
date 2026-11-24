@@ -1,4 +1,4 @@
-<!-- 来源: https://bot.q.qq.com/wiki/develop/api-v2/autogen/event/group_del_robot.html · 抓取 2026-10-25 -->
+<!-- 来源: https://bot.q.qq.com/wiki/develop/api-v2/autogen/event/group_del_robot.html · 抓取 2026-11-24 -->
 
 # 机器人退出群聊
 
@@ -17,7 +17,7 @@
 | --- | --- | --- |
 | timestamp | integer | 移除时间戳（Unix 秒） |
 | group_openid | string | 群 OpenID |
-| union_group_openid | string | 跨应用关联群 OpenID，当绑定了第三方应用时有效 |
+| union_group_openid | string | 跨应用关联群openid，当绑定了3方应用时有效 |
 | op_member_openid | string | 操作移除机器人退群的群成员 OpenID |
 
 > 本地校注（changelog 20261116）：事件体已写入 `union_group_openid`。官方 autogen 页表示例尚未同步。该字段不作为群路由主键。

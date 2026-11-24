@@ -109,7 +109,7 @@ async def media(config, tmp_path):
             if modes and modes[0] == "slow_upload":
                 clock[0] += 121
             if modes and modes[0] == "expired":
-                clock[0] += 301
+                clock[0] += 3601
             if modes and modes[0] == "unknown":
                 return web.json_response({})
             return web.json_response({"file_info": "actual-file-receipt", "file_uuid": "file-uuid", "ttl": 5,

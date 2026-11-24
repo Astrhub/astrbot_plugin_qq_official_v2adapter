@@ -1,4 +1,4 @@
-<!-- 来源: https://bot.q.qq.com/wiki/develop/api-v2/server-inter/message/overview.html · 抓取 2026-10-25 -->
+<!-- 来源: https://bot.q.qq.com/wiki/develop/api-v2/server-inter/message/overview.html · 抓取 2026-11-24 -->
 
 # 消息收发概述
 
@@ -64,8 +64,10 @@
 | 场景 | 有效期 | 每条消息可回复次数 |
 | --- | --- | --- |
 | 单聊 | 60 分钟 | 4 次 |
-| 群聊 | 5 分钟 | 5 次 |
+| 群聊 | 60 分钟 | 5 次（机器人开发者（机器人账号的管理员）为该群群主或管理员时为 50 次） |
 | 频道 | 5 分钟 | - |
+
+群消息支持通过单聊私聊回复：使用群消息的 `msg_id` 调用[发送单聊消息](../../autogen/api/v2_users_user_openid_messages.post.md)接口，可私聊回复该群消息的发送者，要求该用户与机器人为好友关系。有效期与回复次数按群聊规则计算，且与群内回复共用同一个 `msg_id` 的次数上限。
 
 ### 主动消息
 

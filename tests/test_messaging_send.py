@@ -213,7 +213,7 @@ async def test_auth_retry_keeps_sequence_and_rechecks_original_deadline(sending)
     real_token = s.http.token
     async def delayed(*args, **kwargs):
         token = await real_token(*args, **kwargs)
-        s.clock[0] += 301
+        s.clock[0] = chat.source.expires + 1
         return token
     s.http.token = delayed
     result = await client.send(chat.route, "too late")

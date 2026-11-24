@@ -147,7 +147,7 @@ async def test_expired_bound_source_never_borrows_the_index_candidate(sending, a
     event = adapter.create_event(chat.message)
     newer, _ = s.observe(message_id="msg-two")
     adapter.session_sources.record(newer, s.store.now())
-    s.clock[0] += 301
+    s.clock[0] = chat.source.expires + 1
     s.modes.append(ACTIVE_DENIED_CODE)
     with pytest.raises(V2Error) as exc:
         await adapter.send_by_session(event.session, MessageChain([Plain("expired bound")]))

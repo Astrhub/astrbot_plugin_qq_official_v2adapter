@@ -1,10 +1,9 @@
-<!-- 来源: https://bot.q.qq.com/wiki/develop/api-v2/autogen/api/v2_groups_group_openid_batch_remove_members.post.html · 抓取 2026-10-25 -->
+<!-- 来源: https://bot.q.qq.com/wiki/develop/api-v2/autogen/api/v2_groups_group_openid_batch_remove_members.post.html · 抓取 2026-11-24 -->
 
 # 群成员批量移除
 
-批量移除群成员，单次最多 20 个，可选择同时加入黑名单。
+批量移除群成员，单次最多 20 个openid。
 
-该能力正在内邀接入中，敬请期待
 
 ## 请求
 
@@ -27,7 +26,6 @@
 | 名称 | 类型 | 必填 | 描述 |
 | --- | --- | --- | --- |
 | member_openids | []string | 是 | 需要移除的成员 member_openid 列表，单次最多 20 个 |
-| add_to_member_blacklist | boolean | 否 | 是否同时加入群黑名单，默认 false |
 
 ### 请求示例
 
@@ -47,14 +45,12 @@ POST /v2/groups/3E5D8A1F7B2C9E4D6A0F1B3C5D7E9F2A/batch_remove_members
 | 名称 | 类型 | 描述 |
 | --- | --- | --- |
 | remove_members_result | string | 成功时返回 success |
-| add_to_member_blacklist_fail_openids | []string | 拉黑失败的 openid |
 
 ## 响应示例
 
 ```json
 {
-    "remove_members_result": "success",
-    "add_to_member_blacklist_fail_openids": []
+    "remove_members_result": "success"
 }
 ```
 
@@ -62,4 +58,7 @@ POST /v2/groups/3E5D8A1F7B2C9E4D6A0F1B3C5D7E9F2A/batch_remove_members
 
 | 错误码 | 描述 | 排查建议 |
 | --- | --- | --- |
-| 11253 | 应用无接口访问权限 | 该接口仅白名单机器人可用，请联系平台运营申请权限 |
+| 40103012 | 操作失败, 群主已经关闭操作权限 | 需要群主给机器人打开“移除群成员”权限开关。 |
+| 40103011 | 操作失败, 机器人已经关闭操作权限 | 需要到WEB管理端给机器人打开"移除群成员"开关。 |
+
+> 本地校注（2026-11-24）：官方页 2026-11-16 移除 `add_to_member_blacklist` 入参、`add_to_member_blacklist_fail_openids` 响应字段和“内邀接入”提示，错误码表改为上述两行（原先记录的 11253 已不在页面上）。

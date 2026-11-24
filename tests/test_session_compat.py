@@ -286,7 +286,7 @@ async def test_expired_or_old_generation_sources_are_not_recovered(sending, adap
     adapter.identity = replace(adapter.identity, generation="old-generation")
     event = adapter.create_event(synthetic_message(chat.source.message_id))
     assert event.bot._source is None
-    s.clock[0] += 301
+    s.clock[0] = chat.source.expires + 1
     adapter.identity = s.client.identity
     event = adapter.create_event(synthetic_message(chat.source.message_id))
     assert event.bot._source is None

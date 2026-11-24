@@ -1,4 +1,4 @@
-<!-- 来源: https://bot.q.qq.com/wiki/develop/api-v2/autogen/api/v2_users_user_openid_messages.post.html · 抓取 2026-11-04 -->
+<!-- 来源: https://bot.q.qq.com/wiki/develop/api-v2/autogen/api/v2_users_user_openid_messages.post.html · 抓取 2026-11-24 -->
 
 > 镜像校注（2026-11-16，非官方正文）：本插件 `post_c2c_message` 与 Json 卡片发送接受 `msg_type=0/2/6/7/8`。`msg_type=8` 的 `card` 仅允许当前官方 tuwen 字段，HTTPS URL，并可与 keyboard、message_reference 并用。统一发送、原生发送和 C2C 流式发送的真实调用链见[本地实现调用链](#本地实现调用链)。
 
@@ -42,6 +42,9 @@ client.qq.send_streaming
 向指定用户发送私聊消息。
 
 - 被动消息有效时间 **60 分钟**，每个消息最多回复 **4 次**
+- 群消息私聊回复：msg_id 可传群消息的 ID，私聊回复该群消息的发送者
+  - 要求该用户与机器人为好友关系，且 user_openid 必须是该群消息的发送者
+  - 有效时间与回复次数按群消息规则计算（**60 分钟**、**5 次**；机器人开发者（机器人账号的管理员）为该群群主或管理员时为 **50 次**），且与群内回复共用同一个 msg_id 的次数上限
 - 主动消息频控规则:
   - Bot 维度（发送方）：企业认证/个人身份证认证 **10/qps**；未认证 **5/qps** 且 **30/qpm**
   - 单关系维度（接收方）：**20/qpm**，每个好友 1 天最多接收 **1000** 条
@@ -71,7 +74,7 @@ client.qq.send_streaming
 | content | string | 否 | 文本内容。msg_type=0 时为全文 注意: 传了 markdown 后此字段必须为空 |
 | markdown | [MessageMarkdown](#messagemarkdown) | 否 | Markdown 消息。msg_type=2 时必填 注意: 填写此字段后 content/ark 必须全为空 |
 | keyboard | [Keyboard](#keyboard) | 否 | 内嵌键盘。短形式只传 id，长形式传 content.rows |
-| msg_id | string | 否 | 被动回复的消息 ID。从 C2C_MESSAGE_CREATE 等事件的 d.id 获取，5 分钟内有效 |
+| msg_id | string | 否 | 被动回复的消息 ID。从 C2C_MESSAGE_CREATE 等事件的 d.id 获取，5 分钟内有效。也可传 GROUP_AT_MESSAGE_CREATE、GROUP_MESSAGE_CREATE 事件的 d.id，私聊回复该群消息的发送者，要求为好友关系，有效时间与次数按群消息规则计算 |
 | event_id | string | 否 | 被动回复的事件 ID。从事件最外层的id获取。与 msg_id 二选一，支持事件："INTERACTION_CREATE"、"C2C_MSG_RECEIVE"、"FRIEND_ADD" |
 | msg_seq | integer | 否 | 回复消息的序号，与 msg_id 联合使用，避免相同消息 id 回复重复发送，不填默认是 1。相同的 msg_id + msg_seq 重复发送会失败。 |
 | media | [MediaInfo](#mediainfo) | 否 | 富媒体消息。msg_type=7 时填写，file_info 来自 /v2/users/{user_openid}/files |

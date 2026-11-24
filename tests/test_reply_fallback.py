@@ -29,7 +29,7 @@ async def test_expired_observed_pinned_event_can_send_active(sending):
     chat, client = s.observe()
     s.store.mark_delivered(chat)
     release = s.store.pin_delivery(chat)
-    s.clock[0] += 301
+    s.clock[0] = chat.source.expires + 1
     s.store.prune()
     try:
         result = await client.send(chat.route, "late tool result")
@@ -146,7 +146,7 @@ async def test_expiry_does_not_turn_unobserved_or_foreign_sources_into_active_se
         elif scope == "expired_target":
             s.clock[0] += 86401
         else:
-            s.clock[0] += 301
+            s.clock[0] = source.expires + 1
             s.store.prune()
         with pytest.raises(V2Error):
             await s.core.send(route, "must not send", source=source)
@@ -271,7 +271,7 @@ async def test_untrusted_earlier_source_timestamp_cannot_force_active_mode(sendi
     from v2.errors import V2Error
     s = sending
     chat, _ = s.observe()
-    source = replace(chat.source, sent_at=chat.source.sent_at - 500)
+    source = replace(chat.source, sent_at=chat.source.sent_at - 3601)
     with pytest.raises(V2Error) as exc:
         await s.core.send(chat.route, "no fabricated expiry", source=source)
     assert exc.value.code == "reply_expired" and not s.calls
@@ -488,7 +488,7 @@ async def test_existing_live_delivery_pin_is_bounded_expiry_evidence_without_hol
     s = sending
     chat, client = s.observe()
     release = s.store.pin_delivery(chat)
-    s.clock[0] += 301
+    s.clock[0] = chat.source.expires + 1
     s.store.prune()
     assert s.store.db.execute("SELECT count(*) FROM sources").fetchone()[0] == 0
     assert s.store.db.execute("SELECT count(*) FROM deliveries").fetchone()[0] == 0
@@ -587,7 +587,7 @@ async def test_media_fallback_expiry_unknown_upload_and_expired_receipt_boundari
 
     async def slow_prepare(*args, **kwargs):
         value = await original_prep(*args, **kwargs)
-        m.clock[0] += 301
+        m.clock[0] = chat.source.expires + 1
         return value
 
     monkeypatch.setattr(m.service, "prepare", slow_prepare)

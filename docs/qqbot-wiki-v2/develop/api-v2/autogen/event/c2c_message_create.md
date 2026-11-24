@@ -1,4 +1,4 @@
-<!-- 来源: https://bot.q.qq.com/wiki/develop/api-v2/autogen/event/c2c_message_create.html · 抓取 2026-10-25 -->
+<!-- 来源: https://bot.q.qq.com/wiki/develop/api-v2/autogen/event/c2c_message_create.html · 抓取 2026-11-24 -->
 
 # 单聊消息事件
 
@@ -19,7 +19,7 @@
 | 名称 | 类型 | 描述 |
 | --- | --- | --- |
 | id | string | 消息 ID，可用于被动回复和撤回 |
-| author | [User](#user) | 发送者（user_openid 有值） |
+| author | [C2CUser](#c2cuser) | 发送者（user_openid 有值） |
 | content | string | 消息文本内容 |
 | timestamp | string | 消息发送时间，RFC3339 格式 |
 | message_type | integer | 消息内容类型: 0=普通文本, 3=结构化卡片, 101=并行消息, 102=聊天记录, 103=引用消息 |
@@ -28,21 +28,18 @@
 | ark_data | [ARKData](#arkdata) | 结构化卡片消息数据（message_type=3 时有值） |
 | msg_elements | [][MsgElement](#msgelement) | 消息元素列表（message_type=103 引用消息时包含被引用内容） |
 
-> 本地校注（changelog 20261116）：User 表已写入作者头像。官方 autogen 页表示例尚未同步。
+> 本地校注（2026-11-24）：官方页 2026-11-16 起改用 `C2CUser` 表，本镜像已同步该结构；事件示例仍未包含 `avatar`、`union_openid`。
 
-#### User
+#### C2CUser
 
 | 名称 | 类型 | 描述 |
 | --- | --- | --- |
 | id | string | 用户唯一标识（OpenID 格式） |
 | username | string | 用户昵称 |
-| avatar | string | 用户头像 |
+| avatar | string | 用户头像 URL |
 | bot | boolean | 是否为机器人 |
-| union_openid | string | 跨应用统一用户 OpenID（可能为空） |
-| union_user_account | string | 跨应用统一用户账号（可能为空） |
-| user_openid | string | 用户 OpenID（单聊场景使用） |
-| member_openid | string | 群成员 OpenID（群聊场景使用） |
-| member_role | string | 群内角色。member=普通成员, admin=管理员, owner=群主 |
+| union_openid | string | 跨应用关联用户openid，当绑定了3方应用时有效 |
+| user_openid | string | 用户 OpenID |
 
 #### MessageScene
 
@@ -78,7 +75,6 @@
 | 名称 | 类型 | 描述 |
 | --- | --- | --- |
 | msg_idx | string | 消息元素在列表中的引用消息索引 |
-| author | [User](#user) | 该元素对应的消息发送者 |
 | message_type | integer | 消息内容类型: 0=普通文本, 3=结构化卡片, 101=并行消息, 102=聊天记录, 103=引用消息 |
 | content | string | 消息正文内容 |
 | attachments | [][MessageAttachment](#messageattachment) | 该元素携带的附件 |
